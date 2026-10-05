@@ -34,6 +34,8 @@ def test_discover_retries_then_mirror(zone, fixture_text):
         zone, fetcher, mirrors=("https://a.example/api", "https://b.example/api"), backoff=0
     )
     assert first.call_count == 2 and len(venues) == 3
+    sent = first.calls[0].request.headers
+    assert sent["accept"] == "application/json" and "nightcrawler" in sent["referer"]
 
 
 @respx.mock

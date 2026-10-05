@@ -16,7 +16,8 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-USER_AGENT = "NightcrawlerBot/0.1 (+https://github.com/williampenet/nightcrawler)"
+PROJECT_URL = "https://github.com/williampenet/nightcrawler"
+USER_AGENT = f"NightcrawlerBot/0.1 (+{PROJECT_URL})"
 MAX_BYTES = 3_000_000
 TIMEOUT = 20.0
 
@@ -122,12 +123,19 @@ class Fetcher:
                 break
         return b"".join(chunks)[:MAX_BYTES]
 
-    def post(self, url: str, data: dict) -> Response:
+    def post(
+        self,
+        url: str,
+        data: dict,
+        *,
+        headers: dict | None = None,
+        timeout: float = TIMEOUT,
+    ) -> Response:
         """Uncached POST, used for APIs (e.g. Overpass)."""
         host = urlsplit(url).netloc.lower()
         with self._host_lock(host):
             self._wait_turn(host)
-            resp = self.client.post(url, data=data)
+            resp = self.client.post(url, data=data, headers=headers, timeout=timeout)
         return Response(
             url=str(resp.url),
             status=resp.status_code,
