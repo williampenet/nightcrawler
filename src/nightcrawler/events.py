@@ -78,6 +78,30 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
     return None
 
 
+MUSIC_TAGS = {"concert", "concerts", "musique live", "dj set", "live", "dj"}
+NOT_MUSIC_TAGS = {
+    "théâtre",
+    "theatre",
+    "conférence",
+    "discussion",
+    "humour",
+    "stand-up",
+    "exposition",
+    "projection",
+    "atelier",
+    "bouffe",
+}
+
+
+def tag_reason(tags: list[str]) -> str | None:
+    """Decide from source tags: "tag: <tag>" keeps, "" drops, None = no verdict."""
+    tags = [t.strip().lower() for t in tags]
+    music = next((t for t in tags if t in MUSIC_TAGS), None)
+    if music:
+        return f"tag: {music}"
+    return "" if any(t in NOT_MUSIC_TAGS for t in tags) else None
+
+
 def _slug(text: str) -> str:
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "", text.lower())
@@ -133,7 +157,9 @@ def attribute_venue(
     """
     loc = event.location_name
     page_venue = venues.get(event.venue_id)
-    if event.source == "ticketmaster" or not loc or ADDRESS_RE.search(loc):
+    # sources whose events carry their own venue are never re-attributed
+    exempt = event.source == "ticketmaster" or event.source.startswith("gancio:")
+    if exempt or not loc or ADDRESS_RE.search(loc):
         return event.venue_id, None
     tokens = place_tokens(loc)
     key = "".join(tokens)
@@ -172,8 +198,10 @@ def build_concerts(
             continue
         venue_id, place_name = attribute_venue(ev, venues, keys)
         venue = venues.get(venue_id)
-        reason = concert_reason(ev, venue)
+        reason = tag_reason(ev.tags)
         if reason is None:
+            reason = concert_reason(ev, venue)
+        if not reason:
             continue
         start = ev.start.astimezone(tz)
         key = f"{venue_id}|{start.date().isoformat()}|{_slug(ev.title)}"

@@ -31,6 +31,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:reviewer | review WIP-30 | REQUEST_CHANGES: 3 blocking (ADR not amended for Spotify OAuth, callback/token handling untested, comma-splitting of imported names) + 6 non-blocking; all fixed | |
 | 2026-10-05 | agent:dev | build | WIP-30 Spotify login (PKCE in the browser), ADR-0003 | [ADR](adr/0003-spotify-login-pkce.md) |
 | 2026-10-05 | agent:dev | build | WIP-35 venue attribution from event location (aggregator pages), "concerts" links ranked first in the probe, theatre/impro/humour/expo filter | |
+| 2026-10-05 | agent:dev | build | WIP-36 Gancio source (Ville Morte agenda): places merged with OSM venues, tag-driven concert filter, capped detail fetches | [PR #22](https://github.com/williampenet/nightcrawler/pull/22) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

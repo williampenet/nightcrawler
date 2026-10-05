@@ -16,7 +16,7 @@ from .events import build_concerts
 from .http import Fetcher
 from .models import Probe, RawEvent, Venue
 from .probe import probe_venue
-from .sources import osm, ticketmaster
+from .sources import gancio, osm, ticketmaster
 from .venues import merge
 
 log = logging.getLogger(__name__)
@@ -37,8 +37,13 @@ def run(
     # 1. venues: maps first, then ticketing (its events keep pointing to merged ids)
     osm_venues = osm.discover(zone, fetcher, extract=osm_extract)
     tm_venues, tm_events, tm_status = ticketmaster.collect(zone, fetcher, now, tz)
-    venues, alias = merge([osm_venues, tm_venues])
-    for ev in tm_events:
+    try:
+        ga_venues, ga_events, ga_status = gancio.collect(zone, fetcher, now, tz)
+    except Exception as exc:  # optional source: never stop the run
+        log.warning("Gancio failed: %s", type(exc).__name__)
+        ga_venues, ga_events, ga_status = [], [], f"error: {type(exc).__name__}"
+    venues, alias = merge([osm_venues, tm_venues, ga_venues])
+    for ev in tm_events + ga_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
     by_id = {v.id: v for v in venues}
 
@@ -57,10 +62,12 @@ def run(
         for probe, events in pool.map(task, venues):
             probes[probe.venue_id] = probe
             raw.extend(events)
-    # venues covered by the ticketing API count as readable even if their site is not
-    for vid in {ev.venue_id for ev in tm_events}:
-        if probes[vid].status != "structured":
-            probes[vid].status, probes[vid].method = "structured", "ticketmaster"
+    raw.extend(ga_events)  # after venue sites: on a duplicate, the venue's own page wins
+    # venues covered by the ticketing API or an agenda count as readable even if their site is not
+    for method, evs in (("ticketmaster", tm_events), ("gancio", ga_events)):
+        for vid in {ev.venue_id for ev in evs} & probes.keys():
+            if probes[vid].status != "structured":
+                probes[vid].status, probes[vid].method = "structured", method
 
     # 3. concerts
     concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz)
@@ -82,7 +89,14 @@ def run(
                 "venues": len(tm_venues),
                 "events": len(tm_events),
             },
-            "website_events": len(raw) - len(tm_events),
+            "gancio": {
+                "status": ga_status,
+                "venues": len(ga_venues),
+                "events": len(ga_events),
+                # credited on the page (footer), built from config/zone.yaml
+                "instances": [dict(i) for i in zone.gancio_instances],
+            },
+            "website_events": len(raw) - len(tm_events) - len(ga_events),
         },
         "raw_events": len(raw),
         "concerts": len(concerts),

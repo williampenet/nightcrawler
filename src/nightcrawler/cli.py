@@ -91,10 +91,12 @@ def one_line(report: dict) -> str:
     method = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_method"].items()))
     src = report.get("sources", {})
     tm = src.get("ticketmaster", {})
+    ga = src.get("gancio", {})
     art = report.get("artists", {})
     return (
         f"osm={src.get('openstreetmap_venues')} ticketmaster={tm.get('status')} "
         f"(venues={tm.get('venues')} events={tm.get('events')}) "
+        f"gancio={ga.get('status')} (venues={ga.get('venues')} events={ga.get('events')}) "
         f"website_events={src.get('website_events')} | "
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "

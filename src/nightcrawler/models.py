@@ -76,6 +76,7 @@ class RawEvent:
     description: str | None = None
     types: list[str] = field(default_factory=list)  # schema.org types, e.g. ["MusicEvent"]
     location_name: str | None = None
+    tags: list[str] = field(default_factory=list)  # lower-case source tags (e.g. Gancio)
 
 
 @dataclass
