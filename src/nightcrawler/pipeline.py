@@ -35,7 +35,7 @@ def run(
 
     # 1. venues: maps first, then ticketing (its events keep pointing to merged ids)
     osm_venues = osm.discover(zone, fetcher, extract=osm_extract)
-    tm_venues, tm_events = ticketmaster.collect(zone, fetcher, now, tz)
+    tm_venues, tm_events, tm_status = ticketmaster.collect(zone, fetcher, now, tz)
     venues, alias = merge([osm_venues, tm_venues])
     for ev in tm_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
@@ -73,6 +73,15 @@ def run(
         "venues_with_website": sum(1 for v in venues if v.website),
         "probe_status": dict(Counter(p.status for p in probes.values())),
         "probe_method": dict(Counter(p.method for p in probes.values() if p.method)),
+        "sources": {
+            "openstreetmap_venues": len(osm_venues),
+            "ticketmaster": {
+                "status": tm_status,
+                "venues": len(tm_venues),
+                "events": len(tm_events),
+            },
+            "website_events": len(raw) - len(tm_events),
+        },
         "raw_events": len(raw),
         "concerts": len(concerts),
         "venues_with_concerts": len(per_venue),
