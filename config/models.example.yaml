@@ -1,0 +1,22 @@
+# Task → model routing. Copy to config/models.yaml in products that call an LLM.
+# Business code calls tasks, never models. One task = one model, chosen in its model-selection ADR.
+# No API keys here: keys come from env vars (CI / host secrets).
+
+tasks:
+  categorize:                       # example task
+    adr: docs/adr/NNNN-model-selection-categorize.md
+    primary:
+      provider: local               # local | mistral | scaleway | ovhcloud | baseline
+      model: "{{model id}}"
+      revision: "{{commit sha or version}}"
+      sha256: "{{weights hash, local models only}}"
+    output_schema: schemas/categorize.json
+    # Optional, experimental: retried once on this model when the primary output fails validation.
+    # Kept only if MODEL_EVAL.md shows the gain is worth the cost and latency.
+    fallback:
+      provider: mistral
+      model: "{{model id}}"
+      revision: "{{version}}"
+    limits:
+      max_output_tokens: 256
+      timeout_ms: 5000

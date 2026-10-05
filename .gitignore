@@ -1,0 +1,18 @@
+node_modules/
+dist/
+build/
+.venv/
+__pycache__/
+.env
+.env.*
+!.env.example
+.DS_Store
+# model weights and eval artefacts: never committed
+models/
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.pkl
+eval/results/

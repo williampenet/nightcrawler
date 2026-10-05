@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  conventions:
+    name: PR conventions
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR title references a Linear ticket
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $TITLE"
+          if ! echo "$TITLE" | grep -Eq '^WIP-[0-9]+: '; then
+            echo "::error::PR title must start with 'WIP-<number>: ' to link the Linear ticket."
+            exit 1
+          fi
+
+  build:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node projects (auto-detected)
+      - if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: hashFiles('package.json') != ''
+        run: npm ci
+      - if: hashFiles('package.json') != ''
+        run: npm run lint --if-present
+      - if: hashFiles('package.json') != ''
+        run: npm test --if-present
+      - if: hashFiles('package.json') != ''
+        run: npm run build --if-present
+
+      # Python projects (auto-detected)
+      - if: hashFiles('pyproject.toml') != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - if: hashFiles('pyproject.toml') != ''
+        run: |
+          pip install -e ".[dev]" || pip install -e .
+          pip install pytest ruff
+          ruff check .
+          pytest -q || [ $? -eq 5 ]
+
+      - name: Template sanity check
+        if: hashFiles('package.json') == '' && hashFiles('pyproject.toml') == ''
+        run: |
+          test -f CLAUDE.md && test -f docs/PRD.md && test -f docs/BUILD_LOG.md
+          test -f docs/adr/0000-template-model-selection.md && test -f docs/MODEL_EVAL.md
+
+  model-eval:
+    name: Model evaluation
+    needs: build
+    runs-on: ubuntu-latest
+    # Hosted candidates read their keys from secrets; the runner skips any whose key is absent (e.g. fork PRs).
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      SCALEWAY_API_KEY: ${{ secrets.SCALEWAY_API_KEY }}
+      BASELINE_API_KEY: ${{ secrets.BASELINE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when the product has no eval set
+        id: check
+        run: |
+          if [ -f eval/cases.jsonl ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "No eval/cases.jsonl, skipping."; fi
+      - if: steps.check.outputs.run == 'true' && hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.check.outputs.run == 'true' && hashFiles('package.json') != ''
+        run: npm ci && npm run eval
+      - if: steps.check.outputs.run == 'true' && hashFiles('pyproject.toml') != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - if: steps.check.outputs.run == 'true' && hashFiles('pyproject.toml') != ''
+        run: |
+          pip install -e ".[dev]" || pip install -e .
+          python -m eval
