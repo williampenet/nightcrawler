@@ -23,6 +23,9 @@ AGENDA_RE = re.compile(
     r"|billetterie|saison|spectacle|dates|line-?up",
     re.IGNORECASE,
 )
+# A "concerts" page is the most specific agenda; generic ones (billetterie, agenda) are
+# often JS apps with nothing server-rendered.
+CONCERT_RE = re.compile(r"concerts?", re.IGNORECASE)
 SKIP_RE = re.compile(r"\.(pdf|jpe?g|png|gif|zip|mp3|mp4)$|mailto:|tel:|javascript:", re.I)
 
 # Ticketing / listing platforms we can recognise but do not parse yet.
@@ -65,7 +68,10 @@ def agenda_candidates(html: str, base_url: str) -> list[str]:
         if not url.startswith(("http://", "https://")) or not _same_site(url, base_url):
             continue
         text = a.get_text(" ", strip=True)
+        path = urlsplit(url).path
         score = (2 if AGENDA_RE.search(text) else 0) + (1 if AGENDA_RE.search(href) else 0)
+        if score and (CONCERT_RE.search(text) or CONCERT_RE.search(path)):
+            score += 3
         if score:
             scored[url] = max(scored.get(url, 0), score)
     ordered = sorted(scored, key=lambda u: (-scored[u], len(u)))

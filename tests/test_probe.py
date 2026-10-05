@@ -19,6 +19,23 @@ def test_agenda_candidates(fixture_text):
     assert found == ["https://bulbe.example/programmation/"]
 
 
+def test_agenda_candidates_prefers_concert_pages():
+    # Périscope: the billetterie is an empty JS app, /concerts/ is server-rendered
+    html = (
+        '<a href="/billetterie/">Billetterie</a><a href="/agenda/">Agenda</a>'
+        '<a href="/concerts/">Programme</a><a href="/la-saison/">Nos concerts</a>'
+    )
+    found = agenda_candidates(html, "https://periscope.example/")
+    assert set(found[:2]) == {
+        "https://periscope.example/concerts/",
+        "https://periscope.example/la-saison/",
+    }
+    assert set(found[2:]) == {
+        "https://periscope.example/agenda/",
+        "https://periscope.example/billetterie/",
+    }
+
+
 def test_platforms(fixture_text):
     assert platforms_in(fixture_text("home.html")) == ["shotgun"]
 
