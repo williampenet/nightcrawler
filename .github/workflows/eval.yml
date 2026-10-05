@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: model-eval-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false  # a run is long (CPU inference): queue new ones, never kill one
 
 env:
   LLAMA_CPP_TAG: b11425
