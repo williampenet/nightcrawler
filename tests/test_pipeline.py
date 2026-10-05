@@ -30,3 +30,5 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     venues = json.loads((tmp_path / "data/venues.json").read_text())
     assert {v["name"]: v["concerts"] for v in venues}["Le Petit Bulbe"] == 1
     assert "| Venues found | 3 |" in summary_markdown(report)
+    assert report["sources"]["ticketmaster"]["status"] == "skipped"
+    assert report["sources"]["openstreetmap_venues"] == 3

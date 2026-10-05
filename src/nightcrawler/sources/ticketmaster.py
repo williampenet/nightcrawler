@@ -88,11 +88,13 @@ def parse(payload: dict, tz: ZoneInfo) -> tuple[list[Venue], list[RawEvent]]:
 
 def collect(
     zone: Zone, fetcher: Fetcher, now: datetime, tz: ZoneInfo
-) -> tuple[list[Venue], list[RawEvent]]:
+) -> tuple[list[Venue], list[RawEvent], str]:
+    """Returns venues, events and a status: "skipped", "ok", or "error: <reason>"."""
     api_key = os.environ.get("TICKETMASTER_API_KEY")
     if not api_key:
         log.info("Ticketmaster: skipped (TICKETMASTER_API_KEY not set)")
-        return [], []
+        return [], [], "skipped"
+    status = "ok"
     all_venues: dict[str, Venue] = {}
     all_events: list[RawEvent] = []
     for page in range(MAX_PAGES):
@@ -105,11 +107,13 @@ def collect(
             )
             if resp.status != 200:
                 log.warning("Ticketmaster: HTTP %s, stopping", resp.status)
+                status = f"error: HTTP {resp.status}"
                 break
             payload = json.loads(resp.text)
         except (httpx.HTTPError, ValueError) as exc:
             # optional source: never stop the run; never log the URL (it holds the key)
             log.warning("Ticketmaster: %s, stopping", type(exc).__name__)
+            status = f"error: {type(exc).__name__}"
             break
         venues, events = parse(payload, tz)
         all_venues.update({v.id: v for v in venues})
@@ -118,4 +122,4 @@ def collect(
         if page + 1 >= total_pages:
             break
     log.info("Ticketmaster: %d venues, %d events", len(all_venues), len(all_events))
-    return list(all_venues.values()), all_events
+    return list(all_venues.values()), all_events, status

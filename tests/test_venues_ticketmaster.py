@@ -32,7 +32,7 @@ def test_ticketmaster_parse(fixture_text, tz):
 
 def test_ticketmaster_skipped_without_key(zone, tz, monkeypatch):
     monkeypatch.delenv("TICKETMASTER_API_KEY", raising=False)
-    assert ticketmaster.collect(zone, None, datetime.now(tz), tz) == ([], [])
+    assert ticketmaster.collect(zone, None, datetime.now(tz), tz) == ([], [], "skipped")
 
 
 def test_ticketmaster_params(zone, tz):
@@ -47,4 +47,8 @@ def test_ticketmaster_failure_does_not_stop(zone, tz, monkeypatch):
     monkeypatch.setenv("TICKETMASTER_API_KEY", "k")
     respx.get(ticketmaster.API_URL).mock(side_effect=httpx.ConnectError("down"))
     fetcher = Fetcher(cache_dir=None, min_interval=0)
-    assert ticketmaster.collect(zone, fetcher, datetime.now(tz), tz) == ([], [])
+    assert ticketmaster.collect(zone, fetcher, datetime.now(tz), tz) == (
+        [],
+        [],
+        "error: ConnectError",
+    )

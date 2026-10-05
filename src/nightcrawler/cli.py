@@ -72,7 +72,12 @@ def annotate(level: str, message: str) -> None:
 def one_line(report: dict) -> str:
     status = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_status"].items()))
     method = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_method"].items()))
+    src = report.get("sources", {})
+    tm = src.get("ticketmaster", {})
     return (
+        f"osm={src.get('openstreetmap_venues')} ticketmaster={tm.get('status')} "
+        f"(venues={tm.get('venues')} events={tm.get('events')}) "
+        f"website_events={src.get('website_events')} | "
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
         f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']}"
