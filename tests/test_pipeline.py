@@ -15,6 +15,13 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     respx.get("https://bulbe.example/robots.txt").respond(404)
     respx.get(host="bulbe.example", path="/").respond(200, html=fixture_text("home.html"))
     respx.get("https://bulbe.example/programmation/").respond(200, html=fixture_text("agenda.html"))
+    respx.get("https://api.deezer.com/search/artist").respond(
+        json={"data": [{"id": 77, "name": "Sunn & Co", "nb_fan": 12}]}
+    )
+    respx.get("https://api.deezer.com/artist/77/related").respond(
+        json={"data": [{"name": "Boris"}]}
+    )
+    respx.get("https://musicbrainz.org/ws/2/artist").respond(json={"artists": []})
     respx.get("https://ombres.example/robots.txt").respond(404)
     respx.get(host="ombres.example", path="/").respond(200, html=fixture_text("microdata.html"))
 
@@ -32,3 +39,7 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     assert "| Venues found | 3 |" in summary_markdown(report)
     assert report["sources"]["ticketmaster"]["status"] == "skipped"
     assert report["sources"]["openstreetmap_venues"] == 3
+    assert report["artists"]["candidates"] >= 1  # "Sunn & Co" from the JSON-LD performer
+    artists = json.loads((tmp_path / "data/artists.json").read_text())
+    assert artists["sunnco"]["related"] == ["Boris"]
+    assert concerts[0]["artists"] == ["sunnco"]

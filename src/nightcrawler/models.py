@@ -90,6 +90,7 @@ class Concert:
     performers: list[str]
     sources: list[str]
     reason: str  # why it was kept as a concert
+    artists: list[str] = field(default_factory=list)  # keys into artists.json
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
