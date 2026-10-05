@@ -34,22 +34,24 @@ def task(fallback=None):
 
 
 def test_validate_schema_subset():
-    assert llm.validate({"events": [EVENT]}, SCHEMA) == []
+    assert llm.validate({"layout": "same_line", "events": [EVENT]}, SCHEMA) == []
     bad = {**EVENT, "date": "8 oct", "time": 20, "extra": 1}
     errors = llm.validate({"events": [bad]}, SCHEMA)
     assert any("date" in e for e in errors)
     assert any("time" in e for e in errors)
     assert any("unexpected extra" in e for e in errors)
-    assert llm.validate({}, SCHEMA) == ["$: missing events"]
+    assert llm.validate({}, SCHEMA) == ["$: missing layout", "$: missing events"]
 
 
 @respx.mock
 def test_chat_json_sends_schema_and_parses_fenced_output():
     route = respx.post("http://llm.test/v1/chat/completions").mock(
-        return_value=reply("```json\n" + json.dumps({"events": [EVENT]}) + "\n```")
+        return_value=reply(
+            "```json\n" + json.dumps({"layout": "same_line", "events": [EVENT]}) + "\n```"
+        )
     )
     a = llm.chat_json(task().primary, [{"role": "user", "content": "x"}], SCHEMA)
-    assert a.data == {"events": [EVENT]} and a.tokens_in == 100
+    assert a.data == {"layout": "same_line", "events": [EVENT]} and a.tokens_in == 100
     sent = json.loads(route.calls[0].request.content)
     assert sent["response_format"]["json_schema"]["schema"] == SCHEMA
     assert "Authorization" not in route.calls[0].request.headers
@@ -75,23 +77,31 @@ def test_http_error_never_echoes_body():
 @respx.mock
 def test_run_task_escalates_once_on_failed_check(monkeypatch):
     monkeypatch.setenv("MISTRAL_API_KEY", "k")
-    respx.post("http://llm.test/v1/chat/completions").mock(return_value=reply({"events": []}))
+    respx.post("http://llm.test/v1/chat/completions").mock(
+        return_value=reply({"layout": "same_line", "events": []})
+    )
     big = respx.post("https://api.mistral.ai/v1/chat/completions").mock(
-        return_value=reply({"events": [EVENT]})
+        return_value=reply({"layout": "same_line", "events": [EVENT]})
     )
     t = task(llm.ModelSpec(provider="mistral", model="big"))
     a = llm.run_task(t, [], SCHEMA, check=lambda d: [] if d["events"] else ["empty"])
-    assert a.escalated and a.data == {"events": [EVENT]}
+    assert a.escalated and a.data == {"layout": "same_line", "events": [EVENT]}
     assert big.calls[0].request.headers["Authorization"] == "Bearer k"
 
 
 @respx.mock
 def test_run_task_without_key_keeps_primary(monkeypatch):
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
-    respx.post("http://llm.test/v1/chat/completions").mock(return_value=reply({"events": []}))
+    respx.post("http://llm.test/v1/chat/completions").mock(
+        return_value=reply({"layout": "same_line", "events": []})
+    )
     t = task(llm.ModelSpec(provider="mistral", model="big"))
     a = llm.run_task(t, [], SCHEMA, check=lambda d: ["empty"])
-    assert not a.escalated and a.data == {"events": []} and a.errors == ["empty"]
+    assert (
+        not a.escalated
+        and a.data == {"layout": "same_line", "events": []}
+        and a.errors == ["empty"]
+    )
 
 
 def test_load_tasks_reads_repo_config():

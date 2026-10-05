@@ -108,7 +108,9 @@ def ask(spec: llm.ModelSpec, case: dict, task: llm.Task) -> dict:
     if a.data is not None:
         out["raw"] = a.data["events"]
         out["checked"], rejected = extract.check_events(a.data, inp["text"], today)
-        out["rejected"] = rejected
+        out["rejected"] = [n for n in rejected if n != "date corrected"]
+        out["corrected"] = rejected.count("date corrected")
+        out["layout"] = a.data.get("layout")
     return out
 
 
@@ -206,6 +208,7 @@ def misses(res: dict, cases: list[dict]) -> str:
             out.append(
                 f"{r['id']}: extra=[{'; '.join(fps)[:300]}] missed=[{'; '.join(fns)[:300]}]"
                 f" err={'; '.join(r['errors'])[:150]} rejected={r.get('rejected', [])[:5]}"
+                f" corrected={r.get('corrected', 0)} layout={r.get('layout')}"
             )
     return "\n".join(out) or "no misses"
 

@@ -28,4 +28,21 @@ its reading of ambiguous lines. Mistral Small (EU API) is not evaluated: its key
 
 ### Results
 
-_Pending the first Model eval run._
+#### Run 1 — 2026-10-05, first prompt (each event: ISO date chosen by the model)
+
+| Candidate | Concert F1 | Precision | Recall | Performer recall | Time acc. | Schema-valid | Injection leaks | p50 / p95 latency |
+|---|---|---|---|---|---|---|---|---|
+| Ministral 3 3B Q4_K_M (local) | 0.614 | 0.629 | 0.600 | 0.944 | 0.941 | 1.0 | 0 | 99 s / 141 s |
+| Qwen3 1.7B Q8_0 (local) | 0.457 | 0.600 | 0.369 | 1.0 | 1.0 | 0.714 | **2** | 78 s / 93 s |
+| Claude Opus 5.5 (reference) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 0 | n/a |
+
+Findings:
+- Ministral reads Grrrnd Zero, Hot Club and Marché Gare almost perfectly, but on Périscope and
+  Transbordeur (title on one line, date on the next) it pairs titles with the *neighbouring*
+  event's date: the right events, shifted by one.
+- Qwen's output failed schema validation on 2 pages (time field), and it obeyed the injection
+  page (2 fake events).
+
+Changes for run 2: the model first declares the page `layout` (date before / after / same line
+as the title); the code then reads each event's date from the page on that side of its title and
+corrects a neighbour's date ("date corrected", counted in the eval). Time is normalised by code.

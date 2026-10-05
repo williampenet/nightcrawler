@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/llama
-          key: llama-${{ env.LLAMA_CPP_TAG }}-ubuntu-x64
+          key: llama-${{ env.LLAMA_CPP_TAG }}-ubuntu-x64-v2
       - name: Download llama.cpp (official release)
         if: steps.llama-cache.outputs.cache-hit != 'true'
         env:

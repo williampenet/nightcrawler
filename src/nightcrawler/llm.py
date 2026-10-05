@@ -128,6 +128,8 @@ def validate(value: Any, schema: dict, path: str = "$") -> list[str]:
             return [f"{path}: expected string"]
         if "maxLength" in schema and len(value) > schema["maxLength"]:
             errors.append(f"{path}: longer than {schema['maxLength']}")
+        if "enum" in schema and value not in schema["enum"]:
+            errors.append(f"{path}: not one of {schema['enum']}")
         if "pattern" in schema and not re.search(schema["pattern"], value):
             errors.append(f"{path}: does not match {schema['pattern']}")
         return errors
