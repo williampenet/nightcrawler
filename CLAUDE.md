@@ -1,8 +1,8 @@
 # CLAUDE.md – context for AI agents
 
 ## Project
-- Name: {{PROJECT_NAME}}
-- Pitch: {{one sentence}}
+- Name: Nightcrawler
+- Pitch: Nightcrawler finds the concerts near you that match your taste — including artists you don't know yet — and tells you before they sell out.
 - PRD: `docs/PRD.md` (source of truth for scope — do not build anything outside it)
 - Architecture decisions: `docs/adr/` (accepted ADRs are binding; propose a new ADR to change one)
 - Linear team: `WiP` · project: {{LINEAR_PROJECT}}

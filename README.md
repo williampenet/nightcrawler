@@ -1,6 +1,6 @@
-# {{PROJECT_NAME}}
+# Nightcrawler
 
-> {{One-sentence pitch: who it's for and what problem it solves.}}
+> Nightcrawler finds the concerts near you that match your taste — including artists you don't know yet — and tells you before they sell out.
 
 **Live demo:** {{DEMO_URL}} · **Backlog:** [Linear – WiP]({{LINEAR_PROJECT_URL}})
 
@@ -8,7 +8,11 @@
 
 ## What it does
 
-{{3–5 bullets describing the core user value.}}
+- Discovers concert venues in your area automatically, including small independent ones, and collects their agendas daily.
+- Scores every concert against your listening history, with a human-readable reason ("sounds like X").
+- Weekly email digest, plus instant Telegram alerts for the concerts you can't miss.
+- Listen to an extract, open the official ticket page, or share on WhatsApp in one tap.
+- Learns from your "relevant / not for me" feedback.
 
 ## How it was built
 
