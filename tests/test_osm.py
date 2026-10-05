@@ -1,5 +1,9 @@
 import json
 
+import pytest
+import respx
+
+from nightcrawler.http import Fetcher
 from nightcrawler.sources import osm
 
 
@@ -19,3 +23,22 @@ def test_parse(fixture_text):
     assert ombres.address == "3 Rue Neuve, Lyon"
     assert not ombres.is_music_venue
     assert bar.category == "live_music" and bar.website is None
+
+
+@respx.mock
+def test_discover_retries_then_mirror(zone, fixture_text):
+    first = respx.post("https://a.example/api").respond(503)
+    respx.post("https://b.example/api").respond(200, text=fixture_text("overpass.json"))
+    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    venues = osm.discover(
+        zone, fetcher, mirrors=("https://a.example/api", "https://b.example/api"), backoff=0
+    )
+    assert first.call_count == 2 and len(venues) == 3
+
+
+@respx.mock
+def test_discover_all_fail(zone):
+    respx.post("https://a.example/api").respond(400)
+    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        osm.discover(zone, fetcher, mirrors=("https://a.example/api",), backoff=0)

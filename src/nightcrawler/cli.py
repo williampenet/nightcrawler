@@ -30,14 +30,37 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     shutil.copytree(WEB_DIR, out, dirs_exist_ok=True)
-    report = run(load_zone(args.zone), out, Fetcher(cache_dir=args.cache))
+    try:
+        report = run(load_zone(args.zone), out, Fetcher(cache_dir=args.cache))
+    except Exception as exc:
+        # annotations are readable where raw logs are not; messages never include secrets
+        annotate("error", f"Pipeline failed: {type(exc).__name__}: {str(exc)[:500]}")
+        raise
 
+    annotate("notice", one_line(report))
     summary = summary_markdown(report)
     print(summary)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(summary)
     return 0
+
+
+def annotate(level: str, message: str) -> None:
+    """Emit a GitHub Actions annotation (no-op formatting outside Actions is harmless)."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        safe = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::{level}::{safe}", flush=True)
+
+
+def one_line(report: dict) -> str:
+    status = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_status"].items()))
+    method = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_method"].items()))
+    return (
+        f"venues={report['venues']} with_website={report['venues_with_website']} | "
+        f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
+        f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']}"
+    )
 
 
 if __name__ == "__main__":
