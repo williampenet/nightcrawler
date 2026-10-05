@@ -45,7 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         report = run(
             load_zone(args.zone),
             out,
-            Fetcher(cache_dir=args.cache),
+            # Deezer allows ~50 requests / 5 s; everyone else gets 1 request / s
+            Fetcher(cache_dir=args.cache, host_intervals={"api.deezer.com": 0.2}),
             osm_extract=Path(args.osm_extract),
         )
     except Exception as exc:
@@ -74,13 +75,16 @@ def one_line(report: dict) -> str:
     method = ", ".join(f"{k}={v}" for k, v in sorted(report["probe_method"].items()))
     src = report.get("sources", {})
     tm = src.get("ticketmaster", {})
+    art = report.get("artists", {})
     return (
         f"osm={src.get('openstreetmap_venues')} ticketmaster={tm.get('status')} "
         f"(venues={tm.get('venues')} events={tm.get('events')}) "
         f"website_events={src.get('website_events')} | "
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
-        f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']}"
+        f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} | "
+        f"artists: {art.get('identified')}/{art.get('candidates')} identified, "
+        f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered"
     )
 
 

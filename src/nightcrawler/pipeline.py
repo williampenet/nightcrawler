@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .artists import enrich
 from .config import Zone
 from .events import build_concerts
 from .http import Fetcher
@@ -64,6 +65,7 @@ def run(
     # 3. concerts
     concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz)
     per_venue = Counter(c.venue_id for c in concerts)
+    artists, artist_stats = enrich(concerts, fetcher)
 
     # 4. outputs
     report = {
@@ -85,6 +87,7 @@ def run(
         "raw_events": len(raw),
         "concerts": len(concerts),
         "venues_with_concerts": len(per_venue),
+        "artists": artist_stats,
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):
@@ -96,6 +99,7 @@ def run(
     data_dir.mkdir(parents=True, exist_ok=True)
     _dump(data_dir / "concerts.json", [c.to_dict() for c in concerts])
     _dump(data_dir / "venues.json", venue_rows)
+    _dump(data_dir / "artists.json", {k: a.to_dict() for k, a in sorted(artists.items())})
     _dump(data_dir / "report.json", report)
     return report
 
@@ -121,5 +125,8 @@ def summary_markdown(report: dict) -> str:
         f"| Raw events | {report['raw_events']} |",
         f"| Concerts (next {report['zone']['window_days']} days) | {report['concerts']} |",
         f"| Venues with concerts | {report['venues_with_concerts']} |",
+        f"| Artists identified | {report['artists']['identified']} "
+        f"/ {report['artists']['candidates']} |",
+        f"| Concerts with an identified artist | {report['artists']['concerts_with_artist']} |",
     ]
     return "\n".join(lines) + "\n"

@@ -55,6 +55,7 @@ class Fetcher:
         min_interval: float = 1.0,
         max_age: float = 20 * 3600,
         client: httpx.Client | None = None,
+        host_intervals: dict[str, float] | None = None,
     ) -> None:
         self.client = client or httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept-Language": "fr,en;q=0.8"},
@@ -63,6 +64,7 @@ class Fetcher:
         )
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.min_interval = min_interval
+        self.host_intervals = host_intervals or {}
         self.max_age = max_age
         self._robots: dict[str, RobotFileParser | None] = {}
         self._last_hit: dict[str, float] = {}
@@ -174,10 +176,19 @@ class Fetcher:
     def _wait_turn(self, host: str) -> None:
         last = self._last_hit.get(host)
         if last is not None:
-            delay = self.min_interval - (time.monotonic() - last)
+            interval = self.host_intervals.get(host, self.min_interval)
+            delay = interval - (time.monotonic() - last)
             if delay > 0:
                 time.sleep(delay)
         self._last_hit[host] = time.monotonic()
+
+    def forget(self, url: str, params: dict | None = None) -> None:
+        """Drop a cached response (e.g. an API error returned with HTTP 200)."""
+        if params:
+            url = str(httpx.URL(url, params=params))
+        path = self._cache_path(url)
+        if path:
+            path.unlink(missing_ok=True)
 
     def _prune_cache(self) -> None:
         """Delete expired cache entries so the cache does not grow forever."""
