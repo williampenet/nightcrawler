@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "17 4 * * *"  # daily, 04:17 UTC (06:17 Paris in summer, 05:17 in winter)
   workflow_dispatch:
+  push:  # continuous deployment of main
+    branches: [main]
+    paths: ["src/**", "config/**", "pyproject.toml", ".github/workflows/pipeline.yml"]
 
 permissions:
   contents: read
