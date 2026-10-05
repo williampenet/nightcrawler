@@ -9,7 +9,7 @@ import time
 import httpx
 
 from ..config import Zone
-from ..http import Fetcher
+from ..http import PROJECT_URL, Fetcher
 from ..models import Venue
 
 log = logging.getLogger(__name__)
@@ -21,6 +21,10 @@ OVERPASS_MIRRORS = (
     "https://overpass.kumi.systems/api/interpreter",
 )
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+# Overpass anti-abuse rules reject anonymous-looking clients with HTTP 406:
+# send an explicit Accept and a Referer pointing to the project.
+OVERPASS_HEADERS = {"Accept": "application/json", "Referer": PROJECT_URL + "/"}
+OVERPASS_TIMEOUT = 150.0  # the query itself allows 120 s server-side
 
 AMENITIES = (
     "music_venue",
@@ -109,7 +113,9 @@ def discover(
     for url in mirrors:
         for attempt in range(2):
             try:
-                resp = fetcher.post(url, data={"data": query})
+                resp = fetcher.post(
+                    url, data={"data": query}, headers=OVERPASS_HEADERS, timeout=OVERPASS_TIMEOUT
+                )
             except httpx.HTTPError as exc:
                 errors.append(f"{url}: {type(exc).__name__}")
                 break
