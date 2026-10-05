@@ -1,0 +1,3 @@
+# Settings published to the static page (site/app-config.json). Nothing here is secret.
+# Spotify app Client ID (public; PKCE flow, no Client Secret). Empty = "Connecter Spotify" hidden.
+spotify_client_id: ""

@@ -4,6 +4,9 @@
 "use strict";
 
 const S = window.NCScoring;
+const SP = window.NCSpotify;
+const PKCE_KEY = "nightcrawler.pkce"; // sessionStorage: verifier + state during the redirect only
+let APP_CONFIG = {};
 const STORE_KEY = "nightcrawler.v1";
 const MB_API = "https://musicbrainz.org/ws/2/artist";
 const LB_API = "https://api.listenbrainz.org/1/stats/user/";
@@ -177,6 +180,83 @@ async function importListenBrainz(user) {
     setStatus(`${list.length} artistes importés : vérifie la liste puis enregistre.`);
   } catch {
     setStatus("Import impossible (réseau ou ListenBrainz indisponible).");
+  }
+}
+
+// ---------------------------------------------------------------- Spotify (PKCE, in the browser)
+
+function redirectUri() {
+  return SP.redirectUriFor(location); // must equal the URI registered on the Spotify app
+}
+
+// Read the Spotify redirect first thing, before any network call: the code leaves the URL
+// and the saved verifier is consumed even if the rest of the page fails to load.
+const SPOTIFY_CALLBACK = (() => {
+  if (!SP) return { status: "none" };
+  let storage = null;
+  try {
+    storage = sessionStorage;
+  } catch {
+    storage = { getItem: () => null, removeItem: () => {} };
+  }
+  const cb = SP.consumeCallback(location.search, storage, PKCE_KEY);
+  if (cb.status !== "none") history.replaceState(null, "", location.pathname + location.hash);
+  return cb;
+})();
+
+async function connectSpotify() {
+  const verifier = SP.randomString();
+  const st = SP.randomString(16);
+  try {
+    sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
+  } catch {
+    return setStatus("Connexion impossible : le stockage de session est bloqué dans ce navigateur.");
+  }
+  const challenge = await SP.challengeFor(verifier);
+  location.assign(
+    SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
+  );
+}
+
+// Back from Spotify: exchange the code, import names, forget the token.
+async function finishSpotify() {
+  const cb = SPOTIFY_CALLBACK;
+  if (cb.status === "none") return;
+  document.getElementById("taste").open = true;
+  if (cb.status === "error") {
+    return setStatus(
+      cb.reason === "denied"
+        ? "Connexion Spotify annulée."
+        : "Connexion Spotify refusée : la réponse ne correspond pas à la demande.",
+    );
+  }
+  if (!SP.validClientId(APP_CONFIG.spotify_client_id)) return setStatus("Spotify n'est pas configuré.");
+  try {
+    setStatus("Import depuis Spotify…");
+    const token = await SP.exchangeCode({
+      clientId: APP_CONFIG.spotify_client_id,
+      redirectUri: redirectUri(),
+      code: cb.code,
+      verifier: cb.verifier,
+    });
+    const { names, failed } = await SP.artistNames(token); // the token stays in this function only
+    const box = document.getElementById("seeds");
+    const merged = S.mergeNames(S.parseSeeds(box.value), names);
+    box.value = merged.join("\n");
+    state.sort = "me";
+    document.getElementById("sort").value = "me";
+    await setSeeds(merged);
+    setStatus(
+      `${names.length} artistes importés depuis Spotify` +
+        (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : "."),
+    );
+  } catch (err) {
+    const why = String(err && err.message);
+    setStatus(
+      why === "forbidden"
+        ? "Ce compte Spotify n'est pas autorisé sur l'app (à ajouter dans le tableau de bord Spotify)."
+        : "Import Spotify impossible pour le moment.",
+    );
   }
 }
 
@@ -460,6 +540,10 @@ function setupControls() {
     document.getElementById("sort").value = "me";
     setSeeds(S.parseSeeds(box.value));
   });
+  if (SP && SP.validClientId(APP_CONFIG.spotify_client_id)) {
+    document.getElementById("spotify-row").hidden = false;
+    document.getElementById("spotify-connect").addEventListener("click", connectSpotify);
+  }
   document.getElementById("lb-import").addEventListener("click", () =>
     importListenBrainz(document.getElementById("lb-user").value),
   );
@@ -493,6 +577,10 @@ async function main() {
     );
     const okArtists = artists && typeof artists === "object" && !Array.isArray(artists);
     Object.assign(DATA, { concerts, venues, report, artists: okArtists ? artists : {} });
+    APP_CONFIG = await fetch("app-config.json")
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}));
+    if (!APP_CONFIG || typeof APP_CONFIG !== "object") APP_CONFIG = {};
     setTimeZone(report.zone.timezone || "Europe/Paris");
     document.getElementById("zone").textContent =
       `${concerts.length} concerts dans les ${report.zone.window_days} prochains jours · ${report.zone.name}`;
@@ -504,6 +592,7 @@ async function main() {
     render();
     renderSources(venues, report);
     focusDeepLink();
+    finishSpotify();
   } catch {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
   }

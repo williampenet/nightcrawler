@@ -26,6 +26,10 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:dev | build | WIP-24 artist identification and enrichment (Deezer exact match, related artists, MusicBrainz tags), PR #14 | |
 | 2026-10-05 | agent:reviewer | review WIP-25 | REQUEST_CHANGES: 5 blocking (stale filter state, unvalidated localStorage, MusicBrainz rate limit on double save, mobile layout, aria-live list) + 10 non-blocking; blocking and 8 non-blocking fixed | |
 | 2026-10-05 | agent:dev | build | WIP-25 page: taste profile, "Pour moi" sort with reasons, filters, feedback, listen, share; JS unit tests run in CI | |
+| 2026-10-05 | human:william | scope | Pivot: personal app for William only, with easy sharing (PRD v2) | [PRD](PRD.md) |
+| 2026-10-05 | agent:dev | build | WIP-29 sharing: native share sheet, copy link, deep link to a concert (PR #17) | |
+| 2026-10-05 | agent:reviewer | review WIP-30 | REQUEST_CHANGES: 3 blocking (ADR not amended for Spotify OAuth, callback/token handling untested, comma-splitting of imported names) + 6 non-blocking; all fixed | |
+| 2026-10-05 | agent:dev | build | WIP-30 Spotify login (PKCE in the browser), ADR-0003 | [ADR](adr/0003-spotify-login-pkce.md) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

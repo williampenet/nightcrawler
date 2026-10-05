@@ -43,3 +43,15 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     artists = json.loads((tmp_path / "data/artists.json").read_text())
     assert artists["sunnco"]["related"] == ["Boris"]
     assert concerts[0]["artists"] == ["sunnco"]
+
+
+def test_app_config_only_public_keys(tmp_path):
+    from nightcrawler.cli import write_app_config
+
+    src = tmp_path / "app.yaml"
+    src.write_text('spotify_client_id: "0123456789abcdef0123456789abcdef"\nsecret: x\n')
+    write_app_config(src, tmp_path / "app-config.json")
+    out = json.loads((tmp_path / "app-config.json").read_text())
+    assert out == {"spotify_client_id": "0123456789abcdef0123456789abcdef"}
+    write_app_config(tmp_path / "missing.yaml", tmp_path / "empty.json")
+    assert json.loads((tmp_path / "empty.json").read_text()) == {}

@@ -29,6 +29,22 @@
     return out.slice(0, 200);
   }
 
+  // Merge whole artist names (from an API) into a seed list without splitting them:
+  // "Tyler, The Creator" stays one name.
+  function mergeNames(existing, incoming) {
+    const seen = new Set();
+    const out = [];
+    for (const raw of [...(existing || []), ...(incoming || [])]) {
+      const name = String(raw || "").trim().replace(/\s+/g, " ");
+      const key = norm(name);
+      if (name.length >= 2 && name.length <= 60 && key && !seen.has(key)) {
+        seen.add(key);
+        out.push(name);
+      }
+    }
+    return out.slice(0, 200);
+  }
+
   // profile: { seeds: [{name, tags}], liked: [artistKey], disliked: [artistKey] }
   function buildProfile(state, artists) {
     const seedNames = new Map();
@@ -110,7 +126,7 @@
     return true;
   }
 
-  const api = { norm, parseSeeds, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

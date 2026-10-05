@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shutil
 from pathlib import Path
+
+import yaml
 
 from .config import load_zone
 from .http import Fetcher
@@ -24,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--out", default="site")
     r.add_argument("--cache", default=".cache/http")
     r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
+    r.add_argument("--app-config", default="config/app.yaml")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
     o.add_argument("--zone", default="config/zone.yaml")
     args = ap.parse_args(argv)
@@ -41,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     shutil.copytree(WEB_DIR, out, dirs_exist_ok=True)
+    write_app_config(Path(args.app_config), out / "app-config.json")
     try:
         report = run(
             load_zone(args.zone),
@@ -61,6 +66,17 @@ def main(argv: list[str] | None = None) -> int:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(summary)
     return 0
+
+
+PUBLIC_KEYS = {"spotify_client_id"}  # only these settings reach the public page
+
+
+def write_app_config(src: Path, dest: Path) -> None:
+    data = yaml.safe_load(src.read_text(encoding="utf-8")) if src.exists() else {}
+    if not isinstance(data, dict):
+        data = {}
+    public = {k: str(v) for k, v in data.items() if k in PUBLIC_KEYS and v}
+    dest.write_text(json.dumps(public), encoding="utf-8")
 
 
 def annotate(level: str, message: str) -> None:
