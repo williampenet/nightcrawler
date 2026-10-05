@@ -5,3 +5,5 @@ longitude: 4.8320
 radius_km: 15
 timezone: Europe/Paris
 window_days: 60     # how far ahead concerts are collected
+# Regional OpenStreetMap extract covering the zone (download.geofabrik.de), refreshed weekly in CI
+osm_extract_url: https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf

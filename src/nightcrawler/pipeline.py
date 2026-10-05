@@ -23,12 +23,18 @@ log = logging.getLogger(__name__)
 WORKERS = 8
 
 
-def run(zone: Zone, out_dir: Path, fetcher: Fetcher, now: datetime | None = None) -> dict:
+def run(
+    zone: Zone,
+    out_dir: Path,
+    fetcher: Fetcher,
+    now: datetime | None = None,
+    osm_extract: Path | None = None,
+) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
 
     # 1. venues: maps first, then ticketing (its events keep pointing to merged ids)
-    osm_venues = osm.discover(zone, fetcher)
+    osm_venues = osm.discover(zone, fetcher, extract=osm_extract)
     tm_venues, tm_events = ticketmaster.collect(zone, fetcher, now, tz)
     venues, alias = merge([osm_venues, tm_venues])
     for ev in tm_events:

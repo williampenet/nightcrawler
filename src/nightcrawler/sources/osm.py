@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+from pathlib import Path
 
 import httpx
 
 from ..config import Zone
 from ..http import PROJECT_URL, Fetcher
 from ..models import Venue
+from ..venues import distance_m
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +106,75 @@ def parse(payload: dict) -> list[Venue]:
     return venues
 
 
+def osmium_filter_expressions() -> list[str]:
+    """Same selection as the Overpass query, in osmium tags-filter syntax."""
+    return ["nwr/amenity=" + ",".join(AMENITIES), "nwr/live_music=yes"]
+
+
+def _centre(geometry: dict) -> tuple[float, float] | None:
+    """Rough centre (lon, lat) of a GeoJSON geometry: mean of its first ring's points."""
+    coords = geometry.get("coordinates")
+    kind = geometry.get("type")
+    if kind == "Point":
+        return coords[0], coords[1]
+    ring = {
+        "LineString": lambda c: c,
+        "Polygon": lambda c: c[0],
+        "MultiPolygon": lambda c: c[0][0],
+    }.get(kind)
+    if ring is None or not coords:
+        return None
+    pts = ring(coords)
+    return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+
+
+def parse_geojsonseq(path: str | Path, zone: Zone) -> list[Venue]:
+    """Read an `osmium export -f geojsonseq --add-unique-id=type_id` file, keep the radius."""
+    centre = Venue("", "", zone.latitude, zone.longitude, "")
+    kinds = {"n": "node", "w": "way", "r": "relation"}
+    venues: list[Venue] = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip().lstrip("\x1e")
+        if not line:
+            continue
+        feat = json.loads(line)
+        tags = feat.get("properties") or {}
+        name = tags.get("name")
+        point = _centre(feat.get("geometry") or {})
+        if not name or point is None:
+            continue
+        uid = str(feat.get("id", ""))
+        v = Venue(
+            id=f"osm:{kinds.get(uid[:1], 'node')}/{uid[1:]}",
+            name=name,
+            latitude=point[1],
+            longitude=point[0],
+            category=category_of(tags),
+            website=website_of(tags),
+            address=address_of(tags),
+            sources=["openstreetmap"],
+        )
+        if distance_m(centre, v) <= zone.radius_km * 1000:
+            venues.append(v)
+    # an area and its nodes can both carry the tags: keep one per name and place
+    unique: dict[tuple[str, int, int], Venue] = {}
+    for v in venues:
+        unique.setdefault((v.name, round(v.latitude, 3), round(v.longitude, 3)), v)
+    return list(unique.values())
+
+
 def discover(
-    zone: Zone, fetcher: Fetcher, mirrors=OVERPASS_MIRRORS, backoff: float = 10.0
+    zone: Zone,
+    fetcher: Fetcher,
+    mirrors=OVERPASS_MIRRORS,
+    backoff: float = 10.0,
+    extract: str | Path | None = None,
 ) -> list[Venue]:
-    """Query Overpass, retrying busy servers and falling back to mirrors."""
+    """Venues from a local extract when available, else Overpass (retries, then mirrors)."""
+    if extract and Path(extract).exists():
+        venues = parse_geojsonseq(extract, zone)
+        log.info("OpenStreetMap: %d venues (local extract)", len(venues))
+        return venues
     query = build_query(zone)
     errors: list[str] = []
     for url in mirrors:

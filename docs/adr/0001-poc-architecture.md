@@ -19,7 +19,7 @@ Constraint found while building: the agent workspace cannot reach venue websites
 ## Decision
 Option A for the POC. The pipeline is one Python package (`src/nightcrawler`):
 
-1. **Venues** — OpenStreetMap via the Overpass API (music venues, concert halls, clubs, arts centres, theatres, events venues, social / community centres, anything tagged `live_music=yes`) within the zone in `config/zone.yaml`; Ticketmaster Discovery API when `TICKETMASTER_API_KEY` is set. Venues from both are merged by distance (< 150 m) and name.
+1. **Venues** — OpenStreetMap, from a regional Geofabrik extract filtered with osmium (rebuilt weekly in CI, URL in the zone config), with the Overpass API as fallback — Overpass answers HTTP 406 to CI runners (WIP-19) (music venues, concert halls, clubs, arts centres, theatres, events venues, social / community centres, anything tagged `live_music=yes`) within the zone in `config/zone.yaml`; Ticketmaster Discovery API when `TICKETMASTER_API_KEY` is set. Venues from both are merged by distance (< 150 m) and name.
 2. **Probe** — for each venue website: homepage, then up to 4 links that look like an agenda; read schema.org JSON-LD, then microdata, then iCal feeds. Ticketing widgets are recorded, not parsed.
 3. **Concerts** — keep music events (schema.org type, ticketing category, music venue, or music keywords; the reason is stored), next 60 days, merged by venue + day + title.
 4. **Output** — `site/data/{concerts,venues,report}.json` and a static page (vanilla JS) deployed to GitHub Pages. The run summary goes to the Actions job summary.

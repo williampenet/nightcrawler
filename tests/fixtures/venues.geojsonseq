@@ -1,0 +1,4 @@
+{"type":"Feature","id":"n1","geometry":{"type":"Point","coordinates":[4.85,45.75]},"properties":{"amenity":"music_venue","name":"Le Petit Bulbe","website":"https://bulbe.example"}}
+{"type":"Feature","id":"w2","geometry":{"type":"Polygon","coordinates":[[[4.83,45.76],[4.84,45.76],[4.84,45.77],[4.83,45.76]]]},"properties":{"amenity":"theatre","name":"Théâtre des Ombres"}}
+{"type":"Feature","id":"n9","geometry":{"type":"Point","coordinates":[5.9,45.5]},"properties":{"amenity":"nightclub","name":"Too Far"}}
+{"type":"Feature","id":"n3","geometry":{"type":"Point","coordinates":[4.86,45.77]},"properties":{"amenity":"bar"}}
