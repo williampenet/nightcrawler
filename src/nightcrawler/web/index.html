@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Nightcrawler</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Nightcrawler</h1>
+    <p class="sub" id="zone">Concerts à venir</p>
+    <nav>
+      <button type="button" data-tab="concerts" aria-pressed="true">Concerts</button>
+      <button type="button" data-tab="sources" aria-pressed="false">Sources</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="concerts" aria-live="polite">
+      <p class="muted">Chargement…</p>
+    </section>
+
+    <section id="sources" hidden>
+      <p id="coverage" class="muted"></p>
+      <table>
+        <thead>
+          <tr><th>Lieu</th><th>Type</th><th>Détection</th><th>Concerts</th></tr>
+        </thead>
+        <tbody id="venue-rows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Liste collectée automatiquement sur les sites des lieux et des sources ouvertes,
+      sans tri par pertinence. Vérifiez la date et le lieu sur la page de l'événement.
+      Lieux : © contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL).
+      <span id="generated"></span>
+    </p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

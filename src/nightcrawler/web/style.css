@@ -1,0 +1,48 @@
+:root {
+  --bg: #fbfaf8;
+  --fg: #1b1a19;
+  --muted: #6b6762;
+  --line: #e6e2dc;
+  --accent: #3b4fd8;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #131313; --fg: #ecebe8; --muted: #9a958e; --line: #2c2b29; --accent: #8b9bff; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 0 16px 48px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header { padding: 24px 0 8px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 1.6rem; letter-spacing: -0.01em; }
+.sub, .muted { color: var(--muted); }
+.sub { margin: 4px 0 12px; }
+nav { display: flex; gap: 8px; }
+nav button {
+  font: inherit; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--fg);
+}
+nav button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+h2 {
+  margin: 28px 0 8px; font-size: 0.85rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+}
+ul.concerts { list-style: none; margin: 0; padding: 0; }
+ul.concerts li { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.time { flex: 0 0 3.2rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.body strong { overflow-wrap: anywhere; }
+.venue, .performers { color: var(--muted); font-size: 0.92rem; }
+.links { display: flex; gap: 12px; font-size: 0.92rem; }
+a { color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td:last-child, th:last-child { text-align: right; }
+td.structured { color: #2f8a4c; }
+td.fetch_error, td.robots_blocked { color: #b2452d; }
+footer { margin-top: 40px; font-size: 0.85rem; color: var(--muted); }
