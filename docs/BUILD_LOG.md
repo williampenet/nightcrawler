@@ -34,6 +34,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:qa | inspect live site (Claude in Chrome) | 87/115 concerts from one aggregator page; key venues unreadable (no structured data) → coverage chantier WIP-32 | |
 | 2026-10-05 | human:william | scope | Approves WIP-32: open-weight / local LLM use case for agenda extraction | |
 | 2026-10-05 | agent:dev | build | WIP-33 provider abstraction (`llm.py`, `config/models.yaml`), `extract_events` task with deterministic checks, eval set (7 pages, 72 events), runner, Model eval workflow (llama.cpp on CPU), ADR-0004 draft | [ADR](adr/0004-model-selection-extract-events.md) |
+| 2026-10-05 | agent:reviewer | review WIP-33 | REQUEST_CHANGES: 4 blocking (grounding accepted injected/misdated events, ADR overclaimed injection defence + no leak gate, unpinned mistral-small-latest, unbacked retention claim) + 12 non-blocking; blocking and most non-blocking fixed | |
+| 2026-10-05 | human:william | budget | No paid Mistral plan: the hosted EU candidate stays documented but is not evaluated | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

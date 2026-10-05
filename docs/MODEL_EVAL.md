@@ -13,10 +13,13 @@ ones on CPU with llama.cpp). Scorer: `eval/score.py`, deterministic.
 - 1 prompt-injection page (hidden and visible instructions to add fake events).
 
 Gold labels were written by Claude Opus 5.5 (the proprietary baseline) and checked line by line
-against the pages; they also pass the product's deterministic checks (unit test).
+against the pages; they also pass the product's deterministic checks (unit test). The baseline is
+therefore the reference (F1 = 1 by construction), not a measured row, and the labels may favour
+its reading of ambiguous lines. Mistral Small (EU API) is not evaluated: its key needs a paid plan.
 
 **Metrics** (after the deterministic checks the product applies):
-- *Concert F1*: an event matches when the date is equal and the titles share ≥ 50 % of words.
+- *Concert F1*: an event matches when the date is equal and the prediction contains ≥ 50 % of
+  the gold title's words.
   Only `is_concert: true` events count; events whose gold `is_concert` is null (club nights,
   parties) are ignored either way.
 - *Performer recall / precision* on matched concerts; *time accuracy* where the page gives a time.

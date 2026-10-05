@@ -27,8 +27,8 @@ Hugging Face for licence, revision and hashes.
 |---|---|---|---|---|---|---|
 | Ministral 3 3B Instruct 2512, Q4_K_M GGUF | Mistral AI (FR) | Apache 2.0 | 3.4 B (+0.4 B vision, unused) | local CPU, llama.cpp | €0 (CI minutes) | publisher GGUF, card recommends T < 0.1 for structured output |
 | Qwen3 1.7B, Q8_0 GGUF | Alibaba Qwen (CN) | Apache 2.0 | 1.7 B | local CPU, llama.cpp | €0 | publisher GGUF; thinking mode off |
-| Mistral Small (`mistral-small-latest`) | Mistral AI (FR) | Apache 2.0 weights, hosted API | 24 B | Mistral API (EU) | ~€0.5 | needs `MISTRAL_API_KEY`; candidate fallback |
-| Claude Opus 5.5 | Anthropic (US) | Proprietary | n/a | US API | ~€30–60 (Opus-class list prices, to be confirmed) | **Baseline only**: produced the gold labels (reviewed), never called at runtime |
+| Mistral Small 3.2 (`mistral-small-2506`) | Mistral AI (FR) | Apache 2.0 weights, hosted API | 24 B | Mistral API (EU) | ~€0.5 | **not evaluated**: an API key needs a paid plan (William, 2026-10-05); kept as the fallback option |
+| Claude Opus 5.5 | Anthropic (US) | Proprietary | n/a | US API | ~€30–60 (Opus-class list prices, to be confirmed) | **Baseline / reference**: wrote the gold labels, so it is the yardstick, not a measured row; never called at runtime |
 
 *Open weights ≠ open source ≠ European:* both local candidates are Apache 2.0 (licence text checked
 on the model cards); only the Mistral ones are European.
@@ -41,19 +41,24 @@ See `docs/MODEL_EVAL.md` (7 pages, 72 events: 5 real Lyon agendas captured 2026-
 Pending the CI run. Provisional routing: `config/models.yaml` → `tasks.extract_events` =
 Ministral 3 3B Q4_K_M, local, revision `eb599d40…`, SHA-256 pinned.
 
-**Escalation:** to be measured (Mistral Small as fallback when most events fail the checks).
+**Escalation:** none for now. A hosted fallback (Mistral Small) would need a paid plan; it is reconsidered only if no local model meets the quality bar.
 
 ## Security & compliance
-- **Data:** only public page text is sent; no personal data. The EU API (if used) is called
-  with Mistral's data-retention opt-out; local models send nothing anywhere.
+- **Data:** only public page text is sent; no personal data. Local models send nothing anywhere.
+  If the EU API is ever enabled, William first turns off training on the Mistral account
+  (an account setting, not code).
 - **Model supply chain:** official publisher repos only; GGUF (no pickle); revision and SHA-256
   pinned in config and verified after every download (`llm.ensure_weights`); llama.cpp from its
   official GitHub release, tag pinned.
-- **Prompt injection:** page text is wrapped as data with an explicit instruction; output is
-  constrained by a JSON schema (grammar-constrained decoding) and re-validated; each event must
-  pass deterministic checks (date in range, day number and title words present in the page,
-  performers present in the page) or it is dropped. The output never triggers any action other
-  than listing an event, with a link to the venue page. The eval has an injection case.
+- **Prompt injection:** page text is wrapped as data (markers stripped from the page) with an
+  explicit instruction; output is constrained by a JSON schema (grammar-constrained decoding)
+  and re-validated. The only effect of the output is listing an event that links to the venue's
+  own page — no other action. Resistance is *measured*, not guaranteed: the eval has an
+  injection page and reports leaked events; the chosen model must leak 0 (CI gate).
+- **Made-up events:** each event must pass deterministic checks or it is dropped — date in
+  range, title found in the page with its day and month written within a few lines, performers
+  written next to it. They remove invented events but not every misdating between neighbouring
+  events (≈ 15 % of one-week shifts pass on the eval pages); date errors are counted by the eval.
 - **Secrets:** `MISTRAL_API_KEY` in GitHub secrets only.
 - **Transparency (EU AI Act):** concerts extracted by a model are labelled "extrait par IA" in
   the page (WIP-34).
@@ -63,5 +68,5 @@ Ministral 3 3B Q4_K_M, local, revision `eb599d40…`, SHA-256 pinned.
 - Re-evaluate when a smaller EU model appears or when quality drops on new venues.
 
 ## Cost impact
-Local: €0 (public repo, free Actions minutes). Fallback via EU API: < €1 / month at this volume.
+Local: €0 (public repo, free Actions minutes). A hosted EU fallback would be < €1 / month in tokens but needs a paid plan.
 Baseline at the same volume: roughly €30–60 / month — above the whole project budget.

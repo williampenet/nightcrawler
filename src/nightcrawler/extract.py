@@ -1,8 +1,9 @@
 """Task `extract_events`: read events from an agenda page that has no structured data.
 
 The page text is untrusted data. The model only proposes events; every event is then checked
-deterministically against the page text (date in range, day number and title words present,
-performers present) and anything that does not check out is dropped.
+deterministically against the page text (date in range, title found in the page with its day
+and month written next to it, performers written next to it) and anything else is dropped.
+These checks catch made-up events; they are not a prompt-injection defence (see ADR-0004).
 """
 
 from __future__ import annotations
@@ -89,7 +90,9 @@ def page_text(html: str, max_chars: int = MAX_CHARS) -> str:
 def messages_for(text: str, today: date, venue: str) -> list[dict]:
     user = (
         f"Today is {today.isoformat()} ({today.strftime('%A')}). Venue: {venue}.\n"
-        "Agenda page text between the markers:\n<<<PAGE\n" + text + "\nPAGE>>>"
+        "Agenda page text between the markers:\n<<<PAGE\n"
+        + text.replace("<<<PAGE", "").replace("PAGE>>>", "")
+        + "\nPAGE>>>"
     )
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
 
@@ -109,20 +112,66 @@ def words(s: str) -> list[str]:
     return [w for w in re.split(r"[^a-z0-9]+", s) if len(w) >= 3]
 
 
+MONTHS = {
+    1: "janvier|janv|january|jan",
+    2: "fevrier|fevr|fev|february|feb",
+    3: "mars|march",
+    4: "avril|avr|april|apr",
+    5: "mai|may",
+    6: "juin|june|jun",
+    7: "juillet|juil|july|jul",
+    8: "aout|august|aug",
+    9: "septembre|sept|sep|september",
+    10: "octobre|oct|october",
+    11: "novembre|nov|november",
+    12: "decembre|dec|december",
+}
+BEFORE, AFTER = 8, 4  # lines around the title where its date must be written
+
+
+def plain(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
+def title_lines(title: str, lines: list[str]) -> list[int]:
+    """Lines that best contain the title (most title words; whole-name match for short names)."""
+    tw = set(words(title))
+    if not tw:  # "U2", "MØ": no 3-letter word, match the normalised name
+        key = norm(title)
+        return [i for i, line in enumerate(lines) if key and key in norm(line)]
+    counts = [len(tw & set(words(line))) for line in lines]
+    best = max(counts, default=0)
+    return [i for i, c in enumerate(counts) if c == best] if best else []
+
+
+def date_near(d: date, window: str) -> bool:
+    """Day and month of `d` written in the window (not as a price, time or ISO date)."""
+    day = rf"(?<![\d/:,.€-])(?:0?{d.day}|{d.day}er)(?![\d:€h-])"
+    month = rf"\b(?:{MONTHS[d.month]})\b|(?<=\d)[/.]0?{d.month}(?!\d)"
+    return bool(re.search(day, window) and re.search(month, window))
+
+
 def grounded(ev: dict, text: str, today: date) -> tuple[dict | None, str]:
-    """Return a cleaned event, or None with the reason it was rejected."""
+    """Return a cleaned event, or None with the reason it was rejected.
+
+    A filter against made-up events, not an injection defence: an instruction written in the
+    page can name text that is in the page. Injection resistance is measured by the eval.
+    """
     try:
         d = date.fromisoformat(ev["date"])
     except (KeyError, TypeError, ValueError):
         return None, "bad date"
     if not today - timedelta(days=1) <= d <= today + timedelta(days=400):
         return None, "date out of range"
-    if not re.search(rf"(?<!\d)0?{d.day}(?!\d)|\b{d.day}er\b", text):
-        return None, "day not in page"
-    text_words = set(words(text))
-    title_words = words(ev.get("title", ""))
-    if not title_words or not any(w in text_words for w in title_words):
+    lines = [plain(line) for line in text.split("\n")]
+    found = title_lines(ev.get("title", ""), lines)
+    if not found:
         return None, "title not in page"
+    windows = ["\n".join(lines[max(0, i - BEFORE) : i + AFTER + 1]) for i in found]
+    near = [w for w in windows if date_near(d, w)]
+    if not near:
+        return None, "date not next to title"
     time = ev.get("time")
     if time is not None:
         try:
@@ -131,7 +180,7 @@ def grounded(ev: dict, text: str, today: date) -> tuple[dict | None, str]:
                 raise ValueError
         except ValueError:
             time = None
-    flat = norm(text)
+    flat = norm(" ".join(near))
     performers = []
     for p in ev.get("performers") or []:
         key = norm(p)

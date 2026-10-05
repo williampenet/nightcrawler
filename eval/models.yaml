@@ -35,13 +35,15 @@ extract_events:
     params: 24B
     hosting: Mistral API (EU), pay per token
     provider: mistral
-    model: mistral-small-latest
-    price_eur_per_mtok: {in: 0.1, out: 0.3}
+    model: mistral-small-2506         # dated id, not the moving -latest alias
+    price_eur_per_mtok: {in: 0.1, out: 0.3}   # list price is USD 0.1 / 0.3; ~EUR at par
+    note: not evaluated — the API key needs a paid Mistral plan (outside the €20 budget)
 
-  - id: baseline-claude-opus
+  - id: reference-gold-claude-opus
     publisher: Anthropic (US)
     licence: Proprietary
     params: n/a
     hosting: US API — baseline only, never used at runtime
-    provider: gold                    # its answers are the reviewed gold labels in cases.jsonl
+    # Not measured: replays the gold labels this model wrote (F1 = 1 by construction).
+    provider: gold
     model: claude-opus-5-5

@@ -21,13 +21,14 @@ concurrency:
 
 env:
   LLAMA_CPP_TAG: b11425
+  # SHA-256 of the release archive; empty = report it as a notice so it can be pinned here
+  LLAMA_CPP_SHA256: ""
 
 jobs:
   eval:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
-      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       MODEL_CACHE: .cache/models
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +52,12 @@ jobs:
           mkdir -p .cache/llama && cd .cache/llama
           gh release download "$LLAMA_CPP_TAG" -R ggml-org/llama.cpp -p "llama-$LLAMA_CPP_TAG-bin-ubuntu-x64.*"
           for f in llama-*; do
+            sum=$(sha256sum "$f" | cut -d' ' -f1)
+            if [ -n "$LLAMA_CPP_SHA256" ]; then
+              [ "$sum" = "$LLAMA_CPP_SHA256" ] || { echo "::error::$f SHA-256 mismatch"; exit 1; }
+            else
+              echo "::notice::pin LLAMA_CPP_SHA256 for $f: $sum"
+            fi
             case "$f" in
               *.zip) unzip -q "$f" ;;
               *.tar.gz) tar xzf "$f" ;;
@@ -74,4 +81,6 @@ jobs:
           restore-keys: models-
 
       - name: Run the eval
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}  # only this step sees it
         run: python -m eval

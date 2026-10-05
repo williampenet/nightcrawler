@@ -7,11 +7,12 @@ from nightcrawler.extract import norm, words
 TITLE_SIM = 0.5
 
 
-def title_sim(a: str, b: str) -> float:
-    ta, tb = set(words(a)), set(words(b))
-    if not ta or not tb:
-        return 1.0 if norm(a) and norm(a) == norm(b) else 0.0
-    return len(ta & tb) / min(len(ta), len(tb))
+def title_sim(pred: str, gold: str) -> float:
+    """Share of the gold title's words found in the predicted title."""
+    tp, tg = set(words(pred)), set(words(gold))
+    if not tp or not tg:
+        return 1.0 if norm(pred) and norm(pred) == norm(gold) else 0.0
+    return len(tp & tg) / len(tg)
 
 
 def match(pred: list[dict], gold: list[dict]) -> list[tuple[int, int]]:

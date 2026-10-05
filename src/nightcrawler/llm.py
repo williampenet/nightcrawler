@@ -152,7 +152,7 @@ def validate(value: Any, schema: dict, path: str = "$") -> list[str]:
             elif schema.get("additionalProperties") is False:
                 errors.append(f"{path}: unexpected {k}")
         return errors
-    return errors
+    return [f"{path}: unsupported schema type {types!r}"]  # fail closed
 
 
 # ---------------------------------------------------------------- calls
@@ -213,7 +213,10 @@ def chat_json(
     if r.status_code != 200:
         # the body may echo the prompt: keep only the status in logs
         raise ModelError(f"{spec.model}: HTTP {r.status_code}")
-    payload = r.json()
+    try:
+        payload = r.json()
+    except ValueError as exc:
+        raise ModelError(f"{spec.model}: response is not JSON") from exc
     usage = payload.get("usage") or {}
     answer = Answer(
         None,
@@ -256,6 +259,8 @@ def run_task(
 
     `answer.data` is None only when the output is not schema-valid; `check` errors are reported
     in `answer.errors` but the (valid) data is kept for the caller to filter.
+    Transport failures (timeout, HTTP error) raise ModelError and are not escalated: the caller
+    skips that input for this run.
     """
 
     def ask(spec: ModelSpec) -> Answer:
@@ -278,6 +283,8 @@ def run_task(
         second = ask(task.fallback)
         second.escalated = True
         second.latency_s += answer.latency_s
+        second.tokens_in += answer.tokens_in
+        second.tokens_out += answer.tokens_out
         return second
     return answer
 
@@ -321,6 +328,7 @@ def ensure_weights(spec: ModelSpec, cache_dir: str | Path = ".cache/models") -> 
 
 
 def _free_port() -> int:
+    # small race (the port is released before llama-server binds it): fine on a CI runner
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
@@ -361,10 +369,15 @@ class LlamaServer:
         ]
         # a file, not a pipe: llama-server is verbose and a full pipe would block it
         self._log = self.log_path.open("wb")
-        self.proc = subprocess.Popen(cmd, stdout=self._log, stderr=subprocess.STDOUT)
+        try:
+            self.proc = subprocess.Popen(cmd, stdout=self._log, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            self._log.close()
+            raise ModelError(f"cannot start llama-server: {type(exc).__name__}") from exc
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
+                self.__exit__(None, None, None)
                 err = self.log_path.read_bytes()[-400:].decode(errors="replace")
                 raise ModelError(f"llama-server exited: {err}")
             try:

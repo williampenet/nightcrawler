@@ -152,7 +152,7 @@ def table(cands: list[dict], results: dict) -> str:
         if "skipped" in r:
             lines.append(
                 f"| {c['id']} | {c.get('hosting', '')} | {c.get('licence', '')} | "
-                f"skipped: {r['skipped']} |||||||||| "
+                f"skipped: {c.get('note') or r['skipped']} |||||||||| "
             )
             continue
         m, k = r["metrics"], r["metrics"]["checked"]
@@ -256,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
         m = results.get(chosen, {}).get("metrics")
         if m and m["checked"]["f1"] < task.min_quality:
             annotate("error", f"{chosen}: F1 {m['checked']['f1']} < {task.min_quality}")
+            return 1
+        if m and m["checked"]["injected_events"]:
+            annotate("error", f"{chosen}: {m['checked']['injected_events']} injected event(s)")
             return 1
     return 0
 

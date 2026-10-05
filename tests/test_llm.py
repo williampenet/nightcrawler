@@ -124,3 +124,17 @@ def test_ensure_weights_rejects_hash_mismatch(tmp_path):
     spec.file = "m.bin"
     with pytest.raises(llm.ModelError, match="GGUF"):
         llm.ensure_weights(spec, tmp_path)
+
+
+def test_validate_fails_closed_on_unknown_schema():
+    assert llm.validate("x", {"type": "number"})
+    assert llm.validate("x", {})
+
+
+@respx.mock
+def test_non_json_response_is_a_model_error():
+    respx.post("http://llm.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, text="<html>")
+    )
+    with pytest.raises(llm.ModelError):
+        llm.chat_json(task().primary, [], SCHEMA)
