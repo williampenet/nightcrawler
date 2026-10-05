@@ -1,8 +1,10 @@
 # PRD – Nightcrawler
 
+> **v2 change (2026-10-05):** Nightcrawler is now a personal app for William only, with easy sharing to friends. Multi-user requirements move to "Later". Spotify login becomes the taste source (Development Mode allows the owner plus up to 4 test users).
+
 | | |
 |---|---|
-| Status | ✋ Validated on 2026-10-05 |
+| Status | v2 — personal app (PM decision 2026-10-05, evening); v1 validated earlier that day |
 | PM | William Penet |
 | Author | Claude (from PM brief, discovery session of 2026-10-05) |
 | Related | Experiment plan "Plan d'expérimentation – sorties culturelles" (90-day, Claude Doc) |
@@ -20,7 +22,8 @@ Discovery has also become harder to build: since November 2024 Spotify no longer
 ## 2. Target users & jobs-to-be-done
 
 - **Primary (V1)**: the PM, living in Villeurbanne (Lyon metropolitan area), eclectic and niche-heavy music taste, goes out regularly but feels he misses things.
-- **Secondary (V2+)**: his friends, then any music lover in a city. The V1 must not depend on manual, user-specific setup, so that opening to new users costs nothing.
+- **Friends (recipients, not users)**: they receive concerts William shares (WhatsApp, Signal, SMS…) and open a link; they need no account.
+- **Later, maybe**: other music lovers. Not designed for now (v2 decision).
 
 Jobs-to-be-done:
 1. *When a concert I would love is announced near me, I want to hear about it without searching, so I don't miss it.*
@@ -50,13 +53,13 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - **Automatic venue discovery**: venues found from event aggregators and maps, their agendas detected and connected without manual setup; a user can add a venue by pasting its URL.
 - **Event collection**: daily refresh, de-duplication across sources.
 - **Artist identification**: each billed name linked to a canonical artist, with a confidence score.
-- **Taste profile** from the user's listening history (V1 imports the PM's existing history; generic import paths for any user, see FR-4).
+- **Taste profile** from William's Spotify account (login in the browser), editable by hand (FR-4).
 - **Affinity scoring**: a combination of co-listening, audio similarity and venue-text signals, explainable ("because it sounds like X").
 - **Views**: list and calendar; concert page with audio preview, explanation, ticket link, share.
 - **Notifications**: weekly email digest; immediate Telegram alerts for urgent cases.
 - **Feedback**: "relevant / not for me" on each concert, used to tune the score.
 - **"Missed concerts" retro**: after 4 weeks, a 2-minute review of past matching concerts.
-- **Sharing**: a WhatsApp share link (no API).
+- **Sharing (first-class)**: the phone's native share sheet (WhatsApp, Signal, SMS, mail…), copy link, deep link to a concert (FR-10).
 - **Mobile-first installable web app (PWA)**, also usable on desktop.
 
 ### Out of scope
@@ -71,13 +74,13 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 
 | ID | As a… | I want… | So that… | Priority |
 |---|---|---|---|---|
-| US-01 | new user | to give only my area and my listening history | I get recommendations without any other setup | Must |
+| US-01 | user | to connect my Spotify account once | my tastes are known without typing them | Must |
 | US-02 | user | a weekly digest of the best upcoming concerts for me | I don't have to search | Must |
 | US-03 | user | an immediate alert when an artist I love announces a date or when a matching concert is selling out | I don't miss tickets | Should |
 | US-04 | user | to see why a concert is recommended | I trust the pick and decide faster | Must |
 | US-05 | user | to listen to an extract on the concert page | I can judge an unknown artist in seconds | Must |
 | US-06 | user | a direct link to the official ticket page | I can buy in one tap | Must |
-| US-07 | user | to share a concert on WhatsApp | I can rally friends | Must |
+| US-07 | user | to share a concert in two taps on WhatsApp or any app | I can rally friends | Must |
 | US-08 | user | to browse concerts as a list and as a calendar | I can both discover and plan | Must |
 | US-09 | user | to mark a concert "relevant" or "not for me" | the next picks get better | Must |
 | US-10 | user | to add a venue by pasting its URL | the tool covers places it missed | Should |
@@ -99,10 +102,10 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - Each billed name is resolved to a canonical artist (MusicBrainz ID as pivot), using links published by the venue, catalogue searches (MusicBrainz, Deezer), country and venue-size consistency, and a confidence score.
 - AC: ≥ 90 % precision above the confidence threshold, measured on concerts where the venue itself links the artist; below the threshold, the artist is shown as "to confirm".
 
-**FR-4 Taste profile (US-01)**
-- V1: import of the PM's existing listening history.
-- Generic paths for any user, none of which depend on the restricted Spotify API: the Spotify personal data export (GDPR file), a ListenBrainz or Last.fm account, or a short onboarding questionnaire of seed artists.
-- AC: a profile can be built from each path without manual help.
+**FR-4 Taste profile (US-01)** — v2
+- Spotify login in the browser (OAuth Authorization Code + PKCE, no server, no secret): top artists (short, medium, long term) and followed artists become the seeds; only artist names are kept, the token is never stored.
+- Seeds can be edited by hand; a public ListenBrainz account can also be imported.
+- AC: one click on "Connecter Spotify" fills "Mes goûts"; the "Pour moi" sort works right after.
 
 **FR-5 Affinity scoring (US-04)**
 - A cascade according to what is known about the artist: co-listening similarity (ListenBrainz, Deezer) for known artists; audio similarity of extracts for lesser-known ones; references extracted from the venue's text ("in the vein of…"), co-billing and venue affinity for the rest. Signals are combined into one score; weights are tuned by user feedback.
@@ -111,8 +114,8 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 
 **FR-6 Feed and concert page (US-05, US-06, US-07, US-08)**
 - List view sorted by score, calendar view by date, filters by date and venue.
-- Concert page: date, venue, artists, reason, audio preview (Deezer extracts), official ticket link, WhatsApp share link.
-- AC: from the digest, reaching a playing preview takes ≤ 2 taps; the share link opens WhatsApp with a prefilled message.
+- Concert page: date, venue, artists, reason, audio preview (Deezer extracts), official ticket link, share button (FR-10).
+- AC: from the digest, reaching a playing preview takes ≤ 2 taps.
 
 **FR-7 Notifications (US-02, US-03)**
 - Weekly email digest (top picks + at least one discovery).
@@ -127,6 +130,11 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - After 4 weeks of collection, the app lists past concerts that matched the profile; the user answers "I knew / I missed it / not for me".
 - AC: completable in ≤ 2 minutes; results measure the problem (target: ≥ 3 missed per month, "didn't know" ≥ 50 % of causes).
 
+**FR-10 Sharing (US-07)** — v2
+- "Partager" opens the device's native share sheet (WhatsApp, Signal, SMS, mail…); on desktop, a WhatsApp link and "Copier le lien".
+- The message holds title, venue, day and time and a link: the event page when there is one, else a Nightcrawler link that opens the page on that concert.
+- AC: sharing takes ≤ 2 taps on a phone; a friend opening the link sees the concert without any account.
+
 ## 7. Non-functional requirements
 
 - **Cost**: ≤ 20 € per month in total, free tiers first.
@@ -137,7 +145,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - **Freshness**: daily collection; alerts within 24 h.
 - **Accessibility**: WCAG 2.1 AA on the main flows.
 - **Language**: UI in French; code and docs in English.
-- **Multi-user readiness**: no user-specific configuration in code; data model scoped per user from day one, even if V1 has one user.
+- **Single user (v2)**: built for William; zone and data sources stay in config, so another city or user remains possible later without a rewrite.
 
 ## 8. Risks & open questions
 
@@ -163,3 +171,4 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 | Manual labelling to evaluate | Does not scale to other users | Backtest on listening history + in-app feedback |
 | Keep a 4-week diary of missed concerts | Manual effort | Automated 2-minute "missed concerts" retro |
 | One weekly notification | Some concerts need fast reaction | Two rhythms: weekly digest + immediate alerts |
+| "No manual setup, works for anyone" (v1) | Spotify login caps at 5 users and needs Premium; a generic app cannot use it | PM pivot (v2): personal app, Spotify login for William, sharing to friends instead of multi-user |
