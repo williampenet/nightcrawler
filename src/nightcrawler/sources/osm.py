@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+
+import httpx
 
 from ..config import Zone
 from ..http import Fetcher
@@ -12,6 +15,12 @@ from ..models import Venue
 log = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_MIRRORS = (
+    OVERPASS_URL,
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 AMENITIES = (
     "music_venue",
@@ -91,10 +100,29 @@ def parse(payload: dict) -> list[Venue]:
     return venues
 
 
-def discover(zone: Zone, fetcher: Fetcher) -> list[Venue]:
-    resp = fetcher.post(OVERPASS_URL, data={"data": build_query(zone)})
-    if resp.status != 200:
-        raise RuntimeError(f"Overpass returned HTTP {resp.status}")
-    venues = parse(json.loads(resp.text))
-    log.info("OpenStreetMap: %d venues", len(venues))
-    return venues
+def discover(
+    zone: Zone, fetcher: Fetcher, mirrors=OVERPASS_MIRRORS, backoff: float = 10.0
+) -> list[Venue]:
+    """Query Overpass, retrying busy servers and falling back to mirrors."""
+    query = build_query(zone)
+    errors: list[str] = []
+    for url in mirrors:
+        for attempt in range(2):
+            try:
+                resp = fetcher.post(url, data={"data": query})
+            except httpx.HTTPError as exc:
+                errors.append(f"{url}: {type(exc).__name__}")
+                break
+            if resp.status == 200:
+                try:
+                    venues = parse(json.loads(resp.text))
+                except ValueError:
+                    errors.append(f"{url}: invalid JSON")
+                    break
+                log.info("OpenStreetMap: %d venues (%s)", len(venues), url)
+                return venues
+            errors.append(f"{url}: HTTP {resp.status}")
+            if resp.status not in RETRY_STATUSES:
+                break
+            time.sleep(backoff * (attempt + 1))
+    raise RuntimeError("Overpass unavailable: " + "; ".join(errors))
