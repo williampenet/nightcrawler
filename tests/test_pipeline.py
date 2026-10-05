@@ -31,9 +31,9 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     assert report["venues"] == 3
     assert report["probe_status"] == {"structured": 2, "no_website": 1}
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
-    # "Drone Night" (MusicEvent) and "Impro libre #4" (keyword at a theatre);
-    # the workshop is dropped.
-    assert [c["title"] for c in concerts] == ["Drone Night", "Impro libre #4"]
+    # "Drone Night" (MusicEvent) is kept; the workshop and "Impro libre #4"
+    # (improvisation theatre, no music signal) are dropped.
+    assert [c["title"] for c in concerts] == ["Drone Night"]
     venues = json.loads((tmp_path / "data/venues.json").read_text())
     assert {v["name"]: v["concerts"] for v in venues}["Le Petit Bulbe"] == 1
     assert "| Venues found | 3 |" in summary_markdown(report)
