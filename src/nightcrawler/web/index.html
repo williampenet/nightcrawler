@@ -25,6 +25,10 @@
           Indique des artistes que tu aimes, un par ligne. Ils restent dans ce navigateur :
           rien n'est envoyé à Nightcrawler. Leurs styles sont lus sur MusicBrainz.
         </p>
+        <div class="row" id="spotify-row" hidden>
+          <button type="button" id="spotify-connect" class="primary">Connecter Spotify</button>
+          <span class="muted">Importe tes artistes les plus écoutés et suivis. Seuls leurs noms sont gardés, dans ce navigateur.</span>
+        </div>
         <label for="seeds" class="visually-hidden">Artistes que tu aimes</label>
         <textarea id="seeds" rows="6" placeholder="Sunn O)))&#10;Moondog&#10;Brigitte Fontaine"></textarea>
         <div class="row">
@@ -77,6 +81,7 @@
     </p>
   </footer>
   <script src="scoring.js"></script>
+  <script src="spotify.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

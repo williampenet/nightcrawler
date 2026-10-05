@@ -52,6 +52,8 @@ python -m nightcrawler run --out site       # real run, needs internet
 python -m http.server -d site 8000          # then open http://localhost:8000
 ```
 
+Spotify login (optional, personal use): create an app on the Spotify for Developers dashboard (owner needs Spotify Premium; Development Mode allows 5 users), register the redirect URI `https://williampenet.github.io/nightcrawler/`, and put its public Client ID in `config/app.yaml` (`spotify_client_id`). No secret is needed ([ADR-0003](docs/adr/0003-spotify-login-pkce.md)).
+
 Optional secret: `TICKETMASTER_API_KEY` (GitHub Actions secret) adds Ticketmaster events.
 
 ## Monthly cost

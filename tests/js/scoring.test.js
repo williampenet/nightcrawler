@@ -84,3 +84,7 @@ test("weekend in Europe/Paris, late Sunday and across the DST change", () => {
   const sunday = new Date("2026-10-25T20:00:00Z");
   assert.equal(S.inWhen("weekend", "2026-10-25T21:00:00Z", sunday, key), true);
 });
+
+test("mergeNames keeps commas inside names", () => {
+  assert.deepEqual(S.mergeNames(["Earth"], ["Tyler, The Creator", "earth", "x"]), ["Earth", "Tyler, The Creator"]);
+});
