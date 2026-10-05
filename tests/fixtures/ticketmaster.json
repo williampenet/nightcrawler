@@ -1,0 +1,7 @@
+{"_embedded": {"events": [
+ {"name": "Big Band Tour", "url": "https://www.ticketmaster.fr/e/1",
+  "dates": {"start": {"localDate": "2026-10-20", "dateTime": "2026-10-20T18:00:00Z"}},
+  "_embedded": {"venues": [{"id": "V1", "name": "Le Petit Bulbe", "location": {"latitude": "45.7501", "longitude": "4.8501"}, "address": {"line1": "1 rue X"}, "city": {"name": "Lyon"}}],
+                "attractions": [{"name": "Big Band"}]}},
+ {"name": "No venue", "dates": {"start": {"localDate": "2026-10-21"}}}
+]}, "page": {"totalPages": 1}}
