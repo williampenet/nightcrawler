@@ -16,3 +16,6 @@ models/
 *.pth
 *.pkl
 eval/results/
+.cache/
+site/
+*.egg-info/

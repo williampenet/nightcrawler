@@ -1,0 +1,7 @@
+# The area Nightcrawler watches. Change these values to run it for another city.
+name: Lyon metropolitan area
+latitude: 45.7578   # Place Bellecour
+longitude: 4.8320
+radius_km: 15
+timezone: Europe/Paris
+window_days: 60     # how far ahead concerts are collected
