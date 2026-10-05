@@ -1,0 +1,77 @@
+name: Model eval
+
+# Runs every candidate of eval/models.yaml, local ones on CPU with llama.cpp (no GPU, €0).
+# Results: job summary + annotations (docs/MODEL_EVAL.md is updated from them).
+on:
+  pull_request:
+    paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
+            .github/workflows/eval.yml]
+  push:
+    branches: [main]
+    paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
+            .github/workflows/eval.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LLAMA_CPP_TAG: b11425
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      MODEL_CACHE: .cache/models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -e .
+
+      - name: Cache llama.cpp
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/llama
+          key: llama-${{ env.LLAMA_CPP_TAG }}-ubuntu-x64
+      - name: Download llama.cpp (official release)
+        if: steps.llama-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .cache/llama && cd .cache/llama
+          gh release download "$LLAMA_CPP_TAG" -R ggml-org/llama.cpp -p "llama-$LLAMA_CPP_TAG-bin-ubuntu-x64.*"
+          for f in llama-*; do
+            case "$f" in
+              *.zip) unzip -q "$f" ;;
+              *.tar.gz) tar xzf "$f" ;;
+            esac
+            rm -f "$f"
+          done
+      - name: Locate llama-server
+        run: |
+          bin=$(find "$PWD/.cache/llama" -type f -name llama-server | head -1)
+          test -n "$bin" || { echo "::error::llama-server not found in the release"; exit 1; }
+          chmod +x "$bin"
+          echo "LLAMA_SERVER=$bin" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$(dirname "$bin")" >> "$GITHUB_ENV"
+          echo "::notice::llama.cpp $LLAMA_CPP_TAG, $(nproc) CPUs, $(free -g | awk '/Mem/{print $2}') GB RAM"
+
+      - name: Cache model weights (SHA-256 verified on use)
+        uses: actions/cache@v4
+        with:
+          path: .cache/models
+          key: models-${{ hashFiles('eval/models.yaml') }}
+          restore-keys: models-
+
+      - name: Run the eval
+        run: python -m eval

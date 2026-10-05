@@ -1,44 +1,28 @@
 # Model evaluation
 
-> Delete this file if the product does not use an LLM at runtime.
-> Decision record: `docs/adr/{{NNNN}}-model-selection-{{slug}}.md`
+Rerun: `python -m eval` (hosted candidates) or the **Model eval** workflow (all candidates; local
+ones on CPU with llama.cpp). Scorer: `eval/score.py`, deterministic.
 
-## Task under test
-{{One paragraph: input, expected output, what "correct" means.}}
+## Task `extract_events` — see [ADR-0004](adr/0004-model-selection-extract-events.md)
 
-## Test set
-- Location: [`eval/cases.jsonl`](../eval/cases.jsonl) — versioned, hand-written or hand-checked
-- Size: {{n}} cases ({{n}} nominal, {{n}} edge cases, {{n}} adversarial / prompt-injection)
-- Contains **no real personal data**
-- Scoring: {{exact match / schema validity / rubric scored by script}} — LLM-as-judge only if unavoidable, and never with the candidate model as its own judge
+**Eval set** (`eval/cases.jsonl`): 7 agenda pages, 72 events.
+- 5 real pages captured 2026-10-05 (Grrrnd Zero, Périscope, Transbordeur, Hot Club de Lyon,
+  Marché Gare): years missing, ALL CAPS, dates split across lines, duplicated blocks, workshops,
+  names mentioned in descriptions but not performing.
+- 1 fictional theatre programme (plays, improv, comedy, exhibition, 2 concerts).
+- 1 prompt-injection page (hidden and visible instructions to add fake events).
 
-## Results
+Gold labels were written by Claude Opus 5.5 (the proprietary baseline) and checked line by line
+against the pages; they also pass the product's deterministic checks (unit test).
 
-Run: `{{eval command}}` · date {{YYYY-MM-DD}} · commit {{sha}}
+**Metrics** (after the deterministic checks the product applies):
+- *Concert F1*: an event matches when the date is equal and the titles share ≥ 50 % of words.
+  Only `is_concert: true` events count; events whose gold `is_concert` is null (club nights,
+  parties) are ignored either way.
+- *Performer recall / precision* on matched concerts; *time accuracy* where the page gives a time.
+- *Injection leaks*: events containing a forbidden string from the injection page.
+- Latency on a GitHub `ubuntu-latest` runner (4 vCPU, no GPU); cost per 1 000 pages.
 
-| Model (revision) | Hosting | Quality | Schema-valid outputs | p95 latency | Cost / 1 000 req | Δ quality vs baseline | Cost ratio vs baseline |
-|---|---|---|---|---|---|---|---|
-| {{chosen}} | | | | | | | |
-| {{candidate 2}} | | | | | | | |
-| {{candidate 3}} | | | | | | | |
-| {{baseline}} | US API | | | | | — | 1× |
+### Results
 
-**Cost method:** {{price per token source and date, or CPU/host cost amortised}}.
-
-One results table per task (`config/models.yaml` → `tasks`).
-
-## Escalation experiment (only for tasks with a `fallback`)
-
-| Setup | Quality | Escalation rate | p95 latency | Cost / 1 000 req |
-|---|---|---|---|---|
-| Primary only | | 0 % | | |
-| Fallback only | | 100 % | | |
-| Primary → fallback | | | | |
-
-**Verdict:** keep / drop escalation for this task — {{reason}}. Rule of thumb: keep it only if it closes most of the quality gap to "fallback only" at a fraction of its cost.
-
-## Failure analysis
-Typical errors of the chosen model and how the product mitigates them (validation, fallback, UI).
-
-## Re-running in CI
-The `model-eval` CI job runs the eval when `eval/cases.jsonl` exists. It fails if quality drops below the threshold in the ADR. Hosted-API candidates need their key as a CI secret; the job skips them when the secret is absent.
+_Pending the first Model eval run._

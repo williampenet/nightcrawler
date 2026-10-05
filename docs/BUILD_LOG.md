@@ -30,6 +30,10 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:dev | build | WIP-29 sharing: native share sheet, copy link, deep link to a concert (PR #17) | |
 | 2026-10-05 | agent:reviewer | review WIP-30 | REQUEST_CHANGES: 3 blocking (ADR not amended for Spotify OAuth, callback/token handling untested, comma-splitting of imported names) + 6 non-blocking; all fixed | |
 | 2026-10-05 | agent:dev | build | WIP-30 Spotify login (PKCE in the browser), ADR-0003 | [ADR](adr/0003-spotify-login-pkce.md) |
+| 2026-10-05 | agent:dev | build | WIP-31 public Spotify Client ID; William confirms Spotify import and "Pour toi" ranking work live | |
+| 2026-10-05 | agent:qa | inspect live site (Claude in Chrome) | 87/115 concerts from one aggregator page; key venues unreadable (no structured data) → coverage chantier WIP-32 | |
+| 2026-10-05 | human:william | scope | Approves WIP-32: open-weight / local LLM use case for agenda extraction | |
+| 2026-10-05 | agent:dev | build | WIP-33 provider abstraction (`llm.py`, `config/models.yaml`), `extract_events` task with deterministic checks, eval set (7 pages, 72 events), runner, Model eval workflow (llama.cpp on CPU), ADR-0004 draft | [ADR](adr/0004-model-selection-extract-events.md) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

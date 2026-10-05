@@ -1,0 +1,47 @@
+# Candidates compared per task (same fields as config/models.yaml, plus documentation fields).
+# Local candidates run only where LLAMA_SERVER points to a llama.cpp `llama-server` binary
+# (the Model eval workflow); hosted ones only when their API key is set.
+
+extract_events:
+  - id: ministral-3-3b-q4
+    publisher: Mistral AI (FR)
+    licence: Apache-2.0
+    params: 3.4B + 0.4B vision encoder (unused)
+    hosting: local CPU (llama.cpp), €0
+    provider: local
+    model: ministral-3-3b-instruct-2512
+    repo: mistralai/Ministral-3-3B-Instruct-2512-GGUF
+    revision: eb599d408350ea2bb60452cb86be7c7b2fc28227
+    file: Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
+    sha256: 9ed150d4367e68df0ac8e1540f6ddc65b42d0ee26378329d1ecbca60f93fc5f8
+
+  - id: qwen3-1.7b-q8
+    publisher: Alibaba Qwen (CN)
+    licence: Apache-2.0
+    params: 1.7B
+    hosting: local CPU (llama.cpp), €0
+    provider: local
+    model: qwen3-1.7b
+    repo: Qwen/Qwen3-1.7B-GGUF
+    revision: 90862c4b9d2787eaed51d12237eafdfe7c5f6077
+    file: Qwen3-1.7B-Q8_0.gguf
+    sha256: 061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a
+    extra:
+      chat_template_kwargs: {enable_thinking: false}
+
+  - id: mistral-small-api
+    publisher: Mistral AI (FR)
+    licence: Apache-2.0 (weights); used here as a hosted EU API
+    params: 24B
+    hosting: Mistral API (EU), pay per token
+    provider: mistral
+    model: mistral-small-latest
+    price_eur_per_mtok: {in: 0.1, out: 0.3}
+
+  - id: baseline-claude-opus
+    publisher: Anthropic (US)
+    licence: Proprietary
+    params: n/a
+    hosting: US API — baseline only, never used at runtime
+    provider: gold                    # its answers are the reviewed gold labels in cases.jsonl
+    model: claude-opus-5-5

@@ -1,0 +1,18 @@
+# Task -> model routing (CLAUDE.md, LLM policy). Business code calls tasks, never models.
+# No API keys here: keys come from env vars (CI / host secrets).
+
+tasks:
+  extract_events:
+    adr: docs/adr/0004-model-selection-extract-events.md
+    # Provisional until ADR-0004 is accepted from the eval results in docs/MODEL_EVAL.md.
+    primary:
+      provider: local                 # llama.cpp llama-server on CPU, in the Pipeline workflow
+      model: ministral-3-3b-instruct-2512
+      repo: mistralai/Ministral-3-3B-Instruct-2512-GGUF
+      revision: eb599d408350ea2bb60452cb86be7c7b2fc28227
+      file: Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
+      sha256: 9ed150d4367e68df0ac8e1540f6ddc65b42d0ee26378329d1ecbca60f93fc5f8
+    temperature: 0.0
+    limits:
+      max_output_tokens: 2048
+      timeout_ms: 600000
