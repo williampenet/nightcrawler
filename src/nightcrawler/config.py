@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -18,6 +18,15 @@ class Zone:
     timezone: str = "Europe/Paris"
     window_days: int = 60
     osm_extract_url: str | None = None
+    # Gancio community agendas: ({"name": ..., "url": ...}, ...)
+    gancio_instances: tuple[dict, ...] = field(default=())
+
+    def contains(self, latitude: float, longitude: float) -> bool:
+        """True when the point is within radius_km of the zone centre (haversine)."""
+        p1, p2 = math.radians(self.latitude), math.radians(latitude)
+        dl = math.radians(longitude - self.longitude)
+        h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        return 2 * 6371.0 * math.asin(math.sqrt(h)) <= self.radius_km
 
     def bbox(self) -> tuple[float, float, float, float]:
         """(min_lon, min_lat, max_lon, max_lat) enclosing the radius."""
@@ -41,4 +50,8 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         timezone=str(data.get("timezone", "Europe/Paris")),
         window_days=int(data.get("window_days", 60)),
         osm_extract_url=data.get("osm_extract_url"),
+        gancio_instances=tuple(
+            {"name": str(i.get("name") or i["url"]), "url": str(i["url"])}
+            for i in data.get("gancio_instances") or []
+        ),
     )

@@ -469,6 +469,17 @@ function render() {
   }
 }
 
+// Community agendas (Gancio instances from the zone config) credited in the footer.
+function renderAgendaCredits(report) {
+  const box = document.getElementById("agendas");
+  const list = ((report.sources || {}).gancio || {}).instances || [];
+  const links = list.map((i) => safeLink(i.url, i.name)).filter(Boolean);
+  if (!box || !links.length) return;
+  box.replaceChildren(links.length > 1 ? "Agendas communautaires : " : "Agenda communautaire : ");
+  links.forEach((a, i) => box.append(...(i ? [", ", a] : [a])));
+  box.append(".");
+}
+
 function renderSources(venues, report) {
   const s = report.probe_status || {};
   const art = report.artists || {};
@@ -591,6 +602,7 @@ async function main() {
     setupControls();
     render();
     renderSources(venues, report);
+    renderAgendaCredits(report);
     focusDeepLink();
     finishSpotify();
   } catch {
