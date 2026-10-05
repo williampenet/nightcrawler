@@ -161,16 +161,15 @@ def test_short_names_and_page_markers():
     assert user.count("PAGE>>>") == 1 and user.endswith("PAGE>>>")
 
 
-def test_neighbour_date_is_corrected_from_the_page():
-    text = "Buck\nJeudi 08 Oct\nGrande Scène\n8/10€\nFranges\nMardi 20 Oct\nGrande Scène"
-    shifted = {
-        "title": "Buck",
-        "date": "2026-10-20",
-        "time": "20h",
-        "performers": [],
-        "is_concert": True,
-    }
-    ev, why = grounded(shifted, text, TODAY, "date_after_title")
-    assert why == "date corrected" and ev["date"] == "2026-10-08" and ev["time"] == "20:00"
-    kept, notes = check_events({"layout": "date_after_title", "events": [shifted]}, text, TODAY)
-    assert kept[0]["date"] == "2026-10-08" and notes == ["date corrected"]
+def test_time_is_normalised_by_code():
+    from nightcrawler.extract import clean_time
+
+    assert [clean_time(t) for t in ("20h30", "9h", "21:00", "", None, "25:00", "soir")] == [
+        "20:30",
+        "09:00",
+        "21:00",
+        None,
+        None,
+        None,
+        None,
+    ]

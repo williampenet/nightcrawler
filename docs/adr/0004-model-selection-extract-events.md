@@ -1,6 +1,6 @@
 # ADR-0004: Model selection — agenda extraction (`extract_events`)
 
-- **Status:** Proposed (decision filled from the first CI eval run)
+- **Status:** Accepted — no model enabled for now (2026-10-05)
 - **Date:** 2026-10-05
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md)
@@ -38,8 +38,13 @@ See `docs/MODEL_EVAL.md` (7 pages, 72 events: 5 real Lyon agendas captured 2026-
 1 mixed theatre programme, 1 prompt-injection page).
 
 ## Decision
-Pending the CI run. Provisional routing: `config/models.yaml` → `tasks.extract_events` =
-Ministral 3 3B Q4_K_M, local, revision `eb599d40…`, SHA-256 pinned.
+**Do not enable LLM extraction yet.** Best candidate Ministral 3 3B Q4_K_M (local, Apache 2.0,
+FR): concert F1 ≈ 0.6 with 0 injection leaks, below the 0.85 bar; Qwen3 1.7B is lower and
+obeyed the injection page. Details in `docs/MODEL_EVAL.md` (runs 1–2).
+`config/models.yaml` keeps Ministral as the routed model for the task so the harness, the eval
+and a future pipeline integration (WIP-34) use one path; nothing in the pipeline calls it.
+Coverage of these venues comes first from structured sources (Ville Morte / Gancio, WIP-36).
+Revisit with structure-preserving input (one block per HTML card) — same eval, same bar.
 
 **Escalation:** none for now. A hosted fallback (Mistral Small) would need a paid plan; it is reconsidered only if no local model meets the quality bar.
 

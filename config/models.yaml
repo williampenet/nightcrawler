@@ -4,7 +4,7 @@
 tasks:
   extract_events:
     adr: docs/adr/0004-model-selection-extract-events.md
-    # Provisional until ADR-0004 is accepted from the eval results in docs/MODEL_EVAL.md.
+    # ADR-0004: best candidate, below the quality bar: not called by the pipeline yet.
     primary:
       provider: local                 # llama.cpp llama-server on CPU, in the Pipeline workflow
       model: ministral-3-3b-instruct-2512

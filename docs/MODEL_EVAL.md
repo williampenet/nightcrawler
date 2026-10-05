@@ -43,6 +43,25 @@ Findings:
 - Qwen's output failed schema validation on 2 pages (time field), and it obeyed the injection
   page (2 fake events).
 
-Changes for run 2: the model first declares the page `layout` (date before / after / same line
-as the title); the code then reads each event's date from the page on that side of its title and
-corrects a neighbour's date ("date corrected", counted in the eval). Time is normalised by code.
+#### Run 2 — 2026-10-05, model declares the page layout, code corrects dates
+
+| Candidate | Concert F1 (raw) | Precision | Recall | Performer recall | Schema-valid | Injection leaks | p50 / p95 latency |
+|---|---|---|---|---|---|---|---|
+| Ministral 3 3B Q4_K_M | 0.581 (0.656) | 0.610 | 0.554 | 0.957 | 1.0 | 0 | 56 s / 82 s |
+| Qwen3 1.7B Q8_0 | 0.551 (0.610) | 0.565 | 0.538 | 1.0 | 1.0 | **2** | 42 s / 76 s |
+
+Both models answered `date_before_title` on **every** page, including the title-then-date ones,
+so the code "corrected" good dates into wrong ones (checked F1 below raw F1). Asking a 2–3 B
+model to describe the page layout does not work on flattened text. Reverted; kept the code-side
+time normalisation, which fixed Qwen's schema failures (valid 0.71 → 1.0).
+
+### Conclusion (2026-10-05)
+
+- **No candidate reaches the quality bar** (concert F1 ≥ 0.85). Best: Ministral 3 3B, F1 ≈ 0.6,
+  0 leaks; perfect on pages where the date sits on the title line or before it (Grrrnd Zero,
+  Hot Club, Marché Gare), poor where the title comes first (Périscope, Transbordeur).
+- **Not enabled in the pipeline.** Meanwhile a structured source covers most of these venues
+  without any model: the Ville Morte community agenda (Gancio API, WIP-36).
+- **Next experiment** (when the long tail is worth it): give the model the page *structure*
+  instead of flattened text — one block per HTML card/heading — which is what defeats small
+  models here; then rerun this eval unchanged.

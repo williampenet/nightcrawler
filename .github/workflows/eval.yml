@@ -2,10 +2,8 @@ name: Model eval
 
 # Runs every candidate of eval/models.yaml, local ones on CPU with llama.cpp (no GPU, €0).
 # Results: job summary + annotations (docs/MODEL_EVAL.md is updated from them).
+# Not on pull requests: a run holds a runner for ~40 min and starved the PR checks.
 on:
-  pull_request:
-    paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
-            .github/workflows/eval.yml]
   push:
     branches: [main]
     paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
@@ -21,8 +19,8 @@ concurrency:
 
 env:
   LLAMA_CPP_TAG: b11425
-  # SHA-256 of the release archive; empty = report it as a notice so it can be pinned here
-  LLAMA_CPP_SHA256: ""
+  # SHA-256 of llama-b11425-bin-ubuntu-x64.tar.gz (recorded by the first run, 2026-10-05)
+  LLAMA_CPP_SHA256: 6a47856d08ecc4030b2fa8b8bf761c96d142d689567f69a0f75e42de430dc34c
 
 jobs:
   eval:
