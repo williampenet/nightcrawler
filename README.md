@@ -2,7 +2,7 @@
 
 > Nightcrawler finds the concerts near you that match your taste — including artists you don't know yet — and tells you before they sell out.
 
-**Live demo:** {{DEMO_URL}} · **Backlog:** [Linear – WiP]({{LINEAR_PROJECT_URL}})
+**Live demo:** https://williampenet.github.io/nightcrawler/ · **Backlog:** [Linear – WiP](https://linear.app/wip-coding/project/nightcrawler-bf075e17936e)
 
 ---
 
@@ -34,21 +34,26 @@ This project is part of **WiP – Vibe coding**, a series of products built by A
 6. Continuous deployment of `main`
 7. Demo + narrative ✋
 
-**Model choice** (if the product uses an LLM): {{chosen model, publisher, licence, hosting}} — selected against {{n}} candidates and a proprietary baseline. Quality {{x}} vs baseline {{y}}, cost {{z}}× lower. Details: [ADR]({{docs/adr/...}}) · [evaluation](docs/MODEL_EVAL.md).
+**Model choice:** no LLM in the POC. The planned LLM fallback for unstructured agenda pages (WIP-15) will get its own model-selection ADR.
 The build agents are Claude (Anthropic); the sovereignty / open-weights policy applies to the model running inside the product.
 
 **Human vs agent split:** see [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the dated log of every human and agent action.
 
 ## Stack
 
-{{Filled from the accepted ADRs.}}
+Python 3.12 batch pipeline run daily by GitHub Actions, static page on GitHub Pages ([ADR-0001](docs/adr/0001-poc-architecture.md)). Sources: OpenStreetMap (venues), venue websites (schema.org JSON-LD, microdata, iCal), Ticketmaster Discovery API (optional).
 
 ## Run locally
 
 ```bash
-{{commands}}
+pip install -e ".[dev]"
+pytest -q                                   # offline tests
+python -m nightcrawler run --out site       # real run, needs internet
+python -m http.server -d site 8000          # then open http://localhost:8000
 ```
+
+Optional secret: `TICKETMASTER_API_KEY` (GitHub Actions secret) adds Ticketmaster events.
 
 ## Monthly cost
 
-{{Estimate from ADR, target ≤ €20/month.}}
+€0/month for the POC (see ADR-0001). Target ≤ €20/month.

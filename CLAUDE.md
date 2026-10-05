@@ -5,7 +5,7 @@
 - Pitch: Nightcrawler finds the concerts near you that match your taste — including artists you don't know yet — and tells you before they sell out.
 - PRD: `docs/PRD.md` (source of truth for scope — do not build anything outside it)
 - Architecture decisions: `docs/adr/` (accepted ADRs are binding; propose a new ADR to change one)
-- Linear team: `WiP` · project: {{LINEAR_PROJECT}}
+- Linear team: `WiP` · project: [Nightcrawler](https://linear.app/wip-coding/project/nightcrawler-bf075e17936e)
 
 ## Roles
 - **William (human PM):** owns the problem, validates PRD, design, architecture and demo.
@@ -17,7 +17,7 @@
 2. **Green CI is mandatory** before merge. Never disable or skip a test to make CI pass.
 3. **Small PRs:** aim for < 400 changed lines. Split the ticket otherwise.
 4. **Log every meaningful action** in `docs/BUILD_LOG.md` (date, actor, action, link). Actor is `human:william` or `agent:<role>`.
-5. **Stop and ask the PM** only for: an irreversible decision, a scope change versus the PRD, or anything pushing the monthly cost above the budget in the ADRs.
+5. **Work autonomously:** commit, open and merge PRs (green CI + reviewer agent), update Linear and deploy without asking. **Stop and ask the PM** only for: an irreversible decision (data or repo deletion, rewriting published history), a scope change versus the PRD, an action only William can do (account creation, secrets), or anything pushing the monthly cost above the budget in the ADRs.
 6. **Secrets** never go in the repo. Use GitHub Actions secrets / the host's env vars and document the variable names in the README.
 7. Code, comments, commits, docs: **English**.
 
@@ -44,14 +44,22 @@ Goal: show we can pick the right model for a precise need without defaulting to 
 ## Commands
 ```bash
 # install
-{{install}}
-# dev server
-{{dev}}
-# tests
-{{test}}
-# lint / typecheck
-{{lint}}
+pip install -e ".[dev]"
+# full run (needs internet; writes site/ — open site/index.html through a local server)
+python -m nightcrawler run --out site && python -m http.server -d site 8000
+# tests (offline, recorded fixtures in tests/fixtures)
+pytest -q
+# lint / format
+ruff check . && ruff format --check .
 ```
+
+## Architecture (ADR-0001)
+- `src/nightcrawler/sources/` venue and event sources (OpenStreetMap, Ticketmaster)
+- `probe.py` finds a venue's agenda and reads it via `structured.py` (JSON-LD, microdata, iCal)
+- `events.py` keeps concerts, applies the time window, de-duplicates
+- `pipeline.py` orchestrates; `web/` is the static page copied into `site/`
+- Zone settings live in `config/zone.yaml`; never hard-code a city or a venue.
+- Network access from the agent workspace is blocked: test with fixtures, run for real in the `Pipeline` workflow.
 
 ## Definition of done
 - Acceptance criteria of the Linear ticket are met
