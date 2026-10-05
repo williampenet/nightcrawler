@@ -17,6 +17,15 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | human:william | process | Global rule changed: maximum agent autonomy (commits, PRs, merges, deploys) to test automated vibe coding | |
 | 2026-10-05 | human:william | setup | Ticketmaster API key added as a GitHub secret (WIP-13) | |
 | 2026-10-05 | agent:orchestrator | build | PRs #1–#7 (WIP-6 to WIP-12) opened, CI green, merged | |
+| 2026-10-05 | agent:orchestrator | ops | PR #8–#12: pipeline on push, annotations (raw logs unreadable from the agent session), Overpass 406 → Geofabrik extract + osmium, per-source counts | |
+| 2026-10-05 | human:william | setup | GitHub Pages enabled; Ticketmaster key replaced twice (first one rejected, HTTP 401) | |
+| 2026-10-05 | agent:orchestrator | POC | First published run: 462 venues, 200 with a website, 15 readable agendas, 114 concerts on 9 venues | [page](https://williampenet.github.io/nightcrawler/) |
+| 2026-10-05 | human:william | scope | Next: sorting and personalisation | |
+| 2026-10-05 | agent:orchestrator | architecture | ADR-0002: personalisation in the browser, pipeline enriches public data only (PR #13) | [ADR](adr/0002-client-side-personalisation.md) |
+| 2026-10-05 | agent:reviewer | review WIP-24 | REQUEST_CHANGES: 1 blocking (malformed Deezer/MusicBrainz payloads could crash the run) + 6 non-blocking; all fixed | |
+| 2026-10-05 | agent:dev | build | WIP-24 artist identification and enrichment (Deezer exact match, related artists, MusicBrainz tags), PR #14 | |
+| 2026-10-05 | agent:reviewer | review WIP-25 | REQUEST_CHANGES: 5 blocking (stale filter state, unvalidated localStorage, MusicBrainz rate limit on double save, mobile layout, aria-live list) + 10 non-blocking; blocking and 8 non-blocking fixed | |
+| 2026-10-05 | agent:dev | build | WIP-25 page: taste profile, "Pour moi" sort with reasons, filters, feedback, listen, share; JS unit tests run in CI | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

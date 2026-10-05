@@ -12,14 +12,44 @@
     <h1>Nightcrawler</h1>
     <p class="sub" id="zone">Concerts à venir</p>
     <nav>
-      <button type="button" data-tab="concerts" aria-pressed="true">Concerts</button>
+      <button type="button" data-tab="list" aria-pressed="true">Concerts</button>
       <button type="button" data-tab="sources" aria-pressed="false">Sources</button>
     </nav>
   </header>
 
   <main>
-    <section id="concerts" aria-live="polite">
-      <p class="muted">Chargement…</p>
+    <section id="list">
+      <details id="taste">
+        <summary>Mes goûts</summary>
+        <p class="muted">
+          Indique des artistes que tu aimes, un par ligne. Ils restent dans ce navigateur :
+          rien n'est envoyé à Nightcrawler. Leurs styles sont lus sur MusicBrainz.
+        </p>
+        <label for="seeds" class="visually-hidden">Artistes que tu aimes</label>
+        <textarea id="seeds" rows="6" placeholder="Sunn O)))&#10;Moondog&#10;Brigitte Fontaine"></textarea>
+        <div class="row">
+          <button type="button" id="save-seeds" class="primary">Enregistrer</button>
+          <button type="button" id="reset" class="ghost">Tout effacer</button>
+        </div>
+        <div class="row">
+          <label for="lb-user">Importer depuis ListenBrainz</label>
+          <input id="lb-user" type="text" autocomplete="off" placeholder="nom d'utilisateur">
+          <button type="button" id="lb-import" class="ghost">Importer</button>
+        </div>
+        <p id="taste-status" class="muted" aria-live="polite"></p>
+      </details>
+
+      <div class="toolbar">
+        <label class="visually-hidden" for="sort">Tri</label><select id="sort"></select>
+        <label class="visually-hidden" for="when">Quand</label><select id="when"></select>
+        <label class="visually-hidden" for="style">Style</label><select id="style"></select>
+        <label class="visually-hidden" for="venue">Lieu</label><select id="venue"></select>
+        <span id="count" class="muted" role="status"></span>
+      </div>
+
+      <div id="concerts">
+        <p class="muted">Chargement…</p>
+      </div>
     </section>
 
     <section id="sources" hidden>
@@ -35,12 +65,18 @@
 
   <footer>
     <p>
-      Liste collectée automatiquement sur les sites des lieux et des sources ouvertes,
-      sans tri par pertinence. Vérifiez la date et le lieu sur la page de l'événement.
+      Liste collectée automatiquement sur les sites des lieux et des sources ouvertes.
+      Le tri « Pour moi » est calculé dans ton navigateur à partir de données publiques
+      et de tes choix ; aucune IA ne décide à ta place. Vérifie la date et le lieu sur la page de l'événement.
+    </p>
+    <p>
       Lieux : © contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL).
+      Styles : <a href="https://musicbrainz.org/">MusicBrainz</a> (CC BY-NC-SA).
+      Artistes proches et extraits : <a href="https://www.deezer.com/">Deezer</a>.
       <span id="generated"></span>
     </p>
   </footer>
+  <script src="scoring.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
