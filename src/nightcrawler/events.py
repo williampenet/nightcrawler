@@ -12,30 +12,41 @@ from .models import Concert, RawEvent, Venue
 
 MUSIC_TYPES = {"MusicEvent", "Festival"}
 
-# Strong signals: enough to keep an event even if it also looks like another art form.
+# A performance: the only thing that keeps an activity ("Atelier + concert").
+PERFORMANCE_WORDS = re.compile(
+    r"\b(concerts?|showcase|r[ée]cital|release party)\b",
+    re.IGNORECASE,
+)
+# Strong music signals: they keep an event that also looks like another art form.
 STRONG_MUSIC_WORDS = re.compile(
-    r"\b(concerts?|live|dj|djs|showcase|r[ée]cital|jazz|rock|pop|rap|hip[- ]?hop|[ée]lectro"
-    r"|techno|house|folk|punk|metal|noise|drone|musiques?|orchestre|quatuor|quartet"
-    r"|chorale|op[ée]ra|soul|funk|blues|reggae|dub|chanson|release party)\b",
+    PERFORMANCE_WORDS.pattern
+    + r"|\b(dj|djs|jazz|rock|pop|rap|hip[- ]?hop|[ée]lectro|techno|house|folk|punk|metal"
+    r"|noise|drone|musiques?|orchestre|quatuor|quartet|chorale|op[ée]ra|soul|funk|blues"
+    r"|reggae|dub|chanson)\b",
     re.IGNORECASE,
 )
+# Weak signals: enough at a non-music venue, never enough to override an exclusion.
 MUSIC_WORDS = re.compile(
-    STRONG_MUSIC_WORDS.pattern + r"|\b(musical|trio|soir[ée]e|tourn[ée]e|tour)\b",
+    STRONG_MUSIC_WORDS.pattern + r"|\b(live|musical|trio|soir[ée]e|tourn[ée]e|tour)\b",
     re.IGNORECASE,
 )
-# Checked in the title only (ambiguous in a description, e.g. "on stage").
-NOT_MUSIC_TITLE_WORDS = re.compile(
+# Activities (not shows): only a performance word overrides them ("Atelier DJ" is dropped).
+# Ambiguous words ("stage", "cours", ...) count in the title only.
+ACTIVITY_WORDS = re.compile(r"\b(ateliers?|exposition|conf[ée]rences?)\b", re.IGNORECASE)
+ACTIVITY_TITLE_WORDS = re.compile(
     r"\b(stage|expo|vernissage|table ronde|projection|cin[ée]ma|lecture|march[ée]|brocante"
-    r"|yoga|cours|visite|formation|r[ée]union|th[ée][âa]tre)\b",
+    r"|yoga|cours|visite|formation|r[ée]union)\b",
     re.IGNORECASE,
 )
-# Genre words, checked in the title and the description.
-NOT_MUSIC_WORDS = re.compile(
-    r"\b(atelier|ateliers|exposition|conf[ée]rence|impro|improvisations?|improvis[ée]e?s?"
-    r"|humour|humoriste|stand[- ]?up|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
+ACTIVITY_TYPES = {"ExhibitionEvent", "EducationEvent"}
+# Other performing arts: a strong music signal overrides them ("Impro jazz" is kept).
+OTHER_SHOW_WORDS = re.compile(
+    r"\b(impro|improvisations?|improvis[ée]e?s?|humour|humoriste|stand[- ]?up"
+    r"|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
     re.IGNORECASE,
 )
-NOT_MUSIC_TYPES = {"TheaterEvent", "ComedyEvent", "ExhibitionEvent", "EducationEvent"}
+OTHER_SHOW_TITLE_WORDS = re.compile(r"\bth[ée][âa]tre\b", re.IGNORECASE)  # often a venue name
+OTHER_SHOW_TYPES = {"TheaterEvent", "ComedyEvent"}
 
 
 def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
@@ -45,12 +56,20 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
     if event.source == "ticketmaster":
         return "ticketing category: music"
     text = " ".join(filter(None, (event.title, event.description)))
-    looks_other = (
-        NOT_MUSIC_WORDS.search(text)
-        or NOT_MUSIC_TITLE_WORDS.search(event.title)
-        or NOT_MUSIC_TYPES & set(event.types)
+    types = set(event.types)
+    activity = (
+        ACTIVITY_WORDS.search(text)
+        or ACTIVITY_TITLE_WORDS.search(event.title)
+        or ACTIVITY_TYPES & types
     )
-    if looks_other and not STRONG_MUSIC_WORDS.search(text):
+    if activity and not PERFORMANCE_WORDS.search(text):
+        return None
+    other_show = (
+        OTHER_SHOW_WORDS.search(text)
+        or OTHER_SHOW_TITLE_WORDS.search(event.title)
+        or OTHER_SHOW_TYPES & types
+    )
+    if other_show and not STRONG_MUSIC_WORDS.search(text):
         return None
     if venue is not None and venue.is_music_venue:
         return "music venue"
@@ -65,28 +84,47 @@ def _slug(text: str) -> str:
 
 
 # Words too generic to identify a place ("Salle du Lavoir, Lyon" -> "lavoir").
-GENERIC_PLACE_WORDS = re.compile(
-    r"\b(le|la|les|l|du|de|des|d|au|aux|the|salle|club|bar|theatre|lyon|villeurbanne"
-    r"|france)\b"
+GENERIC_PLACE_WORDS = {
+    *("le la les l du de des d au aux the et en".split()),
+    *("salle club bar theatre lyon villeurbanne france".split()),
+    # rooms inside a venue ("Grande salle", "Studio"): never a separate place
+    *("grande grand petite petit studio amphi amphitheatre scene foyer".split()),
+}
+ADDRESS_RE = re.compile(
+    r"^\s*\d|\b(rue|avenue|av|boulevard|bd|quai|cours|chemin|place|all[ée]e|impasse"
+    r"|mont[ée]e)\b",
+    re.IGNORECASE,
 )
-ADDRESS_RE = re.compile(r"^\s*\d|\b(rue|avenue|av|boulevard|bd|quai|cours|chemin)\b", re.I)
-MIN_PLACE_KEY = 4
+MIN_PLACE_KEY = 4  # shorter keys are too vague to name a place
+MIN_PARTIAL_KEY = 6  # a partial match ("Bourse du Travail" in a longer name) needs more
+
+
+def place_tokens(name: str) -> tuple[str, ...]:
+    """Normalised words of a place name, without accents or generic/room words."""
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return tuple(t for t in re.split(r"[^a-z0-9]+", text) if t and t not in GENERIC_PLACE_WORDS)
 
 
 def place_key(name: str) -> str:
-    """Normalised place name without accents, punctuation or generic words."""
-    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
-    text = GENERIC_PLACE_WORDS.sub(" ", re.sub(r"[^a-z0-9]+", " ", text))
-    return re.sub(r"[^a-z0-9]+", "", text)
+    return "".join(place_tokens(name))
 
 
-def _names_match(a: str, b: str) -> bool:
-    short, long = sorted((a, b), key=len)
-    return len(short) >= MIN_PLACE_KEY and short in long
+def _names_match(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """Same place: equal keys, or the shorter name's words appear in a row in the longer."""
+    short, long = sorted((a, b), key=lambda t: len("".join(t)))
+    key = "".join(short)
+    if len(key) < MIN_PLACE_KEY:
+        return False
+    if short == long:
+        return True
+    if len(key) < MIN_PARTIAL_KEY:
+        return False
+    n = len(short)
+    return any(long[i : i + n] == short for i in range(len(long) - n + 1))
 
 
 def attribute_venue(
-    event: RawEvent, venues: dict[str, Venue], keys: dict[str, str]
+    event: RawEvent, venues: dict[str, Venue], keys: dict[str, tuple[str, ...]]
 ) -> tuple[str, str | None]:
     """(venue id, venue name if not a known venue) where the event actually takes place.
 
@@ -97,14 +135,20 @@ def attribute_venue(
     page_venue = venues.get(event.venue_id)
     if event.source == "ticketmaster" or not loc or ADDRESS_RE.search(loc):
         return event.venue_id, None
-    key = place_key(loc)
-    if len(key) < MIN_PLACE_KEY:
+    tokens = place_tokens(loc)
+    key = "".join(tokens)
+    if len(key) < MIN_PLACE_KEY:  # e.g. a room of the venue ("Grande salle") or a city
         return event.venue_id, None
-    if page_venue is not None and _names_match(key, keys.get(page_venue.id, "")):
-        return event.venue_id, None
-    matches = [vid for vid, vkey in keys.items() if _names_match(key, vkey)]
+    matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
     if matches:
-        return max(matches, key=lambda vid: len(keys[vid])), None
+        # exact name first, then the closest length; ties stay at the page's venue
+        def rank(vid: str) -> tuple[bool, int, bool]:
+            vkey = "".join(keys[vid])
+            return (vkey != key, abs(len(vkey) - len(key)), vid != event.venue_id)
+
+        return min(matches, key=rank), None
+    if page_venue is not None and page_venue.is_music_venue:
+        return event.venue_id, None  # most likely one of its own rooms or stages
     return f"place:{key}", loc
 
 
@@ -122,7 +166,7 @@ def build_concerts(
     tz: ZoneInfo,
 ) -> list[Concert]:
     merged: dict[str, Concert] = {}
-    keys = {vid: place_key(v.name) for vid, v in venues.items()}
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
     for ev in raw:
         if not in_window(ev, now, window_days):
             continue

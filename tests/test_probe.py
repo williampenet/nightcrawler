@@ -36,6 +36,16 @@ def test_agenda_candidates_prefers_concert_pages():
     }
 
 
+def test_agenda_candidates_past_and_word_boundaries():
+    html = (
+        '<a href="/concerts-passes/">Concerts passés</a><a href="/archives/">Agenda archives</a>'
+        '<a href="/concertation/">Agenda</a><a href="/concerts/">Concerts</a>'
+    )
+    found = agenda_candidates(html, "https://x.example/")
+    assert found[:2] == ["https://x.example/concerts/", "https://x.example/concertation/"]
+    assert set(found[2:]) == {"https://x.example/archives/", "https://x.example/concerts-passes/"}
+
+
 def test_platforms(fixture_text):
     assert platforms_in(fixture_text("home.html")) == ["shotgun"]
 
