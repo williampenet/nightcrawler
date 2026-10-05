@@ -187,6 +187,7 @@ function setStatus(text) {
 // ---------------------------------------------------------------- feedback
 
 function feedback(concert, kind, li) {
+  if (concert.id === deepLinkId) deepLinkId = null; // the user acted on it: normal rules apply again
   const keys = concert.artists || [];
   const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
   const toggle = (list, values, on) => {
@@ -214,11 +215,57 @@ function feedback(concert, kind, li) {
 
 // ---------------------------------------------------------------- rendering
 
-function shareLink(c) {
-  const when = `${shortFmt.format(new Date(c.start))} ${timeFmt.format(new Date(c.start))}`;
-  const link = c.url && safeLink(c.url, "") ? " " + c.url : ""; // only http(s) links travel
-  const text = `${c.title} — ${c.venue_name}, ${when}${link}`;
-  return safeLink("https://wa.me/?text=" + encodeURIComponent(text), "Partager");
+function focusDeepLink() {
+  if (!deepLinkId) return;
+  const row = [...document.querySelectorAll("#concerts li")].find((r) => r.dataset.id === deepLinkId);
+  if (!row) return;
+  row.classList.add("target");
+  row.tabIndex = -1;
+  row.scrollIntoView({ block: "center" });
+  row.focus({ preventScroll: true });
+}
+
+// Deep link to one concert on this page: #c-<12 hex chars>
+const DEEP_LINK_RE = /^#c-([0-9a-f]{12})$/;
+let deepLinkId = null;
+
+function concertLink(c) {
+  if (c.url && safeLink(c.url, "")) return c.url; // only http(s) links travel
+  return `${location.origin}${location.pathname}#c-${c.id}`;
+}
+
+function shareMessage(c) {
+  const d = new Date(c.start);
+  const t = timeFmt.format(d);
+  const when = shortFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`);
+  return { title: c.title, text: `${c.title} — ${c.venue_name}, ${when}`, url: concertLink(c) };
+}
+
+function shareControls(c) {
+  const msg = shareMessage(c);
+  const wrap = el("span", null, "share");
+  if (navigator.share) {
+    // phones: the native share sheet (WhatsApp, Signal, SMS, mail…)
+    wrap.append(
+      button("Partager", "ghost", () => navigator.share(msg).catch(() => {})),
+    );
+    return wrap;
+  }
+  const wa = safeLink("https://wa.me/?text=" + encodeURIComponent(`${msg.text} ${msg.url}`), "WhatsApp");
+  if (wa) wrap.append(wa);
+  if (navigator.clipboard) {
+    const copy = button("Copier le lien", "ghost", () =>
+      navigator.clipboard.writeText(`${msg.text} ${msg.url}`).then(
+        () => {
+          copy.textContent = "Copié";
+          setTimeout(() => (copy.textContent = "Copier le lien"), 2000);
+        },
+        () => {},
+      ),
+    );
+    wrap.append(copy);
+  }
+  return wrap;
 }
 
 function listenButton(c, body) {
@@ -269,7 +316,7 @@ function concertRow(c, match, showDate) {
   const actions = el("span", null, "links");
   const page = c.url && safeLink(c.url, "Page");
   const ticket = c.ticket_url && c.ticket_url !== c.url && safeLink(c.ticket_url, "Billets");
-  for (const x of [page, ticket, listenButton(c, body), shareLink(c)]) if (x) actions.append(x);
+  for (const x of [page, ticket, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   if ((c.artists || []).length) {
     const liked = c.artists.every((k) => state.liked.includes(k));
     const like = button(liked ? "Aimé" : "Pertinent", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
@@ -286,6 +333,7 @@ function filtered() {
   const now = new Date();
   const hidden = new Set(state.hidden);
   return DATA.concerts.filter((c) => {
+    if (c.id === deepLinkId) return true; // a shared link always shows its concert
     if (hidden.has(c.id)) return false;
     if (state.venue && c.venue_id !== state.venue) return false;
     if (state.style) {
@@ -450,9 +498,12 @@ async function main() {
       `${concerts.length} concerts dans les ${report.zone.window_days} prochains jours · ${report.zone.name}`;
     document.getElementById("generated").textContent =
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
+    const m = DEEP_LINK_RE.exec(location.hash);
+    deepLinkId = m && concerts.some((c) => c.id === m[1]) ? m[1] : null;
     setupControls();
     render();
     renderSources(venues, report);
+    focusDeepLink();
   } catch {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
   }
