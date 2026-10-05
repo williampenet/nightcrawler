@@ -11,6 +11,7 @@ from pathlib import Path
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
+from .sources.osm import osmium_filter_expressions as osm_filters
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -22,7 +23,17 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--zone", default="config/zone.yaml")
     r.add_argument("--out", default="site")
     r.add_argument("--cache", default=".cache/http")
+    r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
+    o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
+    o.add_argument("--zone", default="config/zone.yaml")
     args = ap.parse_args(argv)
+
+    if args.cmd == "osm-extract-plan":
+        zone = load_zone(args.zone)
+        print(f"OSM_URL={zone.osm_extract_url or ''}")
+        print("OSM_BBOX=" + ",".join(str(x) for x in zone.bbox()))
+        print("OSM_FILTERS='" + " ".join(osm_filters()) + "'")
+        return 0
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs may carry keys
@@ -31,7 +42,12 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     shutil.copytree(WEB_DIR, out, dirs_exist_ok=True)
     try:
-        report = run(load_zone(args.zone), out, Fetcher(cache_dir=args.cache))
+        report = run(
+            load_zone(args.zone),
+            out,
+            Fetcher(cache_dir=args.cache),
+            osm_extract=Path(args.osm_extract),
+        )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets
         annotate("error", f"Pipeline failed: {type(exc).__name__}: {str(exc)[:500]}")

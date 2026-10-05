@@ -28,6 +28,32 @@ jobs:
           cache: pip
       - run: pip install .
 
+      # Venues from a regional OpenStreetMap extract, rebuilt once a week
+      # (Overpass rejects CI runners with HTTP 406; ADR-0001 / WIP-19).
+      - id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - id: osm-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/osm
+          key: osm-${{ hashFiles('config/zone.yaml', 'src/nightcrawler/sources/osm.py') }}-${{ steps.week.outputs.week }}
+      - name: Build the OSM venue extract
+        if: steps.osm-cache.outputs.cache-hit != 'true'
+        continue-on-error: true  # the pipeline falls back to Overpass
+        run: |
+          eval "$(python -m nightcrawler osm-extract-plan)"
+          [ -n "$OSM_URL" ] || { echo "::notice::No osm_extract_url in zone config"; exit 0; }
+          sudo apt-get install -y -qq osmium-tool > /dev/null
+          mkdir -p /tmp/osm
+          curl -fsSL --retry 3 -A "NightcrawlerBot/0.1 (+https://github.com/williampenet/nightcrawler)" \
+            -o /tmp/osm/region.osm.pbf "$OSM_URL"
+          osmium extract -b "$OSM_BBOX" /tmp/osm/region.osm.pbf -o /tmp/osm/zone.osm.pbf
+          osmium tags-filter /tmp/osm/zone.osm.pbf $OSM_FILTERS -o /tmp/osm/venues.osm.pbf
+          mkdir -p .cache/osm  # only now, so a failed build never caches an empty folder
+          osmium export /tmp/osm/venues.osm.pbf -f geojsonseq --add-unique-id=type_id \
+            -o .cache/osm/venues.geojsonseq
+          echo "::notice::OSM extract built: $(wc -l < .cache/osm/venues.geojsonseq) features"
+
       # Reuse yesterday's HTTP cache so venue sites are not hit twice within 20 hours.
       - uses: actions/cache@v4
         with:

@@ -44,3 +44,18 @@ def test_discover_all_fail(zone):
     fetcher = Fetcher(cache_dir=None, min_interval=0)
     with pytest.raises(RuntimeError, match="HTTP 400"):
         osm.discover(zone, fetcher, mirrors=("https://a.example/api",), backoff=0)
+
+
+def test_local_extract(zone, tmp_path):
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "venues.geojsonseq"
+    venues = osm.discover(zone, None, extract=fixture)
+    assert [v.id for v in venues] == ["osm:node/1", "osm:way/2"]  # far / unnamed dropped
+    assert abs(venues[1].latitude - 45.7625) < 1e-6
+
+
+def test_zone_bbox(zone):
+    min_lon, min_lat, max_lon, max_lat = zone.bbox()
+    assert min_lat < zone.latitude < max_lat and min_lon < zone.longitude < max_lon
+    assert round(max_lat - min_lat, 2) == 0.27  # 2 x 15 km

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,18 @@ class Zone:
     radius_km: float
     timezone: str = "Europe/Paris"
     window_days: int = 60
+    osm_extract_url: str | None = None
+
+    def bbox(self) -> tuple[float, float, float, float]:
+        """(min_lon, min_lat, max_lon, max_lat) enclosing the radius."""
+        dlat = self.radius_km / 111.32
+        dlon = self.radius_km / (111.32 * math.cos(math.radians(self.latitude)))
+        return (
+            round(self.longitude - dlon, 5),
+            round(self.latitude - dlat, 5),
+            round(self.longitude + dlon, 5),
+            round(self.latitude + dlat, 5),
+        )
 
 
 def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
@@ -27,4 +40,5 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         radius_km=float(data["radius_km"]),
         timezone=str(data.get("timezone", "Europe/Paris")),
         window_days=int(data.get("window_days", 60)),
+        osm_extract_url=data.get("osm_extract_url"),
     )
