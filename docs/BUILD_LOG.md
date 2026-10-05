@@ -30,8 +30,20 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:dev | build | WIP-29 sharing: native share sheet, copy link, deep link to a concert (PR #17) | |
 | 2026-10-05 | agent:reviewer | review WIP-30 | REQUEST_CHANGES: 3 blocking (ADR not amended for Spotify OAuth, callback/token handling untested, comma-splitting of imported names) + 6 non-blocking; all fixed | |
 | 2026-10-05 | agent:dev | build | WIP-30 Spotify login (PKCE in the browser), ADR-0003 | [ADR](adr/0003-spotify-login-pkce.md) |
+| 2026-10-05 | agent:dev | build | WIP-31 public Spotify Client ID; William confirms Spotify import and "Pour toi" ranking work live | |
+| 2026-10-05 | agent:qa | inspect live site (Claude in Chrome) | 87/115 concerts from one aggregator page; key venues unreadable (no structured data) → coverage chantier WIP-32 | |
+| 2026-10-05 | human:william | scope | Approves WIP-32: open-weight / local LLM use case for agenda extraction | |
+| 2026-10-05 | agent:dev | build | WIP-33 provider abstraction (`llm.py`, `config/models.yaml`), `extract_events` task with deterministic checks, eval set (7 pages, 72 events), runner, Model eval workflow (llama.cpp on CPU), ADR-0004 draft | [ADR](adr/0004-model-selection-extract-events.md) |
+| 2026-10-05 | agent:reviewer | review WIP-33 | REQUEST_CHANGES: 4 blocking (grounding accepted injected/misdated events, ADR overclaimed injection defence + no leak gate, unpinned mistral-small-latest, unbacked retention claim) + 12 non-blocking; blocking and most non-blocking fixed | |
+| 2026-10-05 | human:william | budget | No paid Mistral plan: the hosted EU candidate stays documented but is not evaluated | |
 | 2026-10-05 | agent:dev | build | WIP-35 venue attribution from event location (aggregator pages), "concerts" links ranked first in the probe, theatre/impro/humour/expo filter | |
 | 2026-10-05 | agent:dev | build | WIP-36 Gancio source (Ville Morte agenda): places merged with OSM venues, tag-driven concert filter, capped detail fetches | [PR #22](https://github.com/williampenet/nightcrawler/pull/22) |
+| 2026-10-05 | agent:reviewer | review WIP-35 | REQUEST_CHANGES: 4 blocking (room names became fake venues, longest match picked the wrong venue, substring match without word boundaries, genre words overrode atelier/conférence) + 6 non-blocking; fixed | PR #21 |
+| 2026-10-05 | human:william | scope | Validates source order: ticketing platforms, Ticketmaster, aggregators, LLM last; asks to test Ville Morte | |
+| 2026-10-05 | agent:qa | inspect Ville Morte (Claude in Chrome) | Gancio instance with a public JSON API: 218 events, 48 places incl. Grrrnd Zero, Périscope, Sonic, Marché Gare → WIP-36 | |
+| 2026-10-05 | agent:reviewer | review WIP-36 | REQUEST_CHANGES: 2 blocking (malformed place crashed or collapsed Gancio venues; clash with WIP-35) + 7 non-blocking; fixed, rebased on WIP-35 | PR #22 |
+| 2026-10-05 | agent:dev | eval | WIP-33 runs 1-2 on CPU: best Ministral 3 3B F1 ≈ 0.6 (bar 0.85), Qwen3 1.7B leaks injected events; LLM extraction not enabled (ADR-0004) | [MODEL_EVAL](MODEL_EVAL.md) |
+| 2026-10-05 | agent:dev | infra | GitHub hosted runners repeatedly not acquired while the 40-min eval ran; eval moved off pull requests | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

@@ -16,3 +16,9 @@ Model evaluation harness. Only for products that call an LLM at runtime; delete 
 5. Exit non-zero if the chosen model's quality is below `EVAL_MIN_QUALITY` (from the model-selection ADR).
 
 No real personal data in `cases.jsonl`. Results are committed only as the summary table in `docs/MODEL_EVAL.md`.
+
+## Nightcrawler
+- Task `extract_events`: 7 pages / 72 events, see `docs/MODEL_EVAL.md` for the set and the metrics.
+- Real pages were captured on 2026-10-05 (visible text, lightly trimmed); `today` is fixed in each case
+  so the set stays valid over time.
+- `provider: gold` replays the gold labels (the proprietary baseline that wrote them).
