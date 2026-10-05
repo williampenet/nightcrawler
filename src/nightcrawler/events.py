@@ -12,18 +12,41 @@ from .models import Concert, RawEvent, Venue
 
 MUSIC_TYPES = {"MusicEvent", "Festival"}
 
+# A performance: the only thing that keeps an activity ("Atelier + concert").
+PERFORMANCE_WORDS = re.compile(
+    r"\b(concerts?|showcase|r[ée]cital|release party)\b",
+    re.IGNORECASE,
+)
+# Strong music signals: they keep an event that also looks like another art form.
+STRONG_MUSIC_WORDS = re.compile(
+    PERFORMANCE_WORDS.pattern
+    + r"|\b(dj|djs|jazz|rock|pop|rap|hip[- ]?hop|[ée]lectro|techno|house|folk|punk|metal"
+    r"|noise|drone|musiques?|orchestre|quatuor|quartet|chorale|op[ée]ra|soul|funk|blues"
+    r"|reggae|dub|chanson)\b",
+    re.IGNORECASE,
+)
+# Weak signals: enough at a non-music venue, never enough to override an exclusion.
 MUSIC_WORDS = re.compile(
-    r"\b(concerts?|live|dj|djs|showcase|r[ée]cital|jazz|rock|pop|rap|hip[- ]?hop|[ée]lectro"
-    r"|techno|house|folk|punk|metal|noise|drone|impro\w*|musiques?|musical|orchestre"
-    r"|quatuor|quartet|trio|chorale|op[ée]ra|soul|funk|blues|reggae|dub|chanson|soir[ée]e"
-    r"|release party|tourn[ée]e|tour)\b",
+    STRONG_MUSIC_WORDS.pattern + r"|\b(live|musical|trio|soir[ée]e|tourn[ée]e|tour)\b",
     re.IGNORECASE,
 )
-NOT_MUSIC_WORDS = re.compile(
-    r"\b(atelier|stage|exposition|expo|vernissage|conf[ée]rence|table ronde|projection"
-    r"|cin[ée]ma|lecture|march[ée]|brocante|yoga|cours|visite|formation|r[ée]union)\b",
+# Activities (not shows): only a performance word overrides them ("Atelier DJ" is dropped).
+# Ambiguous words ("stage", "cours", ...) count in the title only.
+ACTIVITY_WORDS = re.compile(r"\b(ateliers?|exposition|conf[ée]rences?)\b", re.IGNORECASE)
+ACTIVITY_TITLE_WORDS = re.compile(
+    r"\b(stage|expo|vernissage|table ronde|projection|cin[ée]ma|lecture|march[ée]|brocante"
+    r"|yoga|cours|visite|formation|r[ée]union)\b",
     re.IGNORECASE,
 )
+ACTIVITY_TYPES = {"ExhibitionEvent", "EducationEvent"}
+# Other performing arts: a strong music signal overrides them ("Impro jazz" is kept).
+OTHER_SHOW_WORDS = re.compile(
+    r"\b(impro|improvisations?|improvis[ée]e?s?|humour|humoriste|stand[- ]?up"
+    r"|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
+    re.IGNORECASE,
+)
+OTHER_SHOW_TITLE_WORDS = re.compile(r"\bth[ée][âa]tre\b", re.IGNORECASE)  # often a venue name
+OTHER_SHOW_TYPES = {"TheaterEvent", "ComedyEvent"}
 
 
 def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
@@ -33,7 +56,20 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
     if event.source == "ticketmaster":
         return "ticketing category: music"
     text = " ".join(filter(None, (event.title, event.description)))
-    if NOT_MUSIC_WORDS.search(event.title):
+    types = set(event.types)
+    activity = (
+        ACTIVITY_WORDS.search(text)
+        or ACTIVITY_TITLE_WORDS.search(event.title)
+        or ACTIVITY_TYPES & types
+    )
+    if activity and not PERFORMANCE_WORDS.search(text):
+        return None
+    other_show = (
+        OTHER_SHOW_WORDS.search(text)
+        or OTHER_SHOW_TITLE_WORDS.search(event.title)
+        or OTHER_SHOW_TYPES & types
+    )
+    if other_show and not STRONG_MUSIC_WORDS.search(text):
         return None
     if venue is not None and venue.is_music_venue:
         return "music venue"
@@ -42,9 +78,104 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
     return None
 
 
+MUSIC_TAGS = {"concert", "concerts", "musique live", "dj set", "live", "dj"}
+NOT_MUSIC_TAGS = {
+    "théâtre",
+    "theatre",
+    "conférence",
+    "discussion",
+    "humour",
+    "stand-up",
+    "exposition",
+    "projection",
+    "atelier",
+    "bouffe",
+}
+
+
+def tag_reason(tags: list[str]) -> str | None:
+    """Decide from source tags: "tag: <tag>" keeps, "" drops, None = no verdict."""
+    tags = [t.strip().lower() for t in tags]
+    music = next((t for t in tags if t in MUSIC_TAGS), None)
+    if music:
+        return f"tag: {music}"
+    return "" if any(t in NOT_MUSIC_TAGS for t in tags) else None
+
+
 def _slug(text: str) -> str:
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+# Words too generic to identify a place ("Salle du Lavoir, Lyon" -> "lavoir").
+GENERIC_PLACE_WORDS = {
+    *("le la les l du de des d au aux the et en".split()),
+    *("salle club bar theatre lyon villeurbanne france".split()),
+    # rooms inside a venue ("Grande salle", "Studio"): never a separate place
+    *("grande grand petite petit studio amphi amphitheatre scene foyer".split()),
+}
+ADDRESS_RE = re.compile(
+    r"^\s*\d|\b(rue|avenue|av|boulevard|bd|quai|cours|chemin|place|all[ée]e|impasse"
+    r"|mont[ée]e)\b",
+    re.IGNORECASE,
+)
+MIN_PLACE_KEY = 4  # shorter keys are too vague to name a place
+MIN_PARTIAL_KEY = 6  # a partial match ("Bourse du Travail" in a longer name) needs more
+
+
+def place_tokens(name: str) -> tuple[str, ...]:
+    """Normalised words of a place name, without accents or generic/room words."""
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return tuple(t for t in re.split(r"[^a-z0-9]+", text) if t and t not in GENERIC_PLACE_WORDS)
+
+
+def place_key(name: str) -> str:
+    return "".join(place_tokens(name))
+
+
+def _names_match(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """Same place: equal keys, or the shorter name's words appear in a row in the longer."""
+    short, long = sorted((a, b), key=lambda t: len("".join(t)))
+    key = "".join(short)
+    if len(key) < MIN_PLACE_KEY:
+        return False
+    if short == long:
+        return True
+    if len(key) < MIN_PARTIAL_KEY:
+        return False
+    n = len(short)
+    return any(long[i : i + n] == short for i in range(len(long) - n + 1))
+
+
+def attribute_venue(
+    event: RawEvent, venues: dict[str, Venue], keys: dict[str, tuple[str, ...]]
+) -> tuple[str, str | None]:
+    """(venue id, venue name if not a known venue) where the event actually takes place.
+
+    Some venue sites list events held elsewhere (aggregators): the event's location
+    wins over the page's venue when it clearly names another place.
+    """
+    loc = event.location_name
+    page_venue = venues.get(event.venue_id)
+    # sources whose events carry their own venue are never re-attributed
+    exempt = event.source == "ticketmaster" or event.source.startswith("gancio:")
+    if exempt or not loc or ADDRESS_RE.search(loc):
+        return event.venue_id, None
+    tokens = place_tokens(loc)
+    key = "".join(tokens)
+    if len(key) < MIN_PLACE_KEY:  # e.g. a room of the venue ("Grande salle") or a city
+        return event.venue_id, None
+    matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
+    if matches:
+        # exact name first, then the closest length; ties stay at the page's venue
+        def rank(vid: str) -> tuple[bool, int, bool]:
+            vkey = "".join(keys[vid])
+            return (vkey != key, abs(len(vkey) - len(key)), vid != event.venue_id)
+
+        return min(matches, key=rank), None
+    if page_venue is not None and page_venue.is_music_venue:
+        return event.venue_id, None  # most likely one of its own rooms or stages
+    return f"place:{key}", loc
 
 
 def in_window(event: RawEvent, now: datetime, days: int) -> bool:
@@ -61,15 +192,19 @@ def build_concerts(
     tz: ZoneInfo,
 ) -> list[Concert]:
     merged: dict[str, Concert] = {}
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
     for ev in raw:
         if not in_window(ev, now, window_days):
             continue
-        venue = venues.get(ev.venue_id)
-        reason = concert_reason(ev, venue)
+        venue_id, place_name = attribute_venue(ev, venues, keys)
+        venue = venues.get(venue_id)
+        reason = tag_reason(ev.tags)
         if reason is None:
+            reason = concert_reason(ev, venue)
+        if not reason:
             continue
         start = ev.start.astimezone(tz)
-        key = f"{ev.venue_id}|{start.date().isoformat()}|{_slug(ev.title)}"
+        key = f"{venue_id}|{start.date().isoformat()}|{_slug(ev.title)}"
         cid = hashlib.sha1(key.encode()).hexdigest()[:12]
         if cid in merged:
             c = merged[cid]
@@ -83,8 +218,8 @@ def build_concerts(
             id=cid,
             title=ev.title,
             start=start.isoformat(),
-            venue_id=ev.venue_id,
-            venue_name=venue.name if venue else (ev.location_name or "?"),
+            venue_id=venue_id,
+            venue_name=venue.name if venue else (place_name or ev.location_name or "?"),
             url=ev.url,
             ticket_url=ev.ticket_url,
             performers=ev.performers,
