@@ -1,0 +1,6 @@
+{"elements": [
+ {"type": "node", "id": 1, "lat": 45.75, "lon": 4.85, "tags": {"amenity": "music_venue", "name": "Le Petit Bulbe", "website": "https://bulbe.example"}},
+ {"type": "way", "id": 2, "center": {"lat": 45.76, "lon": 4.83}, "tags": {"amenity": "theatre", "name": "Théâtre des Ombres", "contact:website": "ombres.example", "addr:street": "Rue Neuve", "addr:housenumber": "3", "addr:city": "Lyon"}},
+ {"type": "node", "id": 3, "lat": 45.77, "lon": 4.86, "tags": {"amenity": "bar", "live_music": "yes", "name": "Bar à Sons"}},
+ {"type": "node", "id": 4, "lat": 45.70, "lon": 4.80, "tags": {"amenity": "nightclub"}}
+]}
