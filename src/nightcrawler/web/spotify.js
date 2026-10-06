@@ -133,8 +133,9 @@
   // One-off test of what the Web API really answers to this app (Development Mode), to
   // replace assumptions by facts (WIP-48). Only HTTP statuses, counts and which fields are
   // present leave this function: no names, no ids, nothing is stored.
-  // Reference for the expected restrictions: Spotify, "Introducing some changes to our Web API"
-  // (2024-11-27) and "Web API Changelog - February 2026".
+  // Expected restrictions, to compare with the results:
+  // https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api
+  // https://developer.spotify.com/documentation/web-api/references/changes/february-2026
   async function probe(token, fetchImpl = fetch) {
     const rows = [];
     const call = async (label, path, describe) => {
@@ -177,6 +178,16 @@
       `${((((d && d.artists) || {}).items) || []).length} reçus`);
     await call("Recherche (limite 20)", "/search?q=Air&type=artist&limit=20", (d) =>
       `${((((d && d.artists) || {}).items) || []).length} reçus`);
+    const skipped = (label, endpoint) =>
+      rows.push({ label, endpoint, status: 0, detail: "non testé (aucun identifiant reçu)" });
+    if (!artistId) {
+      for (const [l, e] of [["Artiste", "/artists/{id}"], ["Plusieurs artistes", "/artists"],
+        ["Artistes proches", "/artists/{id}/related-artists"],
+        ["Top titres d'un artiste", "/artists/{id}/top-tracks"], ["Recommandations", "/recommendations"]]) {
+        skipped(l, "GET " + e);
+      }
+    }
+    if (!trackId) skipped("Caractéristiques audio", "GET /audio-features");
     if (artistId) {
       const id = encodeURIComponent(artistId);
       await call("Artiste", `/artists/${id}`, artistFields);
