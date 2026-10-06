@@ -32,6 +32,51 @@ const STATUS_LABEL = {
   no_website: "pas de site",
 };
 
+// ---------------------------------------------------------------- visible messages (WIP-47)
+
+// A dismissible banner at the top of the page, for errors and Spotify connection news.
+// Errors use role="alert", information role="status" (MDN, ARIA live regions:
+// https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/alert_role
+// https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role).
+// Registered before anything else runs, so an early failure is shown too.
+function shortMessage(err) {
+  const m = String((err && err.message) || err || "erreur inconnue").replace(/\s+/g, " ").trim();
+  return m.length > 120 ? m.slice(0, 117) + "…" : m;
+}
+
+let bannerReturn = null; // the element that had focus when the banner appeared
+let bannerTimer = 0;
+function showBanner(text, kind = "error") {
+  const box = document.getElementById("banner");
+  if (!box) return;
+  const out = box.querySelector(".banner-text");
+  if (box.hidden) bannerReturn = document.activeElement;
+  box.className = `banner ${kind}`;
+  box.setAttribute("role", kind === "error" ? "alert" : "status");
+  box.hidden = false;
+  // clear then set, so the same message twice is announced twice
+  out.textContent = "";
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => (out.textContent = text), 50);
+}
+
+function notify(text, kind = "error") {
+  setStatus(text);
+  const taste = document.getElementById("taste");
+  if (taste) taste.open = true;
+  showBanner(text, kind);
+}
+
+document.getElementById("banner-close").addEventListener("click", () => {
+  document.getElementById("banner").hidden = true;
+  const back = bannerReturn && bannerReturn !== document.body && document.contains(bannerReturn) ? bannerReturn : null;
+  bannerReturn = null;
+  if (back) back.focus();
+  else refocus(null); // first button of the list
+});
+window.addEventListener("error", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.error || e.message)}`));
+window.addEventListener("unhandledrejection", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.reason)}`));
+
 // ---------------------------------------------------------------- state (this browser only)
 
 const DATA = { concerts: [], artists: {}, venues: [], report: null };
@@ -113,7 +158,8 @@ async function fetchTags(name) {
 let tagRun = 0; // id of the running tag loop; a new save or a reset makes older loops stop
 let tagLoopBusy = false;
 
-async function setSeeds(names) {
+// lead: a line kept in front of the progress messages (the Spotify import count)
+async function setSeeds(names, lead = "") {
   const known = new Map(state.seeds.map((s) => [S.norm(s.name), s]));
   state.seeds = names.map((n) => known.get(S.norm(n)) || { name: n, tags: null });
   saveState();
@@ -126,18 +172,21 @@ async function setSeeds(names) {
     const todo = state.seeds.filter((s) => s.tags === null);
     let failed = 0;
     for (let i = 0; i < todo.length && run === tagRun; i++) {
-      setStatus(`Récupération des styles : ${i + 1}/${todo.length}…`);
+      setStatus(`${lead}Récupération des styles : ${i + 1}/${todo.length}…`);
       const tags = await fetchTags(todo[i].name);
       if (tags === null) failed++;
       else todo[i].tags = tags;
       saveState();
-      await sleep(1100); // MusicBrainz: at most 1 request per second
+      // MusicBrainz allows 1 request per second on average per client:
+      // https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting
+      await sleep(1100);
     }
     if (run === tagRun) {
       setStatus(
-        failed
-          ? `Goûts enregistrés ; styles indisponibles pour ${failed} artiste(s), réessaie plus tard.`
-          : "Goûts enregistrés dans ce navigateur.",
+        lead +
+          (failed
+            ? `Goûts enregistrés ; styles indisponibles pour ${failed} artiste(s), réessaie plus tard.`
+            : "Goûts enregistrés dans ce navigateur."),
       );
       render();
     }
@@ -189,6 +238,8 @@ const SPOTIFY_CALLBACK = (() => {
 
 async function connectSpotify() {
   try {
+    // crypto.subtle only exists in secure contexts (HTTPS or localhost):
+    // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/subtle
     if (!window.crypto || !window.crypto.subtle) {
       return notify("Connexion Spotify impossible : ce navigateur ne permet pas le chiffrement nécessaire (page non sécurisée ?).");
     }
@@ -237,13 +288,13 @@ async function finishSpotify() {
     box.value = merged.join("\n");
     state.sort = "me";
     document.getElementById("sort").value = "me";
-    // styles are then read from MusicBrainz in the background (about 1 s per artist)
-    setSeeds(merged).catch((err) => showBanner(`Une erreur est survenue : ${shortMessage(err)}`));
-    notify(
+    const done =
       `${names.length} artistes importés depuis Spotify` +
-        (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : "."),
-      failed ? "error" : "info",
-    );
+      (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : ".");
+    notify(done, failed ? "error" : "info");
+    // styles are then read from MusicBrainz in the background (about 1 s per artist);
+    // the progress line keeps the import count in front
+    setSeeds(merged, done + " ").catch((err) => showBanner(`Une erreur est survenue : ${shortMessage(err)}`));
   } catch (err) {
     const why = String(err && err.message);
     notify(
@@ -258,80 +309,15 @@ function setStatus(text) {
   document.getElementById("taste-status").textContent = text;
 }
 
-// Visible messages (WIP-47): a dismissible banner at the top of the page, for errors and
-// Spotify connection news; the "Mes goûts" panel is opened and keeps the same line.
-function shortMessage(err) {
-  const m = String((err && err.message) || err || "erreur inconnue").replace(/\s+/g, " ").trim();
-  return m.length > 120 ? m.slice(0, 117) + "…" : m;
-}
-
-function showBanner(text, kind = "error") {
-  const box = document.getElementById("banner");
-  if (!box) return;
-  box.className = `banner ${kind}`;
-  box.querySelector(".banner-text").textContent = text;
-  box.hidden = false;
-}
-
-function notify(text, kind = "error") {
-  setStatus(text);
-  const taste = document.getElementById("taste");
-  if (taste) taste.open = true;
-  showBanner(text, kind);
-}
-
-document.getElementById("banner-close").addEventListener("click", () => {
-  document.getElementById("banner").hidden = true;
-});
-window.addEventListener("error", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.error || e.message)}`));
-window.addEventListener("unhandledrejection", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.reason)}`));
-
 // ---------------------------------------------------------------- feedback
 
 function feedback(concert, kind, li) {
   if (concert.id === deepLinkId) deepLinkId = null; // the user acted on it: normal rules apply again
-  const keys = concert.artists || [];
   const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
-  const toggle = (list, values, on) => {
-    const set = new Set(list);
-    for (const v of values) on ? set.add(v) : set.delete(v);
-    return [...set];
-  };
-  if (!keys.length) return feedbackByName(concert, kind, li, toggle);
-  if (kind === "like") {
-    const on = !keys.every((k) => state.liked.includes(k)); // second click undoes
-    state.liked = toggle(state.liked, keys, on);
-    state.disliked = toggle(state.disliked, keys, false);
-    sendFeedback(on ? "like" : "unlike", concert.id, keys);
-  } else {
-    sendFeedback("dislike", concert.id, keys);
-    state.disliked = toggle(state.disliked, keys, true);
-    state.liked = toggle(state.liked, keys, false);
-    state.hidden = toggle(state.hidden, [concert.id], true);
-  }
-  saveState();
-  render();
-  refocus(kind === "like" ? concert.id : next);
-}
-
-// Concerts without an identified artist (WIP-47): remember the concert and its performer
-// names; the feedback function gets the concert id only.
-function feedbackByName(concert, kind, li, toggle) {
-  const names = S.performerKeys(concert);
-  const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
-  if (kind === "like") {
-    const on = !state.likedConcerts.includes(concert.id); // second click undoes
-    state.likedConcerts = toggle(state.likedConcerts, [concert.id], on);
-    state.likedNames = toggle(state.likedNames, names, on);
-    state.dislikedNames = toggle(state.dislikedNames, names, false);
-    sendFeedback(on ? "like" : "unlike", concert.id, []);
-  } else {
-    sendFeedback("dislike", concert.id, []);
-    state.dislikedNames = toggle(state.dislikedNames, names, true);
-    state.likedNames = toggle(state.likedNames, names, false);
-    state.likedConcerts = toggle(state.likedConcerts, [concert.id], false);
-    state.hidden = toggle(state.hidden, [concert.id], true);
-  }
+  // without an identified artist the concert is rated by id and performer names (WIP-47)
+  const { state: rated, send } = S.rate(state, concert, kind, DATA.concerts);
+  Object.assign(state, rated);
+  sendFeedback(send.kind, concert.id, send.keys);
   saveState();
   render();
   refocus(kind === "like" ? concert.id : next);
@@ -511,8 +497,7 @@ function concertRow(c, match, showDate) {
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   {
     // every row can be rated; without an identified artist the concert itself is (WIP-47)
-    const keys = c.artists || [];
-    const liked = keys.length ? keys.every((k) => state.liked.includes(k)) : state.likedConcerts.includes(c.id);
+    const liked = S.isLiked(state, c);
     const like = button("J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
     like.setAttribute("aria-pressed", String(liked));
     actions.append(like);
@@ -736,7 +721,9 @@ async function main() {
     flushFeedback(); // ratings left over from a previous visit
   } catch (err) {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
-    if (err instanceof Error) showBanner(`Une erreur est survenue : ${shortMessage(err)}`); // a bug, not a missing file
+    // a missing data file rejects with its HTTP status (a number, already said above);
+    // anything else (invalid JSON, a script error) is shown in the banner
+    if (typeof err !== "number") showBanner(`Une erreur est survenue : ${shortMessage(err)}`);
   }
 }
 

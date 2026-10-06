@@ -100,7 +100,12 @@ button.linkish {
   position: sticky; top: 0; z-index: 10;
   display: flex; gap: 8px; align-items: baseline; justify-content: space-between;
   margin: 8px 0 0; padding: 10px 12px; border-radius: 10px;
-  background: color-mix(in srgb, #c62828 14%, var(--bg)); border: 1px solid #c62828;
+  background: var(--bg); border: 1px solid #c62828; /* fallback: browsers without color-mix() */
+  background: color-mix(in srgb, #c62828 14%, var(--bg));
 }
-.banner.info { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); border-color: var(--accent); }
+.banner.info {
+  border-color: var(--accent);
+  background: var(--bg);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
 .banner[hidden] { display: none; }

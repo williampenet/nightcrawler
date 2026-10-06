@@ -82,6 +82,64 @@
     return [...new Set(perf.filter((p) => typeof p === "string").map(norm).filter((k) => NAME_KEY_RE.test(k)))].slice(0, 12);
   }
 
+  // "J'aime" is pressed for a concert whose artists are all liked, or which was liked by
+  // id before its artists were identified (WIP-47).
+  function isLiked(state, concert) {
+    const keys = concert.artists || [];
+    return (keys.length > 0 && keys.every((k) => (state.liked || []).includes(k))) || (state.likedConcerts || []).includes(concert.id);
+  }
+
+  // Applies "like" (a toggle) or "dislike" to the state. Pure: returns the new rating
+  // fields and what the feedback function is sent ({kind, keys}). Concerts without an
+  // identified artist are rated by id and performer names, sent with no artist key.
+  // concerts: the current list, so unliking keeps the names another liked concert uses.
+  function rate(state, concert, kind, concerts) {
+    const keys = concert.artists || [];
+    const names = [...new Set([...performerKeys(concert), ...keys])];
+    const toggle = (list, values, on) => {
+      const set = new Set(list || []);
+      for (const v of values) on ? set.add(v) : set.delete(v);
+      return [...set];
+    };
+    const s = {
+      liked: [...(state.liked || [])],
+      disliked: [...(state.disliked || [])],
+      hidden: [...(state.hidden || [])],
+      likedConcerts: [...(state.likedConcerts || [])],
+      likedNames: [...(state.likedNames || [])],
+      dislikedNames: [...(state.dislikedNames || [])],
+    };
+    const on = kind === "like" && !isLiked(state, concert); // a second click undoes
+    if (on) {
+      if (keys.length) s.liked = toggle(s.liked, keys, true);
+      else {
+        s.likedConcerts = toggle(s.likedConcerts, [concert.id], true);
+        s.likedNames = toggle(s.likedNames, names, true);
+      }
+      s.disliked = toggle(s.disliked, keys, false);
+      s.dislikedNames = toggle(s.dislikedNames, names, false);
+    } else {
+      s.liked = toggle(s.liked, keys, false);
+      s.likedConcerts = toggle(s.likedConcerts, [concert.id], false);
+      // names still used by another liked concert stay liked
+      const kept = new Set();
+      if (kind === "like") {
+        const byId = new Map((concerts || []).map((c) => [c.id, c]));
+        for (const id of s.likedConcerts) {
+          const other = byId.get(id);
+          if (other) for (const k of [...performerKeys(other), ...(other.artists || [])]) kept.add(k);
+        }
+      }
+      s.likedNames = toggle(s.likedNames, names.filter((k) => !kept.has(k)), false);
+      if (kind === "dislike") {
+        if (keys.length) s.disliked = toggle(s.disliked, keys, true);
+        else s.dislikedNames = toggle(s.dislikedNames, names, true);
+        s.hidden = toggle(s.hidden, [concert.id], true);
+      }
+    }
+    return { state: s, send: { kind: kind === "dislike" ? "dislike" : on ? "like" : "unlike", keys } };
+  }
+
   // profile: { seeds: [{name, tags}], liked: [artistKey], disliked: [artistKey] }
   function buildProfile(state, artists) {
     const seedNames = new Map();
@@ -99,8 +157,10 @@
     const disliked = new Set(state.disliked || []);
     // artists whose "Proche de" / "Style" match the listener reported as wrong (WIP-41)
     const noInfer = new Set(state.wrong || []);
-    // names from concerts without an identified artist (WIP-47); a name is an artist key
-    // once identified, so it counts for both
+    // Names from concerts without an identified artist (WIP-47). A stored name and an
+    // artist key are the same string by construction (both are norm(name): see artists.norm
+    // in the pipeline), so a liked or disliked name also applies to the artist once the
+    // pipeline identifies it, and to any homonym with the same normalised name.
     const likedConcerts = new Set(state.likedConcerts || []);
     const likedNames = new Set(state.likedNames || []);
     for (const k of state.dislikedNames || []) disliked.add(k);
@@ -140,7 +200,9 @@
         };
       }
     };
-    if (profile.likedConcerts && profile.likedConcerts.has(concert.id)) consider(0.9, "Tu as aimé ce concert", {});
+    // a liked concert counts unless one of its artists, identified on a later run, is disliked
+    const vetoed = (concert.artists || []).some((k) => profile.disliked && profile.disliked.has(k));
+    if (!vetoed && profile.likedConcerts && profile.likedConcerts.has(concert.id)) consider(0.9, "Tu as aimé ce concert", {});
     for (const p of Array.isArray(concert.performers) ? concert.performers : []) {
       const k = norm(p);
       if (profile.likedNames && profile.likedNames.has(k) && !profile.disliked.has(k)) consider(0.9, `Tu as aimé ${p}`, {});
@@ -212,7 +274,7 @@
     return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
   }
 
-  const api = { defaultState, sanitizeState, performerKeys, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
