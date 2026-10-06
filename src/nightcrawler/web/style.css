@@ -28,10 +28,12 @@ nav button {
   border: 1px solid var(--line); background: transparent; color: var(--fg);
 }
 nav button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-h2 {
+h2, .tier-rest h3 {
   margin: 28px 0 8px; font-size: 0.85rem; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--muted);
 }
+/* "Tout voir" (WIP-53): the day headings inside it read as one level below */
+.tier-rest h3 { margin-top: 20px; font-weight: 600; }
 ul.concerts { list-style: none; margin: 0; padding: 0; }
 ul.concerts li { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .time { flex: 0 0 3.2rem; color: var(--muted); font-variant-numeric: tabular-nums; }

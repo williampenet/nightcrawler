@@ -509,9 +509,12 @@ window.addEventListener("online", () => {
 });
 
 
+// rows the listener can see: not inside a collapsed "Tout voir" (WIP-53)
+const visibleRows = () => [...document.querySelectorAll("#concerts li")].filter((r) => !r.closest("[hidden]"));
+
 // keep keyboard users where they were: the wanted row, else the first button of the list
 function refocus(wanted) {
-  const row = [...document.querySelectorAll("#concerts li")].find((r) => r.dataset.id === wanted);
+  const row = visibleRows().find((r) => r.dataset.id === wanted);
   const target = (row && row.querySelector("button")) || document.querySelector("#concerts button");
   if (target) target.focus();
 }
@@ -624,7 +627,7 @@ function concertRow(c, match, showDate) {
         sendFeedback("wrong", c.id, [match.artist]);
         render();
         // the row may leave the "Pour moi" list: same row if still there, else the next one
-        const still = [...document.querySelectorAll("#concerts li")].some((r) => r.dataset.id === c.id);
+        const still = visibleRows().some((r) => r.dataset.id === c.id);
         refocus(still ? c.id : next);
         setStatus("Noté : ce rapprochement ne sera plus utilisé.");
       });
@@ -663,6 +666,85 @@ function filtered() {
   });
 }
 
+// "Tout voir" open state (WIP-53): kept across re-renders (ratings, filters), not saved.
+let showAll = false;
+// a shared link to a concert outside "Sûrs" / "À découvrir" opens "Tout voir" once
+let revealDeepLink = true;
+
+// One list of concerts under a heading: the "Sûrs" and "À découvrir" sections (WIP-53).
+function tierSection(root, id, title, items, empty) {
+  const h = el("h2", `${title} (${items.length})`);
+  h.id = id;
+  root.append(h);
+  if (!items.length) {
+    root.append(el("p", empty, "muted"));
+    return;
+  }
+  const ul = el("ul", null, "concerts");
+  ul.setAttribute("aria-labelledby", id);
+  for (const x of items) ul.append(concertRow(x.c, x.m, true));
+  root.append(ul);
+}
+
+// Default view once the profile is not empty (WIP-53): "Sûrs" (direct matches, by date),
+// "À découvrir" (best inferred matches, by score) and "Tout voir" (every other concert).
+// The tiers ignore the sort control; the sort applies inside "Tout voir": "Par date"
+// groups the rest by day, "Pour moi" lists it by score (the inferred matches beyond
+// the cap first) then date. Filters and hidden concerts apply to all three sections.
+function renderTiers(root, list) {
+  const { sure, discover, rest } = S.tiers(list);
+  tierSection(root, "tier-sure", "Sûrs", sure, "Aucun concert d'un artiste que tu écoutes ou as aimé pour ces filtres.");
+  tierSection(root, "tier-discover", "À découvrir", discover, "Aucun rapprochement pour ces filtres.");
+  if (!rest.length) return;
+  if (revealDeepLink && deepLinkId && rest.some((x) => x.c.id === deepLinkId)) showAll = true;
+  revealDeepLink = false;
+  const box = el("div", null, "tier-rest");
+  box.id = "tier-rest";
+  box.hidden = !showAll;
+  // disclosure button inside the heading (WAI-ARIA APG, Disclosure pattern:
+  // https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/); toggling does not re-render,
+  // so focus stays on the button
+  const toggle = button("", "ghost", () => {
+    showAll = !showAll;
+    box.hidden = !showAll;
+    label();
+  });
+  const label = () => {
+    toggle.textContent = showAll ? `Replier (${rest.length})` : `Tout voir (${rest.length})`;
+    toggle.setAttribute("aria-expanded", String(showAll));
+  };
+  toggle.id = "tier-toggle";
+  toggle.setAttribute("aria-controls", box.id);
+  label();
+  const h = el("h2");
+  h.append(toggle);
+  root.append(h);
+  if (state.sort === "me") {
+    const ul = el("ul", null, "concerts");
+    const sorted = [...rest].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start));
+    for (const x of sorted) ul.append(concertRow(x.c, x.m, true));
+    box.append(ul);
+  } else renderByDay(box, rest, "h3");
+  root.append(box);
+}
+
+// The list grouped by day, in the data's order (by date).
+function renderByDay(root, list, tag) {
+  let currentDay = null;
+  let ul = null;
+  for (const x of list) {
+    const start = new Date(x.c.start);
+    const key = dayKey(start);
+    if (key !== currentDay) {
+      currentDay = key;
+      root.append(el(tag, dayFmt.format(start)));
+      ul = el("ul", null, "concerts");
+      root.append(ul);
+    }
+    ul.append(concertRow(x.c, x.m, false));
+  }
+}
+
 function render() {
   const root = document.getElementById("concerts");
   root.replaceChildren();
@@ -673,6 +755,8 @@ function render() {
     root.append(el("p", "Aucun concert pour ces filtres.", "muted"));
     return;
   }
+  // an empty profile keeps the views below unchanged
+  if (!S.isEmpty(profile)) return renderTiers(root, list);
   if (state.sort === "me") {
     if (S.isEmpty(profile)) {
       root.append(el("p", "Ajoute quelques artistes dans « Mes goûts » pour trier les concerts pour toi.", "hint"));
@@ -693,19 +777,7 @@ function render() {
     }
     return;
   }
-  let currentDay = null;
-  let ul = null;
-  for (const x of list) {
-    const start = new Date(x.c.start);
-    const key = dayKey(start);
-    if (key !== currentDay) {
-      currentDay = key;
-      root.append(el("h2", dayFmt.format(start)));
-      ul = el("ul", null, "concerts");
-      root.append(ul);
-    }
-    ul.append(concertRow(x.c, x.m, false));
-  }
+  renderByDay(root, list, "h2");
 }
 
 // Community agendas (Gancio instances from the zone config) credited in the footer.
