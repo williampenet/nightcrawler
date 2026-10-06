@@ -42,11 +42,13 @@ class Probe:
 
     venue_id: str
     status: str  # see PROBE_STATUSES
-    method: str | None = None  # "json-ld", "microdata", "ical"
+    method: str | None = None  # "json-ld", "microdata", "ical", "platform:<name>"
     agenda_url: str | None = None
     events_found: int = 0
     platforms: list[str] = field(default_factory=list)
     detail: str | None = None
+    # platform pages read for this venue (WIP-37): {platform, url, status, events}
+    platform_pages: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -68,7 +70,7 @@ class RawEvent:
 
     title: str
     start: datetime
-    source: str  # "json-ld", "microdata", "ical", "ticketmaster"
+    source: str  # "json-ld", "microdata", "ical", "ticketmaster", "platform:<name>"
     venue_id: str
     url: str | None = None
     ticket_url: str | None = None

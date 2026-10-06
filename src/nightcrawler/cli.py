@@ -93,11 +93,15 @@ def one_line(report: dict) -> str:
     tm = src.get("ticketmaster", {})
     ga = src.get("gancio", {})
     art = report.get("artists", {})
+    platforms = ",".join(
+        f"{name}(" + " ".join(f"{k}={v}" for k, v in p.items()) + ")"
+        for name, p in src.get("platforms", {}).items()
+    )
     return (
         f"osm={src.get('openstreetmap_venues')} ticketmaster={tm.get('status')} "
         f"(venues={tm.get('venues')} events={tm.get('events')}) "
         f"gancio={ga.get('status')} (venues={ga.get('venues')} events={ga.get('events')}) "
-        f"website_events={src.get('website_events')} | "
+        f"website_events={src.get('website_events')} platforms={platforms or '-'} | "
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
         f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} | "

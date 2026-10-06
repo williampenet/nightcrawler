@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
@@ -30,7 +31,8 @@ CONCERT_RE = re.compile(r"\bconcerts?\b", re.IGNORECASE)
 PAST_RE = re.compile(r"\b(pass[ée]s?|archives?)\b", re.IGNORECASE)
 SKIP_RE = re.compile(r"\.(pdf|jpe?g|png|gif|zip|mp3|mp4)$|mailto:|tel:|javascript:", re.I)
 
-# Ticketing / listing platforms we can recognise but do not parse yet.
+# Ticketing / listing platforms: recognised on venue sites; their pages are read with the
+# same structured parsers when the venue site itself has no readable agenda (WIP-37).
 PLATFORMS = {
     "shotgun": r"shotgun\.live",
     "dice": r"dice\.fm",
@@ -109,6 +111,123 @@ def platforms_in(html: str) -> list[str]:
     return sorted(name for name, pattern in PLATFORMS.items() if re.search(pattern, html, re.I))
 
 
+MAX_PLATFORM_PAGES_PER_VENUE = 2
+MAX_PLATFORM_PAGES_PER_RUN = 40
+# Platforms whose pages we follow (the others in PLATFORMS are recognition-only), matched
+# on the full hostname: never on netloc text, which may carry a spoofing "user@" part.
+FOLLOWED_PLATFORMS = {
+    name: re.compile(r"^(?:[\w-]+\.)*" + domain + "$")
+    for name, domain in {
+        "shotgun": r"shotgun\.live",
+        "dice": r"dice\.fm",
+        "helloasso": r"helloasso\.com",
+        "weezevent": r"weezevent\.com",
+        "billetweb": r"billetweb\.fr",
+        "yurplan": r"yurplan\.com",
+    }.items()
+}
+# Path segments of a platform's generic pages (home, locale, help...): not worth a fetch
+GENERIC_PLATFORM_SEGMENTS = {
+    "fr", "en", "fr-fr", "en-gb", "en-us", "app", "apps", "download", "help", "faq",
+    "about", "contact", "search", "legal", "privacy", "terms", "cgu", "cgv", "blog", "pro",
+    "organisateurs",
+}  # fmt: skip
+# Account, checkout and widget pages: never followed, wherever the segment appears
+DENIED_PLATFORM_SEGMENTS = {
+    "login", "signin", "signup", "register", "account", "auth", "oauth", "checkout",
+    "cart", "basket", "ticket", "widget", "adhesions",
+}  # fmt: skip
+SKIP_ASSET_RE = re.compile(r"\.(js|css|svg|ico|woff2?)$", re.I)
+
+
+def platform_of(url: str) -> str | None:
+    """Name of the followed platform a URL belongs to, or None (also for unsafe URLs)."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or "@" in parts.netloc or host.startswith("widget."):
+        return None
+    return next((n for n, rx in FOLLOWED_PLATFORMS.items() if rx.match(host)), None)
+
+
+def platform_links(html: str, base_url: str) -> list[tuple[str, str]]:
+    """(platform, url) of links and embeds pointing to a specific platform page (venue,
+    organiser or event), not to the platform's homepage, generic or account pages."""
+    soup = BeautifulSoup(html, "lxml")
+    found: list[tuple[str, str]] = []
+    for el in soup.find_all(["a", "iframe"]):  # document order
+        raw = ((el.get("href") if el.name == "a" else el.get("src")) or "").strip()
+        url = _clean(urljoin(base_url, raw))  # "//host/..." takes the page's scheme
+        path = urlsplit(url).path
+        segments = {s for s in path.lower().split("/") if s}
+        if (
+            SKIP_RE.search(url)
+            or SKIP_ASSET_RE.search(path)
+            or segments <= GENERIC_PLATFORM_SEGMENTS
+            or segments & DENIED_PLATFORM_SEGMENTS
+        ):
+            continue
+        name = platform_of(url)
+        if name and (name, url) not in found:
+            found.append((name, url))
+    return found
+
+
+class PlatformBudget:
+    """Run-wide cap on platform page fetches, shared by the probe threads."""
+
+    def __init__(self, limit: int = MAX_PLATFORM_PAGES_PER_RUN) -> None:
+        self.left = limit
+        self._lock = threading.Lock()
+
+    def take(self) -> bool:
+        with self._lock:
+            if self.left <= 0:
+                return False
+            self.left -= 1
+            return True
+
+
+def read_platform_page(
+    name: str, url: str, venue_id: str, fetcher: Fetcher, tz: ZoneInfo, budget: PlatformBudget
+) -> tuple[dict, list[RawEvent]]:
+    """Read one platform page with the structured parsers.
+
+    Its events belong to the venue that linked it; events.attribute_venue moves them to
+    another known venue named by their location, or drops them (out of the zone).
+    """
+    page = {"platform": name, "url": url, "status": "no_events", "events": 0}
+    if not fetcher.allowed(url):  # checked first: a blocked page costs no budget
+        return page | {"status": "robots_blocked"}, []
+    if not budget.take():
+        return page | {"status": "skipped_budget"}, []
+    try:
+        resp = fetcher.get(url)
+    except RobotsBlocked:  # e.g. redirected to a disallowed host
+        return page | {"status": "robots_blocked"}, []
+    except httpx.HTTPError as exc:
+        return page | {"status": "fetch_error", "detail": type(exc).__name__}, []
+    if resp.status != 200 or "html" not in resp.content_type:
+        return page | {"status": "fetch_error", "detail": f"HTTP {resp.status}"}, []
+    _, events = read_page(resp.text, venue_id, tz)
+    if not events:
+        for link in ical_links(resp.text, resp.url)[:1]:
+            if not budget.take():
+                break
+            try:
+                cal = fetcher.get(link)
+            except (RobotsBlocked, httpx.HTTPError):
+                continue
+            if cal.status == 200 and "BEGIN:VCALENDAR" in cal.text[:2000]:
+                events = ical_events(cal.text, venue_id, tz)
+    for ev in events:
+        ev.source = f"platform:{name}"
+        ev.url = ev.url or resp.url  # the event's own URL when it has one
+        ev.ticket_url = ev.ticket_url or resp.url
+    if events:
+        page |= {"status": "events", "events": len(events)}
+    return page, events
+
+
 def read_page(html: str, venue_id: str, tz: ZoneInfo) -> tuple[str | None, list[RawEvent]]:
     events = jsonld_events(html, venue_id, tz)
     if events:
@@ -119,7 +238,9 @@ def read_page(html: str, venue_id: str, tz: ZoneInfo) -> tuple[str | None, list[
     return None, []
 
 
-def probe_venue(venue: Venue, fetcher: Fetcher, tz: ZoneInfo) -> tuple[Probe, list[RawEvent]]:
+def probe_venue(
+    venue: Venue, fetcher: Fetcher, tz: ZoneInfo, budget: PlatformBudget | None = None
+) -> tuple[Probe, list[RawEvent]]:
     if not venue.website:
         return Probe(venue.id, "no_website"), []
     try:
@@ -170,5 +291,25 @@ def probe_venue(venue: Venue, fetcher: Fetcher, tz: ZoneInfo) -> tuple[Probe, li
                     return probe, events
 
     agenda_url = pages[1][0] if len(pages) > 1 else home.url
-    status = "platform_only" if platforms else "no_agenda"
-    return Probe(venue.id, status, agenda_url=agenda_url, platforms=sorted(platforms)), []
+    if not platforms:
+        return Probe(venue.id, "no_agenda", agenda_url=agenda_url), []
+
+    # 3. pages on the ticketing platforms the venue links to (WIP-37)
+    probe = Probe(venue.id, "platform_only", agenda_url=agenda_url, platforms=sorted(platforms))
+    budget = budget or PlatformBudget()
+    links: list[tuple[str, str]] = []
+    for url, html in pages:
+        links += [link for link in platform_links(html, url) if link not in links]
+    best_count, slots = 0, MAX_PLATFORM_PAGES_PER_VENUE
+    for name, url in links:
+        if slots == 0:
+            break
+        page, events = read_platform_page(name, url, venue.id, fetcher, tz, budget)
+        probe.platform_pages.append(page)
+        slots -= page["status"] != "robots_blocked"  # a blocked link costs no slot
+        found.extend(events)
+        if len(events) > best_count:
+            probe.method, probe.agenda_url, best_count = f"platform:{name}", url, len(events)
+    if found:
+        probe.status, probe.events_found = "structured", len(found)
+    return probe, found

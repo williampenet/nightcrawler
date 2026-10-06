@@ -138,3 +138,21 @@ def test_attribution_negative_cases():
     for loc in ("Place Bellecour", "3 allée des Arts", "Montée de la Grande Côte", "Lyon", None):
         assert where(loc, page="b") == ("b", None), loc
     assert where("Transbordeur", page="b", source="ticketmaster") == ("b", None)
+
+
+def test_attribution_platform_events_stay_in_zone(tz):
+    # a promoter's Shotgun page linked by a music venue lists its whole tour
+    p = "platform:shotgun"
+    assert where("Le Bataclan, Paris", page="m", source=p) == (None, None)
+    assert where("Le Club Privé", page="m", source=p) == (None, None)  # no own-room fallback
+    assert where("3 allée des Arts", page="m", source=p) == (None, None)
+    assert where(None, page="m", source=p) == ("m", None)
+    assert where("Le Petit Bulbe", page="m", source=p) == ("m", None)
+    assert where("Transbordeur", page="m", source=p) == ("x", None)  # known zone venue
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+    raw = [
+        ev("Tour Paris", types=["MusicEvent"], source=p, location_name="Le Bataclan, Paris"),
+        ev("Tour Lyon", types=["MusicEvent"], source=p, location_name="Le Petit Bulbe"),
+    ]
+    concerts = build_concerts(raw, {"m": MUSIC}, now=now, window_days=60, tz=tz)
+    assert [c.title for c in concerts] == ["Tour Lyon"]
