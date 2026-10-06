@@ -11,7 +11,7 @@
   const SCOPES = "user-top-read user-follow-read user-library-read user-read-recently-played";
   // extra read-only scope requested only by the one-off API test (WIP-48)
   const PROBE_SCOPES = SCOPES + " playlist-read-private";
-  const MAX_SAVED_PAGES = 10; // liked tracks read: up to 500, newest first
+  const MAX_SAVED_PAGES = 10; // liked tracks read: up to 500 (order as returned by Spotify)
   const CLIENT_ID_RE = /^[0-9a-f]{32}$/;
   const MAX_IMPORT = 150; // cap: each new seed costs one MusicBrainz call (1 per second)
 
@@ -130,7 +130,12 @@
     const counts = new Map();
     const countTracks = (items) => {
       for (const it of Array.isArray(items) ? items : []) {
-        for (const n of namesFrom(it && it.track && it.track.artists)) counts.set(n, (counts.get(n) || 0) + 1);
+        for (const n of namesFrom(it && it.track && it.track.artists)) {
+          const k = n.toLowerCase(); // "Low" and "LOW" are one artist
+          const c = counts.get(k) || { name: n, count: 0 };
+          c.count++;
+          counts.set(k, c);
+        }
       }
     };
     for (let page = 0; page < MAX_SAVED_PAGES; page++) {
@@ -140,7 +145,7 @@
     }
     const recent = await get("/me/player/recently-played?limit=50");
     countTracks(recent && recent.items);
-    names.push(...[...counts.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n));
+    names.push(...[...counts.values()].sort((a, b) => b.count - a.count).map((c) => c.name));
     const seen = new Set();
     const unique = names.filter((n) => {
       const k = n.toLowerCase();

@@ -80,7 +80,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-46 part A | REQUEST_CHANGES: 3 blocking (ADR-0002 not amended / page text; reset reverted by in-flight push; sub-path routing unverified) + 9 non-blocking; fixed | PR #37 |
 | 2026-10-06 | human:william | test | Ran "Tester l'API Spotify": names only (top/followed/recent/saved/playlists 200); no genres/popularity/followers; related, recommendations, audio features, several artists, artist top tracks refused; search capped at 10 | [PRD](PRD.md) |
 | 2026-10-06 | human:william | scope | Asks to use followed artists (already imported) and liked tracks from Spotify | |
-| 2026-10-06 | agent:dev | build | WIP-49 Spotify import adds artists of liked tracks and recently played, by frequency; ADR-0003 amended | |
+| 2026-10-06 | agent:dev | build | WIP-49 Spotify import adds artists of liked tracks and recently played, by frequency; ADR-0003 amended | PR #39 |
+| 2026-10-06 | agent:reviewer | review WIP-49 | APPROVE + 4 non-blocking (case-insensitive counts, unsourced "newest first" removed, tests, log link); applied | PR #39 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

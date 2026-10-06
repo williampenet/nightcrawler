@@ -158,3 +158,23 @@ test("probe scopes are only used when asked", () => {
   assert.equal(u(undefined).searchParams.get("scope"), SP.SCOPES);
   assert.match(u(SP.PROBE_SCOPES).searchParams.get("scope"), /playlist-read-private/);
 });
+
+test("liked tracks: a failed page stops the loop and is counted; at most 10 pages", async () => {
+  const track = (name) => ({ track: { artists: [{ name }] } });
+  let pages = 0;
+  const fake = (failAt) => async (url) => {
+    if (url.includes("/me/tracks")) {
+      pages++;
+      if (pages === failAt) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ items: [track("LOW"), track("Low")], next: "more" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ items: [], artists: { items: [], cursors: {} } }) };
+  };
+  let r = await SP.artistNames("t", fake(2));
+  assert.equal(pages, 2);
+  assert.equal(r.failed, 1);
+  assert.deepEqual(r.names, ["LOW"]);
+  pages = 0;
+  r = await SP.artistNames("t", fake(0));
+  assert.equal(pages, 10);
+});
