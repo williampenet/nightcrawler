@@ -109,6 +109,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-58 | APPROVE + 3 non-blocking (NaN test, bool coords, checklist); applied | PR #46 |
 | 2026-10-06 | agent:dev | build | WIP-59: saved concert ids (hidden, likedConcerts) no longer pruned when absent from a day's data; aliases resolved for display; 500 cap | PR #47 |
 | 2026-10-06 | agent:reviewer | review WIP-59 | APPROVE + 7 non-blocking (ADR note, server cap, isEmpty, reset test, merge-at-cap test, alias recency, log); applied | PR #47 |
+| 2026-10-06 | agent:dev | build | WIP-60: config-driven WordPress REST reader (`priority_venues`, `wp_json`), Transbordeur endpoint verified (acf.date `%Y%m%d`, 97 items); Périscope has no event-date field, not added | PR #48 |
+| 2026-10-06 | agent:reviewer | review WIP-60 | APPROVE + 7 non-blocking (config int validation, fallback rows, truncation status, publication-order cap to watch, redirect SSRF follow-up ticket, test coupling, unverified size comment); 1-3,6,7 applied | PR #48 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

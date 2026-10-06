@@ -137,6 +137,7 @@ def test_end_to_end_with_gancio(tmp_path, zone, tz, fixture_text, monkeypatch):
         "instances": [{"name": "Test", "url": "https://agenda.example"}],
     }
     assert report["probe_method"]["gancio"] == 4
+    assert report["sources"]["priority_venues"] == []  # none configured in this zone
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
     # "Impro libre #4" is dropped (WIP-35), so are the workshop and the theatre play
     assert [c["title"] for c in concerts] == [
