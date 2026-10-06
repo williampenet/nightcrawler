@@ -236,7 +236,7 @@ const SPOTIFY_CALLBACK = (() => {
   return cb;
 })();
 
-async function connectSpotify() {
+async function connectSpotify(ev, probe = false) {
   try {
     // crypto.subtle only exists in secure contexts (HTTPS or localhost):
     // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/subtle
@@ -247,13 +247,19 @@ async function connectSpotify() {
     const st = SP.randomString(16);
     const challenge = await SP.challengeFor(verifier);
     try {
-      sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
+      sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st, probe }));
     } catch {
       return notify("Connexion Spotify impossible : le stockage de session est bloqué dans ce navigateur.");
     }
     notify("Redirection vers Spotify…", "info");
     location.assign(
-      SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
+      SP.authorizeUrl({
+        clientId: APP_CONFIG.spotify_client_id,
+        redirectUri: redirectUri(),
+        challenge,
+        state: st,
+        scope: probe ? SP.PROBE_SCOPES : SP.SCOPES,
+      }),
     );
   } catch (err) {
     notify(`Connexion Spotify impossible : ${shortMessage(err)}`);
@@ -282,6 +288,7 @@ async function finishSpotify() {
       code: cb.code,
       verifier: cb.verifier,
     });
+    if (cb.probe) return showProbe(await SP.probe(token)); // the token stays in this function only
     const { names, failed } = await SP.artistNames(token); // the token stays in this function only
     const box = document.getElementById("seeds");
     const merged = S.mergeNames(S.parseSeeds(box.value), names);
@@ -303,6 +310,22 @@ async function finishSpotify() {
         : "Import Spotify impossible pour le moment.",
     );
   }
+}
+
+// Result of the one-off API test (WIP-48): a table and a text to copy into the chat.
+function showProbe(rows) {
+  const box = document.getElementById("spotify-probe");
+  box.hidden = false;
+  const body = box.querySelector("tbody");
+  body.textContent = "";
+  for (const r of rows) {
+    const tr = el("tr");
+    for (const v of [r.label, r.endpoint, String(r.status || "-"), r.detail]) tr.append(el("td", v));
+    body.append(tr);
+  }
+  const text = SP.probeText(rows, new Date().toISOString().slice(0, 16));
+  box.querySelector("textarea").value = text;
+  notify("Test Spotify terminé : résultat sous « Mes goûts ».", "info");
 }
 
 function setStatus(text) {
@@ -655,6 +678,7 @@ function setupControls() {
   if (SP && SP.validClientId(APP_CONFIG.spotify_client_id)) {
     document.getElementById("spotify-row").hidden = false;
     document.getElementById("spotify-connect").addEventListener("click", connectSpotify);
+    document.getElementById("spotify-probe-run").addEventListener("click", (e) => connectSpotify(e, true));
   }
   if (feedbackUrl()) {
     document.getElementById("feedback-row").hidden = false;

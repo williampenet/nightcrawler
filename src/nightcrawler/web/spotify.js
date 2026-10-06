@@ -7,6 +7,8 @@
   const TOKEN = "https://accounts.spotify.com/api/token";
   const API = "https://api.spotify.com/v1";
   const SCOPES = "user-top-read user-follow-read";
+  // read-only scopes requested only by the one-off API test (WIP-48), never by the import
+  const PROBE_SCOPES = SCOPES + " user-read-recently-played user-library-read playlist-read-private";
   const CLIENT_ID_RE = /^[0-9a-f]{32}$/;
   const MAX_IMPORT = 100; // cap: each new seed costs one MusicBrainz call (1 per second)
 
@@ -31,7 +33,7 @@
     return typeof id === "string" && CLIENT_ID_RE.test(id);
   }
 
-  function authorizeUrl({ clientId, redirectUri, challenge, state }) {
+  function authorizeUrl({ clientId, redirectUri, challenge, state, scope = SCOPES }) {
     const u = new URL(AUTHORIZE);
     u.search = new URLSearchParams({
       client_id: clientId,
@@ -40,7 +42,7 @@
       code_challenge_method: "S256",
       code_challenge: challenge,
       state,
-      scope: SCOPES,
+      scope,
     }).toString();
     return u.toString();
   }
@@ -66,7 +68,7 @@
     if (!saved || typeof saved.verifier !== "string" || !st || saved.state !== st) {
       return { status: "error", reason: "state" };
     }
-    return { status: "ok", code: params.get("code"), verifier: saved.verifier };
+    return { status: "ok", code: params.get("code"), verifier: saved.verifier, probe: saved.probe === true };
   }
 
   async function exchangeCode({ clientId, redirectUri, code, verifier }, fetchImpl = fetch) {
@@ -128,6 +130,88 @@
     return { names: unique.slice(0, MAX_IMPORT), failed };
   }
 
+  // One-off test of what the Web API really answers to this app (Development Mode), to
+  // replace assumptions by facts (WIP-48). Only HTTP statuses, counts and which fields are
+  // present leave this function: no names, no ids, nothing is stored.
+  // Expected restrictions, to compare with the results:
+  // https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api
+  // https://developer.spotify.com/documentation/web-api/references/changes/february-2026
+  async function probe(token, fetchImpl = fetch) {
+    const rows = [];
+    const call = async (label, path, describe) => {
+      let status = 0;
+      let detail = "";
+      try {
+        const r = await fetchImpl(API + path, { headers: { Authorization: `Bearer ${token}` } });
+        status = r.status;
+        if (r.ok && describe) detail = describe(await r.json());
+      } catch (err) {
+        detail = "réseau : " + String((err && err.name) || "erreur");
+      }
+      const shown = path.replace(/[?].*$/, "").replace(/\/artists\/[^/]+/, "/artists/{id}");
+      rows.push({ label, endpoint: "GET " + shown, status, detail });
+      return status;
+    };
+    const has = (o, k) => (o && Object.prototype.hasOwnProperty.call(o, k) ? "oui" : "non");
+    const artistFields = (a) =>
+      `genres: ${Array.isArray(a && a.genres) ? a.genres.length : "absent"}, ` +
+      `popularity: ${has(a, "popularity")}, followers: ${has(a, "followers")}`;
+    let artistId = null;
+    let trackId = null;
+    await call("Top artistes", "/me/top/artists?limit=5&time_range=medium_term", (d) => {
+      const items = (d && d.items) || [];
+      artistId = items[0] && items[0].id;
+      return `${items.length} reçus, 1er : ${items[0] ? artistFields(items[0]) : "-"}`;
+    });
+    await call("Top titres", "/me/top/tracks?limit=5&time_range=medium_term", (d) => {
+      const items = (d && d.items) || [];
+      trackId = items[0] && items[0].id;
+      return `${items.length} reçus, preview_url : ${items[0] ? has(items[0], "preview_url") : "-"}`;
+    });
+    await call("Artistes suivis", "/me/following?type=artist&limit=5", (d) =>
+      `${(((d && d.artists) || {}).items || []).length} reçus`);
+    await call("Écoutes récentes", "/me/player/recently-played?limit=5", (d) =>
+      `${((d && d.items) || []).length} reçus`);
+    await call("Titres sauvegardés", "/me/tracks?limit=5", (d) => `${((d && d.items) || []).length} reçus`);
+    await call("Playlists", "/me/playlists?limit=5", (d) => `${((d && d.items) || []).length} reçues`);
+    await call("Recherche (limite 10)", "/search?q=Air&type=artist&limit=10", (d) =>
+      `${((((d && d.artists) || {}).items) || []).length} reçus`);
+    await call("Recherche (limite 20)", "/search?q=Air&type=artist&limit=20", (d) =>
+      `${((((d && d.artists) || {}).items) || []).length} reçus`);
+    const skipped = (label, endpoint) =>
+      rows.push({ label, endpoint, status: 0, detail: "non testé (aucun identifiant reçu)" });
+    if (!artistId) {
+      for (const [l, e] of [["Artiste", "/artists/{id}"], ["Plusieurs artistes", "/artists"],
+        ["Artistes proches", "/artists/{id}/related-artists"],
+        ["Top titres d'un artiste", "/artists/{id}/top-tracks"], ["Recommandations", "/recommendations"]]) {
+        skipped(l, "GET " + e);
+      }
+    }
+    if (!trackId) skipped("Caractéristiques audio", "GET /audio-features");
+    if (artistId) {
+      const id = encodeURIComponent(artistId);
+      await call("Artiste", `/artists/${id}`, artistFields);
+      await call("Plusieurs artistes", `/artists?ids=${id}`, (d) => `${((d && d.artists) || []).length} reçus`);
+      await call("Artistes proches", `/artists/${id}/related-artists`, (d) =>
+        `${((d && d.artists) || []).length} reçus`);
+      await call("Top titres d'un artiste", `/artists/${id}/top-tracks?market=FR`, (d) =>
+        `${((d && d.tracks) || []).length} reçus`);
+      await call("Recommandations", `/recommendations?seed_artists=${id}&limit=5`, (d) =>
+        `${((d && d.tracks) || []).length} reçues`);
+    }
+    if (trackId) {
+      await call("Caractéristiques audio", `/audio-features?ids=${encodeURIComponent(trackId)}`, (d) =>
+        `${((d && d.audio_features) || []).filter(Boolean).length} reçues`);
+    }
+    return rows;
+  }
+
+  function probeText(rows, date) {
+    return [`Test API Spotify, ${date}`]
+      .concat(rows.map((r) => `${r.label} | ${r.endpoint} | HTTP ${r.status || "-"} | ${r.detail}`))
+      .join("\n");
+  }
+
   // Redirect URI = the page URL without query, hash or a trailing index.html.
   function redirectUriFor(loc) {
     return loc.origin + loc.pathname.replace(/index\.html$/, "");
@@ -143,7 +227,11 @@
     exchangeCode,
     artistNames,
     redirectUriFor,
+    probe,
+    probeText,
     MAX_IMPORT,
+    SCOPES,
+    PROBE_SCOPES,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCSpotify = api;
