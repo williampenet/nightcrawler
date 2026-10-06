@@ -3,4 +3,4 @@
 spotify_client_id: "904cf4bbe3684362a6e022edf8a4c3dc"
 # Feedback function URL (ADR-0005), printed by the "Feedback function" workflow. Empty = ratings
 # stay queued in the browser.
-feedback_url: ""
+feedback_url: "https://nightcrawlerssxeqx6y-feedback.functions.fnc.fr-par.scw.cloud"
