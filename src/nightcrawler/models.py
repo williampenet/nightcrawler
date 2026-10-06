@@ -94,6 +94,10 @@ class Concert:
     sources: list[str]
     reason: str  # why it was kept as a concert
     artists: list[str] = field(default_factory=list)  # keys into artists.json
+    # every distinct link of the merged listings: [{"label": "Page"|"Billets"|host, "url"}]
+    links: list[dict[str, str]] = field(default_factory=list)
+    # ids the merged listings would have alone: the page matches saved ids on them too
+    aliases: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

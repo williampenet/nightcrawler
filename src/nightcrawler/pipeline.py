@@ -71,7 +71,8 @@ def run(
                 probes[vid].status, probes[vid].method = "structured", method
 
     # 3. concerts
-    concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz)
+    dedup: dict = {}
+    concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz, stats=dedup)
     per_venue = Counter(c.venue_id for c in concerts)
     artists, artist_stats = enrich(concerts, fetcher)
 
@@ -102,6 +103,7 @@ def run(
         },
         "raw_events": len(raw),
         "concerts": len(concerts),
+        "dedup": dedup,  # {merged, conflicts, merge_examples, conflict_examples} (WIP-42)
         "venues_with_concerts": len(per_venue),
         "artists": artist_stats,
     }
@@ -160,6 +162,8 @@ def summary_markdown(report: dict) -> str:
         f"| Raw events | {report['raw_events']} |",
         f"| Concerts (next {report['zone']['window_days']} days) | {report['concerts']} |",
         f"| Venues with concerts | {report['venues_with_concerts']} |",
+        f"| Duplicates merged / conflicts | {report['dedup']['merged']} "
+        f"/ {report['dedup']['conflicts']} |",
         f"| Artists identified | {report['artists']['identified']} "
         f"/ {report['artists']['candidates']} |",
         f"| Concerts with an identified artist | {report['artists']['concerts_with_artist']} |",

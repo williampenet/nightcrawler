@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .dedup import dedupe, make_links
 from .models import Concert, RawEvent, Venue
 
 MUSIC_TYPES = {"MusicEvent", "Festival"}
@@ -102,11 +102,6 @@ def tag_reason(tags: list[str]) -> str | None:
     return "" if any(t in NOT_MUSIC_TAGS for t in tags) else None
 
 
-def _slug(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "", text.lower())
-
-
 # Words too generic to identify a place ("Salle du Lavoir, Lyon" -> "lavoir").
 GENERIC_PLACE_WORDS = {
     *("le la les l du de des d au aux the et en".split()),
@@ -195,8 +190,13 @@ def build_concerts(
     now: datetime,
     window_days: int,
     tz: ZoneInfo,
+    stats: dict | None = None,
 ) -> list[Concert]:
-    merged: dict[str, Concert] = {}
+    """Concerts in the window, duplicates across sources merged (see dedup.py).
+
+    If `stats` is given, it receives the de-duplication counts for the run report.
+    """
+    found: list[Concert] = []
     keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
     for ev in raw:
         if not in_window(ev, now, window_days):
@@ -210,27 +210,22 @@ def build_concerts(
             reason = concert_reason(ev, venue)
         if not reason:
             continue
-        start = ev.start.astimezone(tz)
-        key = f"{venue_id}|{start.date().isoformat()}|{_slug(ev.title)}"
-        cid = hashlib.sha1(key.encode()).hexdigest()[:12]
-        if cid in merged:
-            c = merged[cid]
-            if ev.source not in c.sources:
-                c.sources.append(ev.source)
-            c.url = c.url or ev.url
-            c.ticket_url = c.ticket_url or ev.ticket_url
-            c.performers = c.performers or ev.performers
-            continue
-        merged[cid] = Concert(
-            id=cid,
-            title=ev.title,
-            start=start.isoformat(),
-            venue_id=venue_id,
-            venue_name=venue.name if venue else (place_name or ev.location_name or "?"),
-            url=ev.url,
-            ticket_url=ev.ticket_url,
-            performers=ev.performers,
-            sources=[ev.source],
-            reason=reason,
+        found.append(
+            Concert(
+                id="",  # set once duplicates are merged
+                title=ev.title,
+                start=ev.start.astimezone(tz).isoformat(),
+                venue_id=venue_id,
+                venue_name=venue.name if venue else (place_name or ev.location_name or "?"),
+                url=ev.url,
+                ticket_url=ev.ticket_url,
+                performers=ev.performers,
+                sources=[ev.source],
+                reason=reason,
+                links=make_links(ev.url, ev.ticket_url, ev.source),
+            )
         )
-    return sorted(merged.values(), key=lambda c: (c.start, c.venue_name, c.title))
+    concerts, dedup_stats = dedupe(found, venues)
+    if stats is not None:
+        stats.update(dedup_stats)
+    return sorted(concerts, key=lambda c: (c.start, c.venue_name, c.title))

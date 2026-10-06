@@ -127,7 +127,36 @@
     return true;
   }
 
-  const api = { norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // Links of a concert, one per distinct http(s) URL (WIP-42). Older data has no `links`:
+  // fall back to the page and ticket fields.
+  function concertLinks(c) {
+    const given =
+      Array.isArray(c.links) && c.links.length
+        ? c.links
+        : [{ label: "Page", url: c.url }, { label: "Billets", url: c.ticket_url }];
+    const out = [];
+    for (const l of given) {
+      if (!l || typeof l.url !== "string" || !/^https?:\/\//i.test(l.url)) continue;
+      if (out.some((x) => x.url === l.url)) continue;
+      out.push({ label: String(l.label || "Lien"), url: l.url });
+    }
+    return out;
+  }
+
+  // Saved concert ids -> current ids. A merged concert answers to its id and its
+  // `aliases` (the ids its listings had alone), so hidden concerts and shared links
+  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped.
+  function currentIds(concerts, saved) {
+    const byId = new Map(concerts.map((c) => [c.id, c.id])); // a current id wins over an alias
+    for (const c of concerts) {
+      for (const id of Array.isArray(c.aliases) ? c.aliases : []) {
+        if (!byId.has(id)) byId.set(id, c.id);
+      }
+    }
+    return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
+  }
+
+  const api = { concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

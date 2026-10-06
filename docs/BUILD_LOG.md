@@ -53,6 +53,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | feedback | Recommendations off-topic: "Sheldon + Lupi'o + Asna" shown as "Proche de Acid Arab"; asks what "Pertinent" means | |
 | 2026-10-06 | agent:dev | fix | WIP-40 related artists, tags and discovery badge only for confident identities (no homonyms, ≥ 1,000 fans, name ≥ 4 chars, exactly one MusicBrainz match); ADR-0002 amended | PR #26 |
 | 2026-10-06 | agent:reviewer | review WIP-40 | REQUEST_CHANGES: 1 blocking (zero MusicBrainz match accepted as confident, ADR mismatch) + 7 non-blocking; fixed (unverified doubt, famous-artist exceptions) | PR #26 |
+| 2026-10-06 | agent:dev | fix | WIP-42 cross-source de-dup: cleaned titles, same day ±90 min, same venue or ≤ 300 m, complete linkage, festival/genre words ignored; farther = `conflict`; merged `links` and id `aliases`; `report.dedup` | PR #27 |
+| 2026-10-06 | agent:reviewer | review WIP-42 | REQUEST_CHANGES: 3 blocking (chained/unknown-time merges, short-title overlap, unstable ids) + 8 non-blocking; fixed | PR #27 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

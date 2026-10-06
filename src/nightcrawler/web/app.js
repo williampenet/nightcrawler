@@ -394,9 +394,8 @@ function concertRow(c, match, showDate) {
     body.append(why);
   }
   const actions = el("span", null, "links");
-  const page = c.url && safeLink(c.url, "Page");
-  const ticket = c.ticket_url && c.ticket_url !== c.url && safeLink(c.ticket_url, "Billets");
-  for (const x of [page, ticket, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
+  const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
+  for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   if ((c.artists || []).length) {
     const liked = c.artists.every((k) => state.liked.includes(k));
     const like = button(liked ? "Aimé" : "Pertinent", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
@@ -540,8 +539,9 @@ function setupControls() {
     bind(id, key);
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
   }
-  const ids = new Set(DATA.concerts.map((c) => c.id));
-  state.hidden = state.hidden.filter((id) => ids.has(id)); // forget concerts that are gone
+  // a saved id may be an alias since sources were merged (WIP-42): keep the current id;
+  // concerts that are gone are forgotten
+  state.hidden = S.currentIds(DATA.concerts, state.hidden);
   saveState();
 
   const box = document.getElementById("seeds");
@@ -598,7 +598,7 @@ async function main() {
     document.getElementById("generated").textContent =
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
     const m = DEEP_LINK_RE.exec(location.hash);
-    deepLinkId = m && concerts.some((c) => c.id === m[1]) ? m[1] : null;
+    deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
     setupControls();
     render();
     renderSources(venues, report);

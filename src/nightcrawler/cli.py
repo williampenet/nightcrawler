@@ -93,6 +93,7 @@ def one_line(report: dict) -> str:
     tm = src.get("ticketmaster", {})
     ga = src.get("gancio", {})
     art = report.get("artists", {})
+    dd = report.get("dedup", {})
     platforms = ",".join(
         f"{name}(" + " ".join(f"{k}={v}" for k, v in p.items()) + ")"
         for name, p in src.get("platforms", {}).items()
@@ -104,7 +105,8 @@ def one_line(report: dict) -> str:
         f"website_events={src.get('website_events')} platforms={platforms or '-'} | "
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
-        f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} | "
+        f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} "
+        f"dedup={dd.get('merged')}/{dd.get('conflicts')} | "
         f"artists: {art.get('identified')}/{art.get('candidates')} identified "
         f"({art.get('confident')} confident; doubts: ambiguous={art.get('doubt_ambiguous')} "
         f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "
