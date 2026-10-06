@@ -17,7 +17,7 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     respx.get(host="bulbe.example", path="/").respond(200, html=fixture_text("home.html"))
     respx.get("https://bulbe.example/programmation/").respond(200, html=fixture_text("agenda.html"))
     respx.get("https://api.deezer.com/search/artist").respond(
-        json={"data": [{"id": 77, "name": "Sunn & Co", "nb_fan": 12}]}
+        json={"data": [{"id": 77, "name": "Sunn & Co", "nb_fan": 5000}]}
     )
     respx.get("https://api.deezer.com/artist/77/related").respond(
         json={"data": [{"name": "Boris"}]}

@@ -50,6 +50,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-37 | REQUEST_CHANGES: 3 blocking (userinfo host spoofing, login/checkout pages followed, out-of-zone platform events kept) + 8 non-blocking; fixed | PR #24 |
 | 2026-10-06 | agent:dev | fix | WIP-26 Ticketmaster: `locale=*` (default `en` hides French-only events; 0 results for Lyon) | PR #25 |
 | 2026-10-06 | agent:reviewer | review WIP-26 | APPROVE | PR #25 |
+| 2026-10-06 | human:william | feedback | Recommendations off-topic: "Sheldon + Lupi'o + Asna" shown as "Proche de Acid Arab"; asks what "Pertinent" means | |
+| 2026-10-06 | agent:dev | fix | WIP-40 related artists, tags and discovery badge only for confident identities (no homonyms, ≥ 1,000 fans, name ≥ 4 chars); ADR-0002 amended | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
