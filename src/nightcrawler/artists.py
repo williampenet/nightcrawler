@@ -6,8 +6,10 @@
 
 Exact names are not enough: "Asna" or "Sheldon" have homonyms, and a homonym's related
 artists produced absurd matches (WIP-40). Related artists and tags are only kept for
-*confident* identities: one exact-name artist on Deezer and on MusicBrainz, a name of at
-least MIN_KEY_LEN characters, and enough fans for Deezer's related list to mean something.
+*confident* identities: one exact-name artist on Deezer and exactly one on MusicBrainz, a
+name of at least MIN_KEY_LEN characters, and enough fans for Deezer's related list to mean
+something. Very well-known artists (FAMOUS_FANS) may have a short name ("Air") and, when
+MusicBrainz lists homonyms, keep their Deezer related artists but no tags.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ MAX_TAGS = 8
 MAX_LOOKUPS = 400  # cold-cache cap: ~400 names stays well inside the 45 min job
 MIN_FANS = 1000  # below this, Deezer's related list is thin and homonyms are likely
 MIN_KEY_LEN = 4
+FAMOUS_FANS = 50_000  # well-known enough that a short or MusicBrainz-ambiguous name is safe
 
 SPLIT_RE = re.compile(r"\s+(?:\+|/|\||x|×|w/|feat\.?|ft\.?)\s+|\s*,\s*", re.IGNORECASE)
 PREFIX_RE = re.compile(
@@ -150,7 +153,7 @@ def deezer_related(fetcher: Fetcher, artist_id: int) -> list[str]:
 
 
 def musicbrainz_tags(fetcher: Fetcher, name: str) -> list[str] | None:
-    """Tags of the exact-name artist; None when several MusicBrainz artists share the name."""
+    """Tags of the single exact-name artist; None when there is none or several."""
     query = 'artist:"' + name.replace('"', " ") + '"'
     data = _get_json(fetcher, MB_SEARCH, {"query": query, "fmt": "json", "limit": "5"})
     exact = [
@@ -158,10 +161,8 @@ def musicbrainz_tags(fetcher: Fetcher, name: str) -> list[str] | None:
         for a in _dicts((data or {}).get("artists"))
         if a.get("score") == 100 and norm(str(a.get("name") or "")) == norm(name)
     ]
-    if len(exact) > 1:
+    if len(exact) != 1:
         return None
-    if not exact:
-        return []
     tags = sorted(_dicts(exact[0].get("tags")), key=lambda t: -_int(t.get("count")))
     return [str(t["name"]).lower() for t in tags if t.get("name")][:MAX_TAGS]
 
@@ -172,18 +173,19 @@ def _lookup(fetcher: Fetcher, name: str) -> Artist:
         found = deezer_search(fetcher, name)
         if found:
             a.deezer_id, a.fans, homonyms = found
+            famous = a.fans >= FAMOUS_FANS
             if homonyms > 1:
                 a.doubt = "ambiguous"
-            elif len(a.key) < MIN_KEY_LEN:
+            elif len(a.key) < MIN_KEY_LEN and not famous:
                 a.doubt = "short_name"
             elif a.fans < MIN_FANS:
                 a.doubt = "low_fans"
             else:
                 tags = musicbrainz_tags(fetcher, name)
-                if tags is None:
-                    a.doubt = "ambiguous"
+                if tags is None and not famous:
+                    a.doubt = "unverified"  # not exactly one MusicBrainz artist of that name
                 else:
-                    a.tags, a.related = tags, deezer_related(fetcher, a.deezer_id)
+                    a.tags, a.related = tags or [], deezer_related(fetcher, a.deezer_id)
                     a.confident = True
     except Exception as exc:  # one odd payload must never stop the run
         log.warning("artist lookup crashed: %s", type(exc).__name__)
@@ -228,7 +230,7 @@ def enrich(
         "confident": sum(1 for a in artists.values() if a.confident),
         **{
             f"doubt_{d}": sum(1 for a in artists.values() if a.doubt == d)
-            for d in ("ambiguous", "low_fans", "short_name")
+            for d in ("ambiguous", "unverified", "low_fans", "short_name")
         },
         "concerts_with_artist": sum(1 for c in concerts if c.artists),
         "capped": capped,

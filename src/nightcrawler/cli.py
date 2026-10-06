@@ -107,7 +107,8 @@ def one_line(report: dict) -> str:
         f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} | "
         f"artists: {art.get('identified')}/{art.get('candidates')} identified "
         f"({art.get('confident')} confident; doubts: ambiguous={art.get('doubt_ambiguous')} "
-        f"low_fans={art.get('doubt_low_fans')} short={art.get('doubt_short_name')}), "
+        f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "
+        f"short={art.get('doubt_short_name')}), "
         f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered"
     )
 
