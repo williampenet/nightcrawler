@@ -149,21 +149,24 @@ def _names_match(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
 
 def attribute_venue(
     event: RawEvent, venues: dict[str, Venue], keys: dict[str, tuple[str, ...]]
-) -> tuple[str, str | None]:
+) -> tuple[str | None, str | None]:
     """(venue id, venue name if not a known venue) where the event actually takes place.
 
     Some venue sites list events held elsewhere (aggregators): the event's location
     wins over the page's venue when it clearly names another place.
+    Ticketing-platform pages (promoters, tours) are stricter: an event is kept only
+    without a location or at a known venue of the zone; otherwise the id is None (drop).
     """
     loc = event.location_name
     page_venue = venues.get(event.venue_id)
     # sources whose events carry their own venue are never re-attributed
     exempt = event.source == "ticketmaster" or event.source.startswith("gancio:")
-    if exempt or not loc or ADDRESS_RE.search(loc):
+    platform = event.source.startswith("platform:")
+    if exempt or not loc or (ADDRESS_RE.search(loc) and not platform):
         return event.venue_id, None
     tokens = place_tokens(loc)
     key = "".join(tokens)
-    if len(key) < MIN_PLACE_KEY:  # e.g. a room of the venue ("Grande salle") or a city
+    if len(key) < MIN_PLACE_KEY and not platform:  # a room ("Grande salle") or a city
         return event.venue_id, None
     matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
     if matches:
@@ -173,6 +176,8 @@ def attribute_venue(
             return (vkey != key, abs(len(vkey) - len(key)), vid != event.venue_id)
 
         return min(matches, key=rank), None
+    if platform:
+        return None, None  # e.g. a tour date elsewhere listed on a promoter's page
     if page_venue is not None and page_venue.is_music_venue:
         return event.venue_id, None  # most likely one of its own rooms or stages
     return f"place:{key}", loc
@@ -197,6 +202,8 @@ def build_concerts(
         if not in_window(ev, now, window_days):
             continue
         venue_id, place_name = attribute_venue(ev, venues, keys)
+        if venue_id is None:  # platform event outside the zone's known venues
+            continue
         venue = venues.get(venue_id)
         reason = tag_reason(ev.tags)
         if reason is None:

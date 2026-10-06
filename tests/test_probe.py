@@ -125,16 +125,41 @@ def test_platform_links_specific_pages_only(fixture_text):
     links = platform_links(fixture_text("platform_venue.html"), "https://ombres.example/")
     # the shotgun homepage and the lookalike domain are ignored; document order is kept
     assert links == [("shotgun", SHOTGUN), ("dice", DICE), ("helloasso", HELLOASSO)]
-    html = '<a href="https://www.facebook.com/events/123/">fb</a><a href="https://dice.fm/fr">x</a>'
+    # recognition-only platforms and generic pages are not followed
+    html = (
+        '<a href="https://www.facebook.com/events/123/">fb</a><a href="https://dice.fm/fr">x</a>'
+        '<a href="https://www.ticketmaster.fr/fr/salle/x">tm</a>'
+    )
+    assert platform_links(html, "https://x.example/") == []
+
+
+def test_platform_links_reject_spoofed_hosts():
+    html = (
+        '<a href="https://shotgun.live:443@evil.example/venues/x">a</a>'
+        '<a href="https://shotgun.live:x@169.254.169.254/latest/meta-data">b</a>'
+        '<a href="http://shotgun.live/venues/x">plain http</a>'
+        '<a href="https://shotgun.live.evil.example/venues/x">c</a>'
+    )
+    assert platform_links(html, "https://x.example/") == []
+
+
+def test_platform_links_skip_account_and_checkout_pages():
+    html = (
+        '<a href="https://dice.fm/account/login">a</a>'
+        '<a href="https://www.weezevent.com/fr/checkout/123">b</a>'
+        '<iframe src="https://widget.weezevent.com/ticket/E123/abc"></iframe>'
+        '<a href="https://www.helloasso.com/associations/x/adhesions/2026">c</a>'
+        '<a href="https://www.billetweb.fr/shop.php?event=1">d</a>'
+    )
     assert platform_links(html, "https://x.example/") == [
-        ("facebook-events", "https://www.facebook.com/events/123/")
+        ("billetweb", "https://www.billetweb.fr/shop.php?event=1")
     ]
 
 
-def _platform_mocks(fixture_text):
+def _platform_mocks(fixture_text, home=None):
     respx.get("https://ombres.example/robots.txt").respond(404)
     respx.get(host="ombres.example", path="/").respond(
-        200, html=fixture_text("platform_venue.html")
+        200, html=home or fixture_text("platform_venue.html")
     )
     respx.get("https://shotgun.live/robots.txt").respond(404)
     respx.get(SHOTGUN).respond(200, html=fixture_text("shotgun_venue.html"))
@@ -158,12 +183,13 @@ def test_probe_reads_platform_pages(fixture_text, tz):
     assert {e.venue_id for e in events} == {"osm:node/1"}  # the venue that linked it
     # the event's own URL is kept; without one, the platform page stands in
     assert [e.url for e in events] == ["https://shotgun.live/fr/events/kraut-tuesday", SHOTGUN]
+    assert {e.ticket_url for e in events} == {SHOTGUN}  # no offer: the platform page
 
 
 @respx.mock
-def test_probe_platform_robots_blocked(tz):
-    respx.get("https://ombres.example/robots.txt").respond(404)
-    respx.get(host="ombres.example", path="/").respond(200, html=f'<a href="{HELLOASSO}">x</a>')
+def test_probe_platform_robots_blocked(fixture_text, tz):
+    home = f'<a href="{HELLOASSO}">x</a><a href="{DICE}">d</a><a href="{SHOTGUN}">s</a>'
+    _platform_mocks(fixture_text, home)
     respx.get("https://www.helloasso.com/robots.txt").respond(
         200,
         text="User-agent: *\nDisallow: /associations/\n",
@@ -172,11 +198,15 @@ def test_probe_platform_robots_blocked(tz):
     page = respx.get(HELLOASSO).respond(200, html="")
     budget = PlatformBudget(5)
     probe, events = probe_venue(venue("https://ombres.example"), fetcher(), tz, budget)
-    assert probe.status == "platform_only" and events == []
-    assert probe.platform_pages[0]["status"] == "robots_blocked"
-    assert not page.called and budget.left == 5  # never bypassed, costs no budget
-    assert platform_stats([probe]) == {
-        "helloasso": {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 1}
+    assert [p["status"] for p in probe.platform_pages] == ["robots_blocked", "no_events", "events"]
+    assert not page.called and budget.left == 3  # never bypassed; costs no budget nor slot
+    assert probe.status == "structured" and len(events) == 2
+    assert platform_stats([probe])["helloasso"] == {
+        "pages": 0,
+        "with_events": 0,
+        "events": 0,
+        "robots_blocked": 1,
+        "budget_skipped": 0,
     }
 
 
@@ -186,4 +216,5 @@ def test_probe_platform_budget(fixture_text, tz):
     probe, events = probe_venue(venue("https://ombres.example"), fetcher(), tz, PlatformBudget(0))
     assert probe.status == "platform_only" and events == []
     assert {p["status"] for p in probe.platform_pages} == {"skipped_budget"}
-    assert platform_stats([probe]) == {}  # budget skips are not counted as pages
+    stats = platform_stats([probe])
+    assert stats["shotgun"]["budget_skipped"] == 1 and stats["shotgun"]["pages"] == 0

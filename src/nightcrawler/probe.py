@@ -113,43 +113,57 @@ def platforms_in(html: str) -> list[str]:
 
 MAX_PLATFORM_PAGES_PER_VENUE = 2
 MAX_PLATFORM_PAGES_PER_RUN = 40
-# Path segments of a platform's generic pages (home, locale, account, app stores...)
+# Platforms whose pages we follow (the others in PLATFORMS are recognition-only), matched
+# on the full hostname: never on netloc text, which may carry a spoofing "user@" part.
+FOLLOWED_PLATFORMS = {
+    name: re.compile(r"^(?:[\w-]+\.)*" + domain + "$")
+    for name, domain in {
+        "shotgun": r"shotgun\.live",
+        "dice": r"dice\.fm",
+        "helloasso": r"helloasso\.com",
+        "weezevent": r"weezevent\.com",
+        "billetweb": r"billetweb\.fr",
+        "yurplan": r"yurplan\.com",
+    }.items()
+}
+# Path segments of a platform's generic pages (home, locale, help...): not worth a fetch
 GENERIC_PLATFORM_SEGMENTS = {
-    "fr", "en", "fr-fr", "en-gb", "en-us", "login", "signin", "signup", "register",
-    "app", "apps", "download", "help", "faq", "about", "contact", "search", "cart",
-    "legal", "privacy", "terms", "cgu", "cgv", "blog", "pro", "organisateurs",
+    "fr", "en", "fr-fr", "en-gb", "en-us", "app", "apps", "download", "help", "faq",
+    "about", "contact", "search", "legal", "privacy", "terms", "cgu", "cgv", "blog", "pro",
+    "organisateurs",
+}  # fmt: skip
+# Account, checkout and widget pages: never followed, wherever the segment appears
+DENIED_PLATFORM_SEGMENTS = {
+    "login", "signin", "signup", "register", "account", "auth", "oauth", "checkout",
+    "cart", "basket", "ticket", "widget", "adhesions",
 }  # fmt: skip
 SKIP_ASSET_RE = re.compile(r"\.(js|css|svg|ico|woff2?)$", re.I)
 
 
 def platform_of(url: str) -> str | None:
-    """Name of the platform a URL belongs to, matched on the platform's own domain only."""
+    """Name of the followed platform a URL belongs to, or None (also for unsafe URLs)."""
     parts = urlsplit(url)
-    target = parts.netloc.lower() + parts.path
-    for name, pattern in PLATFORMS.items():
-        if re.match(r"(?:[\w-]+\.)*" + pattern + r"(?=[/:]|$)", target, re.I):
-            return name
-    return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or "@" in parts.netloc or host.startswith("widget."):
+        return None
+    return next((n for n, rx in FOLLOWED_PLATFORMS.items() if rx.match(host)), None)
 
 
 def platform_links(html: str, base_url: str) -> list[tuple[str, str]]:
     """(platform, url) of links and embeds pointing to a specific platform page (venue,
-    organiser or event), not to the platform's homepage or generic pages."""
+    organiser or event), not to the platform's homepage, generic or account pages."""
     soup = BeautifulSoup(html, "lxml")
     found: list[tuple[str, str]] = []
     for el in soup.find_all(["a", "iframe"]):  # document order
-        raw = (el.get("href") if el.name == "a" else el.get("src")) or ""
-        raw = raw.strip()
-        if raw.startswith("//"):
-            raw = "https:" + raw
-        url = _clean(urljoin(base_url, raw))
+        raw = ((el.get("href") if el.name == "a" else el.get("src")) or "").strip()
+        url = _clean(urljoin(base_url, raw))  # "//host/..." takes the page's scheme
         path = urlsplit(url).path
-        segments = [s for s in path.lower().split("/") if s]
+        segments = {s for s in path.lower().split("/") if s}
         if (
-            not url.startswith(("http://", "https://"))
-            or SKIP_RE.search(url)
+            SKIP_RE.search(url)
             or SKIP_ASSET_RE.search(path)
-            or all(s in GENERIC_PLATFORM_SEGMENTS for s in segments)
+            or segments <= GENERIC_PLATFORM_SEGMENTS
+            or segments & DENIED_PLATFORM_SEGMENTS
         ):
             continue
         name = platform_of(url)
@@ -178,15 +192,12 @@ def read_platform_page(
 ) -> tuple[dict, list[RawEvent]]:
     """Read one platform page with the structured parsers.
 
-    Its events belong to the venue that linked it; events.attribute_venue may still move
-    them when their location names another place.
+    Its events belong to the venue that linked it; events.attribute_venue moves them to
+    another known venue named by their location, or drops them (out of the zone).
     """
     page = {"platform": name, "url": url, "status": "no_events", "events": 0}
-    try:
-        if not fetcher.allowed(url):  # checked first: a blocked page costs no budget
-            return page | {"status": "robots_blocked"}, []
-    except httpx.HTTPError:
-        pass  # the page fetch below decides
+    if not fetcher.allowed(url):  # checked first: a blocked page costs no budget
+        return page | {"status": "robots_blocked"}, []
     if not budget.take():
         return page | {"status": "skipped_budget"}, []
     try:
@@ -211,6 +222,7 @@ def read_platform_page(
     for ev in events:
         ev.source = f"platform:{name}"
         ev.url = ev.url or resp.url  # the event's own URL when it has one
+        ev.ticket_url = ev.ticket_url or resp.url
     if events:
         page |= {"status": "events", "events": len(events)}
     return page, events
@@ -288,10 +300,13 @@ def probe_venue(
     links: list[tuple[str, str]] = []
     for url, html in pages:
         links += [link for link in platform_links(html, url) if link not in links]
-    best_count = 0
-    for name, url in links[:MAX_PLATFORM_PAGES_PER_VENUE]:
+    best_count, slots = 0, MAX_PLATFORM_PAGES_PER_VENUE
+    for name, url in links:
+        if slots == 0:
+            break
         page, events = read_platform_page(name, url, venue.id, fetcher, tz, budget)
         probe.platform_pages.append(page)
+        slots -= page["status"] != "robots_blocked"  # a blocked link costs no slot
         found.extend(events)
         if len(events) > best_count:
             probe.method, probe.agenda_url, best_count = f"platform:{name}", url, len(events)

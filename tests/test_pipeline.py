@@ -130,6 +130,9 @@ def test_end_to_end_platform_pages(tmp_path, zone, tz, fixture_text, monkeypatch
     respx.get("https://dice.fm/robots.txt").respond(
         200, text="User-agent: *\nDisallow: /venue/\n", headers={"content-type": "text/plain"}
     )
+    # dice is blocked, so the third link gets the venue's second slot
+    respx.get("https://www.helloasso.com/robots.txt").respond(404)
+    respx.get(host="www.helloasso.com").respond(200, html="<p>Saison</p>")
     respx.get(host="api.deezer.com").respond(json={"data": []})
     respx.get(host="musicbrainz.org").respond(json={"artists": []})
 
@@ -139,12 +142,31 @@ def test_end_to_end_platform_pages(tmp_path, zone, tz, fixture_text, monkeypatch
     assert report["probe_status"] == {"structured": 2, "no_website": 1}
     assert report["probe_method"] == {"json-ld": 1, "platform:shotgun": 1}
     assert report["sources"]["platforms"] == {
-        "dice": {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 1},
-        "shotgun": {"pages": 1, "with_events": 1, "events": 2, "robots_blocked": 0},
+        "dice": {
+            "pages": 0,
+            "with_events": 0,
+            "events": 0,
+            "robots_blocked": 1,
+            "budget_skipped": 0,
+        },
+        "helloasso": {
+            "pages": 1,
+            "with_events": 0,
+            "events": 0,
+            "robots_blocked": 0,
+            "budget_skipped": 0,
+        },
+        "shotgun": {
+            "pages": 1,
+            "with_events": 1,
+            "events": 2,
+            "robots_blocked": 0,
+            "budget_skipped": 0,
+        },
     }
     assert (
-        "platforms=dice(pages=0 with_events=0 events=0 robots_blocked=1),"
-        "shotgun(pages=1 with_events=1 events=2 robots_blocked=0)"
+        "platforms=dice(pages=0 with_events=0 events=0 robots_blocked=1 budget_skipped=0),"
+        "helloasso("
     ) in one_line(report)
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
     by_title = {c["title"]: c for c in concerts}

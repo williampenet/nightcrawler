@@ -94,8 +94,7 @@ def one_line(report: dict) -> str:
     ga = src.get("gancio", {})
     art = report.get("artists", {})
     platforms = ",".join(
-        f"{name}(pages={p['pages']} with_events={p['with_events']} events={p['events']} "
-        f"robots_blocked={p['robots_blocked']})"
+        f"{name}(" + " ".join(f"{k}={v}" for k, v in p.items()) + ")"
         for name, p in src.get("platforms", {}).items()
     )
     return (

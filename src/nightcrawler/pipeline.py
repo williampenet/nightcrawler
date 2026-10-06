@@ -121,20 +121,17 @@ def run(
 
 
 def platform_stats(probes) -> dict[str, dict[str, int]]:
-    """Per platform: pages requested, pages with events, events, pages blocked by robots.txt.
-
-    Pages skipped because the run-wide budget was spent are not counted (see venues.json).
-    """
+    """Per platform: pages requested, pages with events, events (before attribution),
+    pages blocked by robots.txt, pages skipped because the run-wide budget was spent."""
     stats: dict[str, dict[str, int]] = {}
+    keys = ("pages", "with_events", "events", "robots_blocked", "budget_skipped")
     for probe in probes:
         for page in probe.platform_pages:
-            if page["status"] == "skipped_budget":
-                continue
-            s = stats.setdefault(
-                page["platform"], {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 0}
-            )
+            s = stats.setdefault(page["platform"], dict.fromkeys(keys, 0))
             if page["status"] == "robots_blocked":
                 s["robots_blocked"] += 1
+            elif page["status"] == "skipped_budget":
+                s["budget_skipped"] += 1
             else:
                 s["pages"] += 1
                 s["with_events"] += page["events"] > 0

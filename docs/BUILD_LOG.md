@@ -46,7 +46,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:dev | infra | GitHub hosted runners repeatedly not acquired while the 40-min eval ran; eval moved off pull requests | |
 | 2026-10-06 | agent:dev | fix | WIP-39 Gancio places without coordinates geocoded with the national address API (IGN Géoplateforme, BAN), capped and memoised | PR #23 |
 | 2026-10-06 | agent:reviewer | review WIP-39 | REQUEST_CHANGES: 2 blocking (mis-geocode outside the zone silently dropped events; BAN/Etalab attribution missing) + 6 non-blocking; fixed | PR #23 |
-| 2026-10-06 | agent:dev | feature | WIP-37 venues with no readable agenda: linked ticketing-platform pages read with the structured parsers (robots honoured, 2/venue, 40/run), per-platform counts in report.json and the CI annotation | branch wip-37-platform-pages |
+| 2026-10-06 | agent:dev | feature | WIP-37 venues with no readable agenda: linked ticketing-platform pages read with the structured parsers (robots honoured, 2/venue, 40/run), per-platform counts in report.json and the CI annotation | PR #24 |
+| 2026-10-06 | agent:reviewer | review WIP-37 | REQUEST_CHANGES: 3 blocking (userinfo host spoofing, login/checkout pages followed, out-of-zone platform events kept) + 8 non-blocking; fixed | PR #24 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
