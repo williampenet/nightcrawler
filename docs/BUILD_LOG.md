@@ -100,6 +100,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | docs | PRD v3: two circles of sources, written taste profile judged by a model (judge_taste), reference set from the former watch (FR-11) | PR #44 |
 | 2026-10-06 | human:william | validation | PRD v3 validated; reuse his in-app "Pas pour moi" as negatives and label more; profile stored in the event store, not in the repo | PR #44 |
 | 2026-10-06 | agent:reviewer | review WIP-54 | REQUEST_CHANGES: broken table, v2 digest statements not marked superseded, baseline vs personal data, missing log; fixed | PR #44 |
+| 2026-10-06 | agent:reviewer | re-review WIP-54 | APPROVE + 2 non-blocking (reproduction wording, alert ticket later) | PR #44 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

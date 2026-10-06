@@ -35,7 +35,7 @@ taste profile, with a memory of what it had already reported (`concerts-vus.md`,
 2026-07-26 to 2026-12-17). The PM rates its picks as good and Nightcrawler's as mostly off-target.
 Measurement on the published data of 2026-10-06 20:42: 40 of those events fall in Nightcrawler's
 window (≤ 2026-12-05); 11 are present (artist name searched in title and performers, same date,
-checked by hand; reproduced in CI by the FR-11 coverage measure, ticket WIP-55). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
+checked by hand; to be reproduced in CI by the FR-11 coverage measure, WIP-55). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
 Subsistances and Chapelle de la Trinité (no agenda detected), Grrrnd Zero (platform pages only,
 0 concerts), Auditorium (2 concerts); L'Épicerie Moderne gives 4.
 The gap has two causes: coverage (agendas published only as HTML are not read, ADR-0001 /
