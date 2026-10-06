@@ -88,6 +88,12 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | build | WIP-51: same normalised name merges up to 1.5 km (Transbordeur TM/OSM ~590 m apart, distance_m on measured coordinates); `excluded_venues` in zone config | PR #41 |
 | 2026-10-06 | agent:reviewer | review WIP-51 | REQUEST_CHANGES: 2 blocking (excluded venue leaking via other pages; exclusion after merge) + 5 non-blocking (same-source far merges, substring exclusion, 580→590 m, tests); fixed | PR #41 |
 | 2026-10-06 | agent:reviewer | re-review WIP-51 | APPROVE: both blocking fixed and re-verified; 4 non-blocking (short name variants, venues_excluded counts per source, dropped-event counter, post-run re-measure) | PR #41 |
+| 2026-10-06 | agent:dev | measure | WIP-51 result on Pipeline run 37506203071: dedup conflicts 19 → 3, concerts 302 → 255, one Ghinzu, one Transbordeur (37 concerts), no Radiant / Zinc left (live data/report.json) | [WIP-51](https://linear.app/wip-coding/issue/WIP-51) |
+| 2026-10-06 | human:william | decision | Go for a taste eval on his labels and "Sûrs / À découvrir / Tout voir" sections | |
+| 2026-10-06 | agent:dev | build | WIP-53: tiered default view (Sûrs ≥ 0.9 direct, À découvrir top 10 inferred, Tout voir) | PR #42 |
+| 2026-10-06 | agent:reviewer | review WIP-53 | APPROVE + 8 non-blocking (inferred never "sure", empty sections auto-open Tout voir, focus, disclosure label, tests); applied | PR #42 |
+| 2026-10-06 | agent:dev | build | WIP-52: leave-one-out taste eval of scoring.js on William's labels, aggregated output only, "Taste eval" workflow | PR #43 |
+| 2026-10-06 | agent:reviewer | review WIP-52 | REQUEST_CHANGES: 3 blocking (own-label leak via names, stale labels, no replay tests) + 6 non-blocking; fixed; re-review APPROVE + 2 non-blocking (ambiguous-dislike over-exclusion, bias note added) | PR #43 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

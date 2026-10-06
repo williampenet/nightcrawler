@@ -147,6 +147,9 @@ liked concert is ranked above a random disliked one, i.e. the ROC AUC (Hanley & 
   longer in the site data), but what they put in the profile still feeds the scores.
 - **Ids.** A label is lost when a concert's id and aliases both changed between runs (the
   store keeps ids stable, ADR-0005).
+- **Ambiguous dislikes bias "sure" upwards.** A dislike of a liked artist's concert is the
+  likeliest false certainty, and it is exactly what `ambiguous_dislikes` excludes: when that
+  count is not zero, read "sure" precision as an upper bound.
 - **Time.** `created_at` is the server's receipt time: ratings queued offline arrive later,
   in their original order.
 
