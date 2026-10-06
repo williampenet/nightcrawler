@@ -37,3 +37,29 @@ Option A.
 
 ## Cost impact
 €0/month. Total vs budget: €0 / €20.
+
+## Evidence (2026-10-06, WIP-48)
+
+| Data | Call | HTTP | What came back |
+|---|---|---|---|
+| Top artists | `GET /me/top/artists` | 200 | items; **no `genres`, no `popularity`, no `followers` field** |
+| Top tracks | `GET /me/top/tracks` | 200 | items; no `preview_url` |
+| Followed artists | `GET /me/following?type=artist` | 200 | items |
+| Recently played | `GET /me/player/recently-played` | 200 | items |
+| Saved tracks | `GET /me/tracks` | 200 | items |
+| Playlists | `GET /me/playlists` | 200 | items |
+| Search, limit 10 | `GET /search` | 200 | 10 items |
+| Search, limit 20 | `GET /search` | **400** | — |
+| Artist | `GET /artists/{id}` | 200 | **no `genres`, no `popularity`, no `followers`** |
+| Several artists | `GET /artists?ids=` | **403** | — |
+| Related artists | `GET /artists/{id}/related-artists` | **403** | — |
+| Artist top tracks | `GET /artists/{id}/top-tracks` | **403** | — |
+| Recommendations | `GET /recommendations` | **404** | — |
+| Audio features | `GET /audio-features` | **403** | — |
+
+Sources: real test run by William on 2026-10-06 with the page's "Tester l'API Spotify" button
+(WIP-48, PR #36; screenshot in the conversation), compared with Spotify's announcements
+[2024-11-27](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api) and the
+[February 2026 changelog](https://developer.spotify.com/documentation/web-api/references/changes/february-2026).
+The changelog lists `followers` and `popularity` as removed; the missing `genres` field is
+our measurement (not found in those pages).
