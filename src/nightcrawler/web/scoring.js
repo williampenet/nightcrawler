@@ -5,6 +5,10 @@
 (function (root) {
   const DISCOVERY_FANS = 20000; // fewer Deezer fans than this = little-known artist
   const MIN_STYLE = 0.15;
+  // Tiers of the default view (WIP-53). Provisional values: they will be tuned by the
+  // taste eval (WIP-52).
+  const SURE_MIN = 0.9; // direct match: artist listened to (1), liked artist / concert / name (0.9)
+  const DISCOVER_MAX = 10; // at most this many inferred matches ("Proche de", "Style") shown
 
   // Same normalisation as the pipeline (artists.norm): no accents, lower case, a-z0-9 only.
   function norm(name) {
@@ -224,6 +228,24 @@
     return best;
   }
 
+  // Splits scored concerts ([{c, m}], m from scoreConcert) into the default view's tiers
+  // (WIP-53): sure = direct matches (score >= SURE_MIN and not inferred), by date;
+  // discover = the best other matches (score > 0: "Proche de", "Style"), by score then
+  // date, at most DISCOVER_MAX; rest = everything else, in input order.
+  // Pure: the input array is not changed.
+  function tiers(scored) {
+    const byDate = (a, b) => String(a.c.start).localeCompare(String(b.c.start));
+    const list = Array.isArray(scored) ? scored : [];
+    const isSure = (x) => x.m.score >= SURE_MIN && !x.m.inferred; // a guess is never "sûr"
+    const sure = list.filter(isSure).sort(byDate);
+    const discover = list
+      .filter((x) => x.m.score > 0 && !isSure(x))
+      .sort((a, b) => b.m.score - a.m.score || byDate(a, b))
+      .slice(0, DISCOVER_MAX);
+    const picked = new Set([...sure, ...discover]);
+    return { sure, discover, rest: list.filter((x) => !picked.has(x)) };
+  }
+
   // "when" filter on an ISO start, given now (Date) and day keys in the zone's time zone
   function inWhen(mode, start, now, dayKey) {
     if (mode === "all") return true;
@@ -274,7 +296,7 @@
     return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
   }
 
-  const api = { defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { SURE_MIN, DISCOVER_MAX, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

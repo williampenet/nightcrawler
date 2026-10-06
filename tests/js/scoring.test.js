@@ -214,3 +214,105 @@ test("sanitizeState keeps well-typed rating fields only", () => {
   assert.deepEqual(S.sanitizeState([1]), S.defaultState());
   assert.deepEqual(S.sanitizeState(null).likedConcerts, []);
 });
+
+// ---------------------------------------------------------------- tiers (WIP-53)
+
+const sc = (id, score, start) => ({ c: { id, start }, m: { score } });
+const ids = (xs) => xs.map((x) => x.c.id);
+
+test("tiers: constants", () => {
+  assert.equal(S.SURE_MIN, 0.9);
+  assert.equal(S.DISCOVER_MAX, 10);
+});
+
+test("tiers: 0.9 exactly is sure, just below is discover, 0 is rest", () => {
+  const t = S.tiers([
+    sc("a", 0.9, "2026-10-10T20:00:00+02:00"),
+    sc("b", 0.8999, "2026-10-10T20:00:00+02:00"),
+    sc("c", 0, "2026-10-10T20:00:00+02:00"),
+    sc("d", 1, "2026-10-09T20:00:00+02:00"),
+  ]);
+  assert.deepEqual(ids(t.sure), ["d", "a"]); // by date
+  assert.deepEqual(ids(t.discover), ["b"]);
+  assert.deepEqual(ids(t.rest), ["c"]);
+});
+
+test("tiers: sure is sorted by date, not by score", () => {
+  const t = S.tiers([
+    sc("late-1.0", 1, "2026-10-20T20:00:00+02:00"),
+    sc("early-0.9", 0.9, "2026-10-08T20:00:00+02:00"),
+  ]);
+  assert.deepEqual(ids(t.sure), ["early-0.9", "late-1.0"]);
+});
+
+test("tiers: discover by score, ties by date, then input order", () => {
+  const t = S.tiers([
+    sc("style-late", 0.5, "2026-10-12T20:00:00+02:00"),
+    sc("style-early", 0.5, "2026-10-11T20:00:00+02:00"),
+    sc("proche", 0.8, "2026-10-30T20:00:00+02:00"),
+    sc("same-1", 0.7, "2026-10-15T20:00:00+02:00"),
+    sc("same-2", 0.7, "2026-10-15T20:00:00+02:00"),
+  ]);
+  assert.deepEqual(ids(t.discover), ["proche", "same-1", "same-2", "style-early", "style-late"]);
+});
+
+test("tiers: discover is capped, extra inferred matches go to rest in input order", () => {
+  const input = [];
+  for (let i = 0; i < 13; i++) input.push(sc(`i${i}`, 0.3 + i * 0.01, `2026-10-${10 + i}T20:00:00+02:00`));
+  input.splice(2, 0, sc("zero", 0, "2026-10-01T20:00:00+02:00"));
+  const t = S.tiers(input);
+  assert.equal(t.discover.length, S.DISCOVER_MAX);
+  assert.deepEqual(ids(t.discover), ["i12", "i11", "i10", "i9", "i8", "i7", "i6", "i5", "i4", "i3"]);
+  assert.deepEqual(ids(t.rest), ["i0", "i1", "zero", "i2"]); // the list's own order, for "Tout voir"
+});
+
+test("tiers: each concert lands in exactly one tier; input untouched; empty input", () => {
+  const input = [sc("x", 0.6, "2026-10-12"), sc("y", 1, "2026-10-11"), sc("z", 0, "2026-10-10")];
+  const before = ids(input);
+  const t = S.tiers(input);
+  assert.deepEqual([...ids(t.sure), ...ids(t.discover), ...ids(t.rest)].sort(), ["x", "y", "z"]);
+  assert.deepEqual(ids(input), before);
+  assert.deepEqual(S.tiers([]), { sure: [], discover: [], rest: [] });
+});
+
+test("tiers: an inferred match is never sure, whatever its score", () => {
+  const guess = { c: { id: "g", start: "2026-10-10" }, m: { score: 0.95, inferred: true } };
+  const direct = { c: { id: "d", start: "2026-10-11" }, m: { score: 0.9, inferred: false } };
+  const t = S.tiers([guess, direct]);
+  assert.deepEqual(ids(t.sure), ["d"]);
+  assert.deepEqual(ids(t.discover), ["g"]);
+});
+
+test("tiers: liked concert and liked performer name are sure, a style match discover", () => {
+  const p = S.buildProfile(
+    { seeds: [{ name: "Unknown", tags: ["noise", "drone"] }], likedConcerts: ["lc"], likedNames: ["lesdegats"] },
+    artists,
+  );
+  const concerts = [
+    { id: "lc", start: "2026-10-12T20:00:00+02:00", artists: [], performers: ["Someone"] },
+    { id: "name", start: "2026-10-11T20:00:00+02:00", artists: [], performers: ["Les Dégâts"] },
+    c("style", ["boris"]),
+    c("none", ["popstar"]),
+  ];
+  const scored = concerts.map((x) => ({ c: x, m: S.scoreConcert(x, artists, p) }));
+  const by = Object.fromEntries(scored.map((x) => [x.c.id, x.m]));
+  assert.equal(by.lc.score, 0.9);
+  assert.equal(by.name.score, 0.9);
+  assert.equal(by.name.reason, "Tu as aimé Les Dégâts");
+  assert.match(by.style.reason, /^Style : /);
+  const t = S.tiers(scored);
+  assert.deepEqual(ids(t.sure), ["name", "lc"]); // by date
+  assert.deepEqual(ids(t.discover), ["style"]);
+  assert.deepEqual(ids(t.rest), ["none"]);
+});
+
+test("tiers: scoreConcert direct matches are sure, inferred ones discover", () => {
+  const p = S.buildProfile({ seeds: [{ name: "Earth", tags: [] }], liked: ["boris"] }, artists);
+  const scored = [c("seed", ["earth"]), c("liked", ["boris"]), c("none", ["popstar"])].map((x) => ({ c: x, m: S.scoreConcert(x, artists, p) }));
+  const t = S.tiers(scored);
+  assert.deepEqual(ids(t.sure).sort(), ["liked", "seed"]);
+  assert.deepEqual(ids(t.rest), ["none"]);
+  const p2 = S.buildProfile({ seeds: [{ name: "Sunn O)))", tags: [] }] }, artists);
+  const rel = c("rel", ["earth"]);
+  assert.deepEqual(ids(S.tiers([{ c: rel, m: S.scoreConcert(rel, artists, p2) }]).discover), ["rel"]); // "Proche de" = 0.8
+});
