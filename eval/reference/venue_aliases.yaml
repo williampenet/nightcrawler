@@ -1,0 +1,7 @@
+# Other names a run may give a reference venue (watch_events.csv `venue` -> names).
+# Without an entry, a venue matches when every word of its normalised name (accents, case,
+# le/la/de/salle... ignored) appears in the concert's venue name, e.g. "La Rayonne" matches
+# "CCO Villeurbanne / La Rayonne". Entries below drop the district the watch appended.
+"Rock n Eat, Lyon 9e": [Rock n Eat]
+"Groom, Lyon 1er": [Groom]
+"Le Sucre, Lyon 2e": [Le Sucre]

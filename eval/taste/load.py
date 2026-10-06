@@ -59,9 +59,21 @@ def read_store(conn) -> dict:
             "WHERE concert_id IS NOT NULL AND kind IN ('like', 'unlike', 'dislike') "
             "ORDER BY created_at, id"
         ).fetchall()
+        # dates of the disliked concerts, to tell past ones from ids lost since (WIP-55)
+        ids = sorted({c for c, k in events if k == "dislike"})
+        stored = conn.execute(
+            "SELECT id, aliases, left(data->>'start', 10) FROM concerts "
+            "WHERE id = ANY(%s) OR aliases && %s::text[]",
+            (ids, ids),
+        ).fetchall()
+    dates = {}
+    for cid, aliases, day in stored:
+        for i in [cid, *(aliases or [])]:
+            dates[i] = day
     return {
         "state": row[0] if row else None,
         "feedback": [{"concert_id": c, "kind": k} for c, k in events],
+        "stored_dates": dates,
     }
 
 
@@ -121,6 +133,20 @@ def _ci(t: dict) -> str:
     return "n/a" if not t["wilson95"] else f"{t['wilson95'][0]:.0%}–{t['wilson95'][1]:.0%}"
 
 
+def dislike_text(d: dict | None) -> str:
+    """Where the "Pas pour moi" ratings went (WIP-55): counts only."""
+    if not d:
+        return ""
+    return (
+        f'"Pas pour moi": {d["concerts"]} concerts in the rating history ({d["rows"]} rows), '
+        f"{d['labelled']} labelled; not labelled: {d['rated_again']} rated again, "
+        f"{d['not_hidden']} no longer hidden in the profile, {d['ambiguous']} ambiguous, "
+        f"{d['unpublished_past']} past, {d['unpublished_upcoming']} upcoming but not published, "
+        f"{d['unpublished_unknown']} unknown to the store. Hidden in the profile: "
+        f"{d['hidden_in_profile']} ({d['hidden_published']} published)."
+    )
+
+
 def one_line(result: dict) -> str:
     lab, pw = result["labels"], result["pairwise"]
     if not lab["total"]:
@@ -151,6 +177,8 @@ def summary_markdown(result: dict, generated_at: str | None) -> str:
         f"{lab['ambiguous_dislikes']} ambiguous dislikes.",
         "",
     ]
+    if dis := dislike_text(result.get("dislikes")):
+        lines += [dis, ""]
     if not lab["total"]:
         return "\n".join([*lines, "No labels yet: nothing to measure.", ""])
     lines += [
@@ -218,7 +246,9 @@ def main(argv: list[str] | None = None) -> int:
         annotate("error", f"Taste eval: site data unavailable ({type(exc).__name__})")
         return 1
     try:
-        result = run_eval({**store, "concerts": site["concerts"], "artists": site["artists"]})
+        today = (site["generated_at"] or "")[:10] or None  # the site data's local date
+        payload = {**store, "concerts": site["concerts"], "artists": site["artists"]}
+        result = run_eval(payload | {"today": today})
     except Exception as exc:
         annotate("error", f"Taste eval: runner failed ({type(exc).__name__})")
         return 1

@@ -51,8 +51,9 @@ def _site(tmp_path, concerts=CONCERTS):
 class RecordingConn:
     """Answers read_store's queries and records every statement."""
 
-    def __init__(self, profile, events):
-        self.profile, self.events, self.sql = profile, events, []
+    def __init__(self, profile, events, concerts=()):
+        self.profile, self.events, self.concerts, self.sql = profile, events, list(concerts), []
+        self.params = []
 
     def transaction(self):
         import contextlib
@@ -61,7 +62,12 @@ class RecordingConn:
 
     def execute(self, sql, params=None):
         self.sql.append(sql)
-        rows = {"profile": [(self.profile,)] if self.profile else [], "feedback": self.events}
+        self.params.append(params)
+        rows = {
+            "profile": [(self.profile,)] if self.profile else [],
+            "feedback": self.events,
+            "concerts": self.concerts,
+        }
         table = next((t for t in rows if f"FROM {t}" in sql), None)
         return type("Cur", (), {"fetchone": lambda s: (rows[table] or [None])[0],
                                 "fetchall": lambda s: rows[table]})()  # fmt: skip
@@ -72,8 +78,36 @@ def test_read_store_is_read_only_with_a_timeout():
     got = load.read_store(conn)
     assert conn.sql[0] == "SET TRANSACTION READ ONLY"
     assert conn.sql[1].startswith("SET LOCAL statement_timeout")
-    assert got == {"state": PROFILE, "feedback": [{"concert_id": LIKED, "kind": "like"}]}
+    assert got == {
+        "state": PROFILE,
+        "feedback": [{"concert_id": LIKED, "kind": "like"}],
+        "stored_dates": {},
+    }
     assert load.read_store(RecordingConn(None, []))["state"] is None
+
+
+def test_read_store_gives_the_dates_of_disliked_concerts():
+    conn = RecordingConn(
+        PROFILE,
+        [(DISLIKED, "dislike"), (DISLIKED, "dislike"), (LIKED, "like")],
+        [(DISLIKED, ["ddddddddddd0"], "2026-10-01")],
+    )
+    got = load.read_store(conn)
+    assert conn.params[-1] == ([DISLIKED], [DISLIKED])  # disliked ids only, once
+    assert got["stored_dates"] == {DISLIKED: "2026-10-01", "ddddddddddd0": "2026-10-01"}
+
+
+def test_summary_reports_where_the_dislikes_went():
+    d = dict.fromkeys(
+        ("labelled", "rated_again", "not_hidden", "ambiguous", "unpublished_past",
+         "unpublished_upcoming", "unpublished_unknown", "hidden_published"),
+        1,
+    ) | {"rows": 9, "concerts": 7, "hidden_in_profile": 3}  # fmt: skip
+    text = load.dislike_text(d)
+    assert text.startswith('"Pas pour moi": 7 concerts in the rating history (9 rows), 1 labelled')
+    assert "1 upcoming but not published, 1 unknown to the store" in text
+    assert text.endswith("Hidden in the profile: 3 (1 published).")
+    assert load.dislike_text(None) == ""
 
 
 def test_load_site_from_a_directory_and_a_url(tmp_path):
@@ -212,6 +246,7 @@ def test_end_to_end_with_a_fake_store_publishes_aggregates_only(tmp_path, monkey
         "pairwise accuracy 100%25 over 1 pairs"
     ]
     text = out + summary.read_text(encoding="utf-8")
+    assert '"Pas pour moi": 1 concerts in the rating history (1 rows), 1 labelled' in text
     for secret in PRIVATE:
         assert secret not in text, secret
 

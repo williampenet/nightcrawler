@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import coverage
 from .artists import enrich
 from .config import Zone
 from .events import build_concerts
@@ -32,6 +33,7 @@ def run(
     now: datetime | None = None,
     osm_extract: Path | None = None,
     database_url: str | None = None,
+    reference: Path | None = None,
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
@@ -100,6 +102,11 @@ def run(
             database_url, raw, concerts, by_id, now, zone.window_days, tz
         )
     per_venue = Counter(c.venue_id for c in concerts)
+    cover = None  # FR-11 reference coverage (WIP-55), when the reference file is there
+    if reference and reference.exists():
+        aliases = coverage.load_aliases(reference.with_name("venue_aliases.yaml"))
+        refs = coverage.load_reference(reference)
+        cover = coverage.measure(refs, concerts, now, zone.window_days, tz, aliases)
     artists, artist_stats = enrich(concerts, fetcher)
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
@@ -138,6 +145,8 @@ def run(
         # {status, raw_upserted, concerts_reused, concerts_new, overrides_applied,
         #  reported_artists} when the store answered
         "store": store,
+        # {in_window, found, rate, per_venue: {venue: [in_window, found]}, events}
+        "coverage": cover,
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):
@@ -200,4 +209,11 @@ def summary_markdown(report: dict) -> str:
         f"/ {report['artists']['candidates']} |",
         f"| Concerts with an identified artist | {report['artists']['concerts_with_artist']} |",
     ]
+    if cov := report.get("coverage"):
+        rate = "n/a" if cov["rate"] is None else f"{cov['rate']:.0%}"
+        lines.append(
+            f"| Reference events found (FR-11) | {cov['found']} / {cov['in_window']} ({rate}) |"
+        )
+        for venue, (n, found) in cov["per_venue"].items():
+            lines.append(f"| … at {venue} | {found} / {n} |")
     return "\n".join(lines) + "\n"
