@@ -1,6 +1,6 @@
 # PRD – Nightcrawler
 
-> **v3 change (2026-10-06, draft for PM validation):** the PM compared Nightcrawler with the
+> **v3 change (2026-10-06, validated by the PM):** the PM compared Nightcrawler with the
 > concert-watch task he ran before (an LLM reading a fixed list of venues against a written taste
 > profile) and found its picks better. Measured the same evening: of the 40 concerts that watch
 > had flagged within Nightcrawler's 60-day window, Nightcrawler had **11 (27.5 %)**, and 5 of
@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| Status | v3 draft — curated venues + written taste profile (2026-10-06, awaiting PM validation); v2 personal app validated 2026-10-05 |
+| Status | v3 — curated venues + written taste profile (validated by the PM 2026-10-06, 21:46); v2 personal app validated 2026-10-05 |
 | PM | William Penet |
 | Author | Claude (from PM brief, discovery session of 2026-10-05) |
 | Related | Experiment plan "Plan d'expérimentation – sorties culturelles" (90-day, Claude Doc) |
@@ -172,9 +172,9 @@ v2 text (artist similarity), kept as a complementary signal for concerts with an
 - AC: sharing takes ≤ 2 taps on a phone; a friend opening the link sees the concert without any account.
 
 **FR-11 Reference set and evaluation (v3)**
-- Positives: the events of the PM's former watch (`concerts-vus.md`, 76 events, 2026-07-26 → 2026-12-17) plus "J'aime" ratings. Negatives: "Pas pour moi" ratings, plus a sample of concerts at the same venues that the watch did not report, **labelled by the PM** (a watch omission is not a "no" until he says so).
+- Positives: the events of the PM's former watch (`concerts-vus.md`, 76 events, 2026-07-26 → 2026-12-17) plus "J'aime" ratings. Negatives: the "Pas pour moi" ratings already given in the app (read from the event store at eval time, never committed), plus a sample of concerts at the same venues that the watch did not report, **labelled by the PM** (a watch omission is not a "no" until he says so).
 - Used for two measures, re-run in CI: source coverage (FR-1 gate) and judgement quality (FR-5, MODEL_EVAL).
-- AC: the set is versioned (public events and labels only, no profile text); coverage and judgement scores appear on each run.
+- AC: the positives file is versioned (public events only); in-app ratings and the profile text stay in the event store (PM, 2026-10-06) and are read by CI at eval time, which publishes aggregates only; coverage and judgement scores appear on each run.
 
 ## 7. Non-functional requirements
 
