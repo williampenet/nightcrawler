@@ -161,6 +161,24 @@ def near(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
     return va is not None and vb is not None and distance_m(va, vb) <= MAX_DISTANCE_M
 
 
+def same_concert_across_runs(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
+    """Stricter than dedupe()'s pairwise rule, for the event store (WIP-46).
+
+    Across runs only two listings are compared, so series words (a festival or series
+    name, found over a whole day's titles) cannot be removed: "Nuits Sonores: Boris" and
+    "Nuits Sonores: Earth" share enough words to look alike (review of PR #40). So the same
+    slot and place are required, then a shared performer when both sides name performers,
+    else equal cleaned titles; word overlap alone never matches.
+    """
+    if not (same_slot(a, b) and near(a, b, venues)):
+        return False
+    acts_a, acts_b = _acts(a), _acts(b)
+    if acts_a and acts_b:
+        return bool(acts_a & acts_b)
+    ca = clean_title(a.title, a.performers)
+    return bool(ca) and ca == clean_title(b.title, b.performers)
+
+
 def concert_id(c: Concert) -> str:
     key = clean_title(c.title, c.performers).replace(" ", "") or _key(c.title)
     raw = f"{c.venue_id}|{_start(c).date().isoformat()}|{key}"

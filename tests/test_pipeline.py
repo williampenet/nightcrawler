@@ -46,6 +46,7 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     artists = json.loads((tmp_path / "data/artists.json").read_text())
     assert artists["sunnco"]["related"] == ["Boris"]
     assert concerts[0]["artists"] == ["sunnco"]
+    assert report["store"] == {"status": "off"}  # no database_url: stateless, as before
 
 
 def test_app_config_only_public_keys(tmp_path):
@@ -115,6 +116,7 @@ def test_end_to_end_with_gancio(tmp_path, zone, tz, fixture_text, monkeypatch):
     assert concerts[-1]["venue_name"] == "Lieu tenu secret"
     assert "gancio=ok (venues=5 events=8)" in one_line(report)
     assert "platforms=- |" in one_line(report)
+    assert "store=off |" in one_line(report)
 
 
 @respx.mock
