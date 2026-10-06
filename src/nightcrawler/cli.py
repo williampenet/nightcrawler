@@ -226,7 +226,15 @@ def one_line(report: dict) -> str:
     st = report.get("store", {})
     store = st.get("status", "off")
     cov = report.get("coverage")  # numbers only: no event or venue name in the annotation
-    cover = f"{cov['found']}/{cov['in_window']} rate={cov['rate']}" if cov else "-"
+    if not cov:
+        cover = "-"
+    elif "status" in cov:
+        cover = cov["status"]
+    else:
+        cover = (
+            f"{cov['found']}/{cov['in_window']} rate={cov['rate']} "
+            f"date_venue_only={cov['date_venue_only']}"
+        )
     if store == "ok":
         store += "(" + " ".join(f"{k}={v}" for k, v in st.items() if k != "status") + ")"
     platforms = ",".join(

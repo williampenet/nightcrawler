@@ -81,7 +81,7 @@ def test_read_store_is_read_only_with_a_timeout():
     assert got == {
         "state": PROFILE,
         "feedback": [{"concert_id": LIKED, "kind": "like"}],
-        "stored_dates": {},
+        "stored_concerts": {},
     }
     assert load.read_store(RecordingConn(None, []))["state"] is None
 
@@ -94,7 +94,8 @@ def test_read_store_gives_the_dates_of_disliked_concerts():
     )
     got = load.read_store(conn)
     assert conn.params[-1] == ([DISLIKED], [DISLIKED])  # disliked ids only, once
-    assert got["stored_dates"] == {DISLIKED: "2026-10-01", "ddddddddddd0": "2026-10-01"}
+    stored = {"id": DISLIKED, "date": "2026-10-01"}
+    assert got["stored_concerts"] == {DISLIKED: stored, "ddddddddddd0": stored}
 
 
 def test_summary_reports_where_the_dislikes_went():

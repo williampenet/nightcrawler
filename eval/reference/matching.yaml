@@ -1,0 +1,18 @@
+# Matching data for the reference coverage measure (src/nightcrawler/coverage.py).
+
+# Other names a run may give a reference venue (watch_events.csv `venue` -> names).
+# Without an entry, a venue matches when every word of its normalised name (accents, case,
+# le/la/de/salle... ignored) appears in the concert's venue name, e.g. "La Rayonne" matches
+# "CCO Villeurbanne / La Rayonne". Entries below drop the district the watch appended.
+venue_aliases:
+  "Rock n Eat, Lyon 9e": [Rock n Eat]
+  "Groom, Lyon 1er": [Groom]
+  "Le Sucre, Lyon 2e": [Le Sucre]
+
+# Words dropped from a reference artist name before it is searched in the concert's title
+# and performers, only while other words remain, so a bare name still matches:
+# "The Lemon Twigs" finds "Lemon Twigs", "Louis Sclavis Shunkan Trio" finds "Louis Sclavis
+# Shunkan", "Quatuor Béla" finds "Béla".
+artist_words:
+  leading_articles: [the, le, la, les, l]   # first word only
+  generic: [trio, duo, quartet, quatuor, xxl, compagnie, orchestre, orchestra]  # either end

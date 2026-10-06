@@ -66,14 +66,16 @@ def read_store(conn) -> dict:
             "WHERE id = ANY(%s) OR aliases && %s::text[]",
             (ids, ids),
         ).fetchall()
-    dates = {}
+    found = {}  # id or alias -> the stored concert's id and date (a stored id wins)
     for cid, aliases, day in stored:
-        for i in [cid, *(aliases or [])]:
-            dates[i] = day
+        for i in aliases or []:
+            found.setdefault(i, {"id": cid, "date": day})
+    for cid, _, day in stored:
+        found[cid] = {"id": cid, "date": day}
     return {
         "state": row[0] if row else None,
         "feedback": [{"concert_id": c, "kind": k} for c, k in events],
-        "stored_dates": dates,
+        "stored_concerts": found,
     }
 
 

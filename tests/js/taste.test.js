@@ -141,29 +141,35 @@ test("no labels, empty or malformed input", () => {
 
 test("where the dislikes went: one count per reason, concerts not rows (WIP-55)", () => {
   const G = concert("ggggggggggg1", ["earth"]);
-  const [PAST, SOON, UNKNOWN] = ["999999999990", "999999999991", "999999999992"];
+  const [PAST, PAST_ALIAS, SOON, UNKNOWN] = ["999999999990", "999999999980", "999999999991", "999999999992"];
   const dislike = (id) => ({ concert_id: id, kind: "dislike" });
   const state = { liked: ["sunn"], disliked: ["popstar", "earth"], hidden: [D.id, G.id, "777777777777"] };
   const feedback = [
     like(A.id), // stale: "earth" is not liked any more
     dislike(D.id), dislike(D.id), // one click on a concert with two artist keys: two rows
     dislike(F.id), like(F.id), // rated again
-    dislike("ccccccccccc0"), // alias of C, which is not hidden
+    dislike("ccccccccccc0"), dislike(C.id), // C by its alias and its id: one concert, not hidden
     dislike(G.id), // shares "earth" with the stale like: ambiguous
-    dislike(PAST), dislike(SOON), dislike(UNKNOWN),
+    dislike(PAST), dislike(PAST_ALIAS), dislike(SOON), dislike(UNKNOWN), // PAST twice, via an alias
   ];
-  const input = { state, feedback, concerts: [A, C, D, F, G], artists, today: "2026-10-06", stored_dates: { [PAST]: "2026-10-01", [SOON]: "2026-10-20" } };
+  const stored_concerts = {
+    [PAST]: { id: PAST, date: "2026-10-01" },
+    [PAST_ALIAS]: { id: PAST, date: "2026-10-01" },
+    [SOON]: { id: SOON, date: "2026-10-20" },
+  };
+  const input = { state, feedback, concerts: [A, C, D, F, G], artists, today: "2026-10-06", stored_concerts };
   const out = run(input);
   assert.deepEqual(out.dislikes, {
-    rows: 8, concerts: 7, labelled: 1, rated_again: 1, not_hidden: 1, ambiguous: 1,
+    rows: 10, concerts: 7, labelled: 1, rated_again: 1, not_hidden: 1, ambiguous: 1,
     unpublished_past: 1, unpublished_upcoming: 1, unpublished_unknown: 1,
     hidden_in_profile: 3, hidden_published: 2,
   });
   assert.equal(out.labels.disliked, out.dislikes.labelled);
-  // without the store dates every unpublished id is "unknown"
-  assert.equal(run({ ...input, stored_dates: undefined }).dislikes.unpublished_unknown, 3);
+  // without the store, ids cannot be resolved or dated: every unpublished id is "unknown"
+  const bare = run({ ...input, stored_concerts: undefined }).dislikes;
+  assert.deepEqual([bare.concerts, bare.unpublished_unknown], [8, 4]);
   const text = JSON.stringify(out);
-  for (const secret of [PAST, SOON, UNKNOWN, D.id, G.id, "777777777777"]) assert.ok(!text.includes(secret), secret);
+  for (const secret of [PAST, PAST_ALIAS, SOON, UNKNOWN, D.id, G.id, "777777777777"]) assert.ok(!text.includes(secret), secret);
 });
 
 test("Wilson 95 % interval", () => {

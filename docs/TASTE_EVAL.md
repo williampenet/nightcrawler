@@ -66,7 +66,8 @@ only, how many ratings are stale or ambiguous, and how many rating events point 
 concerts no longer published (past concerts).
 
 **Where the "Pas pour moi" went (WIP-55).** The summary also counts, per concert (a click
-stores one row per artist key), the dislikes of the history and why each one is or is not a
+stores one row per artist key; ids and aliases resolved to one concert through the site
+data, else through the event store), the dislikes of the history and why each one is or is not a
 label: `labelled`; `rated_again` (its latest rating is a like or unlike); `not_hidden`
 (latest is the dislike but the profile's `hidden` no longer holds the id); `ambiguous`;
 and, for ids not in the site data, `past` / `upcoming but not published` / `unknown to

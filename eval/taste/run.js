@@ -110,13 +110,22 @@ function buildLabels(state, feedback, concerts) {
 }
 
 // Why each concert with a "Pas pour moi" in the history did or did not become a label.
-// Counts only. Unpublished ids are split with the store's concert dates (input.stored_dates:
-// {id or alias: "YYYY-MM-DD"}) against input.today, when the loader gives them.
+// Counts only, one per concert: published ids are already resolved through the site's
+// aliases; unpublished ones are resolved through the store (input.stored_concerts:
+// {id or alias: {id, date: "YYYY-MM-DD"}}), then split by date against input.today.
 function dislikeReport(built, input, savedHidden) {
   const { dislikes: d, labels, last, hidden } = built;
+  const raw = input.stored_concerts;
+  const stored = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const resolve = (id) => (stored[id] && typeof stored[id].id === "string" ? stored[id].id : id);
+  const unpublished = new Map(); // resolved id -> date or null
+  for (const id of d.unpublished) {
+    const day = stored[id] && typeof stored[id].date === "string" ? stored[id].date : null;
+    unpublished.set(resolve(id), day || unpublished.get(resolve(id)) || null);
+  }
   const out = {
     rows: d.rows,
-    concerts: d.published.size + d.unpublished.size,
+    concerts: d.published.size + unpublished.size,
     labelled: 0,
     rated_again: 0, // the latest rating of that concert is a like or an unlike
     not_hidden: 0, // latest is the dislike, but the profile's `hidden` no longer holds it
@@ -133,10 +142,8 @@ function dislikeReport(built, input, savedHidden) {
     else if (!hidden.has(id)) out.not_hidden += 1;
     else if (d.ambiguous.has(id)) out.ambiguous += 1;
   }
-  const dates = input.stored_dates && typeof input.stored_dates === "object" ? input.stored_dates : {};
   const today = typeof input.today === "string" ? input.today : null;
-  for (const id of d.unpublished) {
-    const day = typeof dates[id] === "string" ? dates[id] : null;
+  for (const day of unpublished.values()) {
     if (!day || !today) out.unpublished_unknown += 1;
     else if (day < today) out.unpublished_past += 1;
     else out.unpublished_upcoming += 1;
