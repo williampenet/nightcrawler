@@ -11,6 +11,7 @@ for the Python runtimes), as manylinux x86_64 wheels for the runtime's Python ve
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import subprocess
 import sys
@@ -104,6 +105,16 @@ def function_settings(origin: str, database_url: str, token_sha256: str) -> dict
     }
 
 
+def upload_headers(up: dict) -> httpx.Headers:
+    """Headers the presigned upload URL was signed with, once each (case-insensitive)."""
+    headers = httpx.Headers()
+    for k, v in (up.get("headers") or {}).items():
+        headers[k] = v[0] if isinstance(v, list) and v else str(v)
+    if "content-type" not in headers:
+        headers["Content-Type"] = "application/octet-stream"
+    return headers
+
+
 def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 600) -> dict:
     """Ensure namespace + function, upload the archive, deploy; returns the ready function."""
     with _client(creds) as client:
@@ -130,13 +141,15 @@ def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 60
         up = _check(
             client.get(f"{path}/upload-url", params={"content_length": len(data)}), "upload url"
         )
-        headers = {
-            k: (v[0] if isinstance(v, list) else v) for k, v in up.get("headers", {}).items()
-        }
-        headers.setdefault("Content-Type", "application/octet-stream")
-        put = httpx.put(up["url"], content=data, headers=headers, timeout=120)
+        put = httpx.put(up["url"], content=data, headers=upload_headers(up), timeout=120)
         if put.status_code >= 400:
-            raise ProvisionError(f"upload: HTTP {put.status_code}")
+            # S3 error codes are safe to show; the body itself may echo signing details
+            code = re.search(r"<Code>([A-Za-z]+)</Code>", put.text or "")
+            names = ",".join(sorted(upload_headers(up).keys()))
+            raise ProvisionError(
+                f"upload: HTTP {put.status_code} {code.group(1) if code else ''} "
+                f"(headers sent: {names})"
+            )
         _check(client.post(f"{path}/deploy", json={}), "deploy")  # status becomes pending
         return _wait(client, path, "function", wait_s)
 
