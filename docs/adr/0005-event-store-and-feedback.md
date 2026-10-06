@@ -74,6 +74,22 @@ Scaleway, region fr-par:
   stored per (item, artist key). The rate limit is 300 rows per minute (429 above; the page
   keeps the items queued). The token hash and the database URL are secret environment
   variables of the function (the URL is built at deploy time, as in the pipeline).
+- Implementation notes (WIP-46, profile sync): migration `002_profile.sql` adds `profile`
+  (one row `id='me'`, `data` JSONB, `updated_at`, `version`) and `profile_writes` (timestamps
+  for the rate limit). The same function serves `GET /profile` (200 `{data, version,
+  updated_at}` or 404) and `PUT /profile` `{data, base_version}`: written only if
+  `base_version` equals the stored version (0 = no row yet), else 409 with the current
+  `{data, version}`; same token, CORS (preflight allows GET and PUT), 64 KB body, strict
+  schema (seeds ≤ 200 with name ≤ 60 chars and ≤ 12 tags; lists ≤ 2000 keys or concert ids,
+  no other field), 60 PUTs per minute (429). The page reads the profile on load (the server
+  copy wins unless this browser holds unsent changes, which are merged as a union), then PUTs
+  it 1.5 s after each change; on 409 it merges (union of lists, server seeds then new local
+  ones) and retries once. « Tout effacer » overwrites the server copy (no merge). The profile
+  holds the listener's choices only, never the Spotify token (ADR-0003). Data scope grows from
+  ratings to seed artist names and style tags: still the listener's own data, same provider.
+  Route detection reads the event's `path` (documented by Scaleway:
+  https://www.scaleway.com/en/docs/serverless-functions/reference-content/code-examples/)
+  or `rawPath`; whether `path` carries a leading slash is unverified, both are accepted.
 - Follow-up WIP-45: the function connects with the pipeline's API key for now; a dedicated IAM
   application with Serverless SQL rights only will replace it.
 

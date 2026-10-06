@@ -92,7 +92,7 @@ def test_missing_secrets(monkeypatch):
 
 
 def test_migration_files_are_numbered():
-    assert [v for v, _ in migrations()] == [1]
+    assert [v for v, _ in migrations()] == [1, 2]
 
 
 def _local_test_db() -> bool:
@@ -109,7 +109,7 @@ def test_migrate_on_real_postgres():
 
     with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as conn:
         conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
-        assert migrate(conn) == [1]
+        assert migrate(conn) == [1, 2]
         assert migrate(conn) == []  # idempotent
         conn.execute("INSERT INTO feedback (artist_key, kind) VALUES ('asna', 'wrong')")
         with pytest.raises(psycopg.errors.CheckViolation):
