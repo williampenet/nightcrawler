@@ -394,9 +394,8 @@ function concertRow(c, match, showDate) {
     body.append(why);
   }
   const actions = el("span", null, "links");
-  const page = c.url && safeLink(c.url, "Page");
-  const ticket = c.ticket_url && c.ticket_url !== c.url && safeLink(c.ticket_url, "Billets");
-  for (const x of [page, ticket, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
+  const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
+  for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   if ((c.artists || []).length) {
     const liked = c.artists.every((k) => state.liked.includes(k));
     const like = button(liked ? "Aimé" : "Pertinent", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));

@@ -127,7 +127,23 @@
     return true;
   }
 
-  const api = { norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // Links of a concert, one per distinct http(s) URL (WIP-42). Older data has no `links`:
+  // fall back to the page and ticket fields.
+  function concertLinks(c) {
+    const given =
+      Array.isArray(c.links) && c.links.length
+        ? c.links
+        : [{ label: "Page", url: c.url }, { label: "Billets", url: c.ticket_url }];
+    const out = [];
+    for (const l of given) {
+      if (!l || typeof l.url !== "string" || !/^https?:\/\//i.test(l.url)) continue;
+      if (out.some((x) => x.url === l.url)) continue;
+      out.push({ label: String(l.label || "Lien"), url: l.url });
+    }
+    return out;
+  }
+
+  const api = { concertLinks, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
