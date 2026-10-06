@@ -22,8 +22,9 @@
       <details id="taste">
         <summary>Mes goûts</summary>
         <p class="muted">
-          Indique des artistes que tu aimes, un par ligne. Ils restent dans ce navigateur :
-          rien n'est envoyé à Nightcrawler. Leurs styles sont lus sur MusicBrainz.
+          Indique des artistes que tu aimes, un par ligne. Ils restent dans ce navigateur.
+          Leurs styles sont lus sur MusicBrainz. Tes avis (J'aime, Pas pour moi, Mauvais
+          rapprochement) ne sont envoyés au service Nightcrawler que si tu saisis la clé d'envoi.
         </p>
         <div class="row" id="spotify-row" hidden>
           <button type="button" id="spotify-connect" class="primary">Connecter Spotify</button>
@@ -40,6 +41,11 @@
           <input id="lb-user" type="text" autocomplete="off" placeholder="nom d'utilisateur">
           <button type="button" id="lb-import" class="ghost">Importer</button>
         </div>
+        <div class="row" id="feedback-row" hidden>
+          <label for="feedback-key">Clé d'envoi des avis</label>
+          <input id="feedback-key" type="password" autocomplete="off">
+        </div>
+        <p id="feedback-status" class="muted" aria-live="polite" hidden></p>
         <p id="taste-status" class="muted" aria-live="polite"></p>
       </details>
 
@@ -84,6 +90,7 @@
   </footer>
   <script src="scoring.js"></script>
   <script src="spotify.js"></script>
+  <script src="feedback.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

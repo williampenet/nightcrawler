@@ -1,0 +1,36 @@
+name: Feedback function
+
+# Packages and deploys functions/feedback on Scaleway Serverless Functions (ADR-0005).
+on:
+  push:
+    branches: [main]
+    paths: [functions/feedback/**, src/nightcrawler/store/deploy_function.py,
+            .github/workflows/feedback-function.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedback-function
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -e .
+      - name: Deploy the feedback function
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          SCW_DB_USER: ${{ secrets.SCW_DB_USER }}  # optional
+          FEEDBACK_TOKEN: ${{ secrets.FEEDBACK_TOKEN }}  # hashed in Python, never echoed
+        run: python -m nightcrawler deploy-feedback

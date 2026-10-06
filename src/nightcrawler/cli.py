@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -29,12 +30,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
     r.add_argument("--app-config", default="config/app.yaml")
     sub.add_parser("store", help="create the Scaleway event store if needed and migrate it")
+    sub.add_parser("deploy-feedback", help="package and deploy the feedback function (Scaleway)")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
     o.add_argument("--zone", default="config/zone.yaml")
     args = ap.parse_args(argv)
 
     if args.cmd == "store":
         return store_command()
+    if args.cmd == "deploy-feedback":
+        return deploy_feedback_command()
 
     if args.cmd == "osm-extract-plan":
         zone = load_zone(args.zone)
@@ -108,7 +112,50 @@ def store_command() -> int:
     return 0
 
 
-PUBLIC_KEYS = {"spotify_client_id"}  # only these settings reach the public page
+def deploy_feedback_command() -> int:
+    """CI only: deploy functions/feedback with the database URL and the token hash as secrets."""
+    import hashlib
+    import tempfile
+
+    import httpx
+
+    from .store.deploy_function import build_zip, deploy, function_settings, smoke_test
+    from .store.provision import Credentials, ProvisionError, ensure
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    token = os.environ.get("FEEDBACK_TOKEN", "")
+    if not token:
+        annotate("notice", "Feedback function: skipped: FEEDBACK_TOKEN not set")
+        return 0
+    origin = os.environ.get("ALLOWED_ORIGIN", "https://williampenet.github.io")
+    try:
+        creds = Credentials.from_env()
+        _, url = ensure(creds)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::add-mask::{url}", flush=True)
+        settings = function_settings(origin, url, hashlib.sha256(token.encode()).hexdigest())
+        with tempfile.TemporaryDirectory() as tmp:
+            fn = deploy(creds, settings, build_zip(Path(tmp) / "feedback.zip"))
+    except (ProvisionError, OSError, subprocess.CalledProcessError) as exc:
+        annotate("error", f"Feedback function: {type(exc).__name__}: {str(exc)[:300]}")
+        return 1
+    except httpx.HTTPError as exc:  # its message may carry a signed upload URL: type only
+        annotate("error", f"Feedback function: {type(exc).__name__}")
+        return 1
+    public = f"https://{fn.get('domain_name', '')}"
+    preflight, refused = smoke_test(public, origin)
+    ok = preflight == 204 and refused == 401
+    annotate(
+        "notice" if ok else "error",
+        f"Feedback function: {fn.get('status')} at {public} (runtime {fn.get('runtime')}, "
+        f"preflight HTTP {preflight}, wrong token HTTP {refused}); "
+        "paste this URL into config/app.yaml feedback_url",
+    )
+    return 0 if ok else 1
+
+
+PUBLIC_KEYS = {"spotify_client_id", "feedback_url"}  # only these settings reach the public page
 
 
 def write_app_config(src: Path, dest: Path) -> None:
