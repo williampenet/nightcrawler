@@ -11,8 +11,10 @@ osm_extract_url: https://download.geofabrik.de/europe/france/rhone-alpes-latest.
 gancio_instances:
   - name: Ville Morte
     url: https://agenda.villemorte.fr
-# Venues dropped from every source (OSM, Ticketmaster, Gancio, platforms), matched on the
-# normalised name. Asked by William on 2026-10-06 (WIP-51).
+# Venues dropped from every source (OSM, Ticketmaster, Gancio, venue and platform pages).
+# A venue is dropped when its normalised name equals an entry (case, accents, hyphens and
+# le/la/salle... ignored); an event is dropped when its location contains an entry's words.
+# Asked by William on 2026-10-06 (WIP-51).
 excluded_venues:
   - Radiant Bellevue
   - Toï Toï le Zinc

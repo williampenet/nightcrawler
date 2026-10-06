@@ -156,3 +156,18 @@ def test_attribution_platform_events_stay_in_zone(tz):
     ]
     concerts = build_concerts(raw, {"m": MUSIC}, now=now, window_days=60, tz=tz)
     assert [c.title for c in concerts] == ["Tour Lyon"]
+
+
+def test_excluded_venue_dropped_when_listed_on_other_pages(tz):
+    # WIP-51: an excluded venue must not come back through another venue's page,
+    # neither as a "place:" venue (aggregator page) nor at the page's own music venue
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+    raw = [
+        ev("Gig A", venue="t", location_name="Radiant-Bellevue, Caluire"),
+        ev("Gig B", venue="m", location_name="Radiant-Bellevue"),
+        ev("Gig C", venue="m", location_name="Le Sucre Salé"),  # only part of an excluded name
+    ]
+    venues = {"m": MUSIC, "t": THEATRE}
+    excluded = ("Radiant Bellevue", "Le Sucre Salé Rive Gauche")
+    concerts = build_concerts(raw, venues, now=now, window_days=60, tz=tz, excluded=excluded)
+    assert [c.title for c in concerts] == ["Gig C"]

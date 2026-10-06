@@ -75,6 +75,7 @@ def test_end_to_end_excluded_venue(tmp_path, zone, tz, fixture_text, monkeypatch
     assert report["venues"] == 2 and report["venues_excluded"] == 1
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
     assert concerts == []  # "Drone Night" was at Le Petit Bulbe
+    assert "Le Petit Bulbe" not in (tmp_path / "data/venues.json").read_text()
 
 
 def test_app_config_only_public_keys(tmp_path):

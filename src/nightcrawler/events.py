@@ -142,6 +142,14 @@ def _names_match(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     return any(long[i : i + n] == short for i in range(len(long) - n + 1))
 
 
+def is_excluded_place(location: str, excluded_keys: list[tuple[str, ...]]) -> bool:
+    """The location names an excluded venue: its words appear in a row in the location."""
+    loc = place_tokens(location)
+    return any(
+        _names_match(loc, ex) and len("".join(ex)) <= len("".join(loc)) for ex in excluded_keys
+    )
+
+
 def attribute_venue(
     event: RawEvent, venues: dict[str, Venue], keys: dict[str, tuple[str, ...]]
 ) -> tuple[str | None, str | None]:
@@ -191,6 +199,7 @@ def build_concerts(
     window_days: int,
     tz: ZoneInfo,
     stats: dict | None = None,
+    excluded: tuple[str, ...] = (),
 ) -> list[Concert]:
     """Concerts in the window, duplicates across sources merged (see dedup.py).
 
@@ -198,9 +207,12 @@ def build_concerts(
     """
     found: list[Concert] = []
     keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
+    excluded_keys = [place_tokens(x) for x in excluded]
     for ev in raw:
         if not in_window(ev, now, window_days):
             continue
+        if ev.location_name and is_excluded_place(ev.location_name, excluded_keys):
+            continue  # held at a venue the user excluded, even when listed on another page
         venue_id, place_name = attribute_venue(ev, venues, keys)
         if venue_id is None:  # platform event outside the zone's known venues
             continue

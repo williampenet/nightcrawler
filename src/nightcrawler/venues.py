@@ -9,9 +9,9 @@ import unicodedata
 from .models import Venue
 
 SAME_PLACE_METERS = 150
-# Identical names merge further apart: Ticketmaster and OpenStreetMap place "Le Transbordeur"
-# 580 m apart (measured on the 2026-10-06 run: 45.778753,4.859536 vs 45.78397,4.86088),
-# which split every concert there into two (WIP-51).
+# Identical names from different sources merge further apart: Ticketmaster and OpenStreetMap
+# place "Le Transbordeur" ~590 m apart (2026-10-06 run: 45.778753,4.859536 vs
+# 45.78397,4.86088, distance_m), which split every concert there into two (WIP-51).
 SAME_NAME_METERS = 1500
 MIN_SAME_NAME_LEN = 5  # very short normalised names are too ambiguous to merge far apart
 # Generic names shared by different buildings (one per town): never merged beyond 150 m
@@ -33,31 +33,39 @@ def _norm(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name)
 
 
-def same_venue(a: Venue, b: Venue) -> bool:
+def same_venue(a: Venue, b: Venue, *, cross_source: bool = True) -> bool:
+    """Same place: names contain each other within 150 m, or (between two different
+    sources only) identical, specific names within 1.5 km. Two features of one source
+    with the same name are distinct objects by construction."""
     d = distance_m(a, b)
     na, nb = _norm(a.name), _norm(b.name)
     if not (na and nb) or d > SAME_NAME_METERS:
         return False
     if d <= SAME_PLACE_METERS:
         return na in nb or nb in na
-    return na == nb and len(na) >= MIN_SAME_NAME_LEN and not GENERIC.search(na)
+    return cross_source and na == nb and len(na) >= MIN_SAME_NAME_LEN and not GENERIC.search(na)
 
 
 def is_excluded(v: Venue, excluded: tuple[str, ...]) -> bool:
-    """True when the venue's normalised name contains an excluded name (config/zone.yaml)."""
+    """True when the venue's normalised name equals an excluded name (config/zone.yaml)."""
     nv = _norm(v.name)
-    return any(e and e in nv for e in (_norm(x) for x in excluded))
+    return bool(nv) and any(nv == _norm(x) for x in excluded)
 
 
 def merge(groups: list[list[Venue]]) -> tuple[list[Venue], dict[str, str]]:
     """Merge venue lists. Returns the merged venues and an alias map (old id -> kept id)."""
     merged: list[Venue] = []
+    group_of: dict[str, int] = {}  # merged venue id -> index of the group it came from
     alias: dict[str, str] = {}
-    for group in groups:
+    for gi, group in enumerate(groups):
         for v in group:
-            match = next((m for m in merged if same_venue(m, v)), None)
+            match = next(
+                (m for m in merged if same_venue(m, v, cross_source=group_of[m.id] != gi)),
+                None,
+            )
             if match is None:
                 merged.append(v)
+                group_of[v.id] = gi
                 alias[v.id] = v.id
                 continue
             alias[v.id] = match.id

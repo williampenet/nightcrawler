@@ -44,14 +44,19 @@ def run(
     except Exception as exc:  # optional source: never stop the run
         log.warning("Gancio failed: %s", type(exc).__name__)
         ga_venues, ga_events, ga_status = [], [], f"error: {type(exc).__name__}"
+    # venues the user asked to drop (config/zone.yaml), filtered per source before the merge
+    # so a merged name cannot hide them; their API and agenda events go with them
+    dropped = {
+        v.id for v in osm_venues + tm_venues + ga_venues if is_excluded(v, zone.excluded_venues)
+    }
+    osm_venues = [v for v in osm_venues if v.id not in dropped]
+    tm_venues = [v for v in tm_venues if v.id not in dropped]
+    ga_venues = [v for v in ga_venues if v.id not in dropped]
+    tm_events = [ev for ev in tm_events if ev.venue_id not in dropped]
+    ga_events = [ev for ev in ga_events if ev.venue_id not in dropped]
     venues, alias = merge([osm_venues, tm_venues, ga_venues])
     for ev in tm_events + ga_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
-    # venues the user asked to drop (config/zone.yaml): removed from every source
-    dropped = {v.id for v in venues if is_excluded(v, zone.excluded_venues)}
-    venues = [v for v in venues if v.id not in dropped]
-    tm_events = [ev for ev in tm_events if ev.venue_id not in dropped]
-    ga_events = [ev for ev in ga_events if ev.venue_id not in dropped]
     by_id = {v.id: v for v in venues}
 
     # 2. probe venue websites in parallel (the fetcher rate-limits per host)
@@ -79,7 +84,15 @@ def run(
 
     # 3. concerts
     dedup: dict = {}
-    concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz, stats=dedup)
+    concerts = build_concerts(
+        raw,
+        by_id,
+        now=now,
+        window_days=zone.window_days,
+        tz=tz,
+        stats=dedup,
+        excluded=zone.excluded_venues,
+    )
     store: dict = {"status": "off"}  # no DATABASE_URL: stateless run (ADR-0001)
     reported: set[str] = set()
     if database_url:  # stable ids, overrides, feedback (ADR-0005, WIP-46)
