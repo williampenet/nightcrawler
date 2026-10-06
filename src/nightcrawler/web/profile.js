@@ -12,6 +12,11 @@
   const ID_RE = /^[0-9a-f]{12}$/;
   const MAX_SEEDS = 200;
   const MAX_LIST = 2000;
+  // Saved concert ids are no longer pruned when absent from today's data (WIP-59), so they
+  // are capped tighter than the function's 2000 (handler.py MAX_LIST): 500 most recent ids
+  // per list, about 7.5 KB each in JSON, so both lists stay under a quarter of the 64 KB
+  // profile body limit (handler.py MAX_PROFILE_BODY). Oldest ids go first.
+  const cap = (k) => (ID_LISTS.includes(k) ? S.MAX_IDS : MAX_LIST);
 
   // The profile part of a state, in the shape and limits the function accepts.
   function extract(state) {
@@ -26,9 +31,9 @@
         name: x.name,
         tags: Array.isArray(x.tags) ? x.tags.filter((t) => typeof t === "string" && t.length > 0 && t.length <= 100).slice(0, 12) : null,
       }));
-    const list = (v, re) => [...new Set(Array.isArray(v) ? v : [])].filter((x) => typeof x === "string" && re.test(x)).slice(-MAX_LIST);
-    for (const k of KEY_LISTS) out[k] = list(s[k], KEY_RE);
-    for (const k of ID_LISTS) out[k] = list(s[k], ID_RE);
+    const list = (v, re, max) => [...new Set(Array.isArray(v) ? v : [])].filter((x) => typeof x === "string" && re.test(x)).slice(-max);
+    for (const k of KEY_LISTS) out[k] = list(s[k], KEY_RE, MAX_LIST);
+    for (const k of ID_LISTS) out[k] = list(s[k], ID_RE, S.MAX_IDS);
     return out;
   }
 
@@ -44,7 +49,7 @@
     const a = extract(server);
     const b = extract(local);
     const out = {};
-    for (const k of [...KEY_LISTS, ...ID_LISTS]) out[k] = [...new Set([...a[k], ...b[k]])].slice(-MAX_LIST);
+    for (const k of [...KEY_LISTS, ...ID_LISTS]) out[k] = [...new Set([...a[k], ...b[k]])].slice(-cap(k));
     out.seeds = extract({ seeds: [...a.seeds, ...b.seeds] }).seeds;
     for (const [yes, no] of [["liked", "disliked"], ["likedNames", "dislikedNames"]]) {
       const localYes = new Set(b[yes]);

@@ -443,9 +443,9 @@ function profileChanged() {
 
 function applyProfile(data) {
   Object.assign(state, data);
-  // a saved id may be an alias since sources were merged (WIP-42)
-  state.hidden = S.currentIds(DATA.concerts, state.hidden);
-  state.likedConcerts = S.currentIds(DATA.concerts, state.likedConcerts);
+  // saved ids are kept even when absent today; an alias gets its current id (WIP-42, WIP-59)
+  state.hidden = S.keepIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.keepIds(DATA.concerts, state.likedConcerts);
   const box = document.getElementById("seeds");
   if (document.activeElement !== box) box.value = state.seeds.map((x) => x.name).join("\n"); // never under the cursor
   if (state.seeds.some((x) => x.tags === null)) {
@@ -655,7 +655,7 @@ function concertRow(c, match, showDate) {
 
 function filtered() {
   const now = new Date();
-  const hidden = new Set(state.hidden);
+  const hidden = new Set(S.currentIds(DATA.concerts, state.hidden)); // display only: saved ids stay
   return DATA.concerts.filter((c) => {
     if (c.id === deepLinkId) return true; // a shared link always shows its concert
     if (hidden.has(c.id)) return false;
@@ -854,10 +854,10 @@ function setupControls() {
     bind(id, key);
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
   }
-  // a saved id may be an alias since sources were merged (WIP-42): keep the current id;
-  // concerts that are gone are forgotten
-  state.hidden = S.currentIds(DATA.concerts, state.hidden);
-  state.likedConcerts = S.currentIds(DATA.concerts, state.likedConcerts);
+  // a saved id may be an alias since sources were merged (WIP-42): its current id is added.
+  // Ids absent today are kept: a concert can be missing for one run (WIP-59).
+  state.hidden = S.keepIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.keepIds(DATA.concerts, state.likedConcerts);
   saveState();
 
   const box = document.getElementById("seeds");

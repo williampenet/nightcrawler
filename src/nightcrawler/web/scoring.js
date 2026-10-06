@@ -124,7 +124,8 @@
       s.dislikedNames = toggle(s.dislikedNames, names, false);
     } else {
       s.liked = toggle(s.liked, keys, false);
-      s.likedConcerts = toggle(s.likedConcerts, [concert.id], false);
+      // its saved aliases too, or the next load would add the current id back (WIP-59)
+      s.likedConcerts = toggle(s.likedConcerts, [concert.id, ...(Array.isArray(concert.aliases) ? concert.aliases : [])], false);
       // names still used by another liked concert stay liked
       const kept = new Set();
       if (kind === "like") {
@@ -285,7 +286,8 @@
 
   // Saved concert ids -> current ids. A merged concert answers to its id and its
   // `aliases` (the ids its listings had alone), so hidden concerts and shared links
-  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped.
+  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped: for
+  // display only, never to rewrite the saved lists (see keepIds, WIP-59).
   function currentIds(concerts, saved) {
     const byId = new Map(concerts.map((c) => [c.id, c.id])); // a current id wins over an alias
     for (const c of concerts) {
@@ -296,7 +298,19 @@
     return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // Saved concert ids (hidden, likedConcerts) as they are kept and synced (WIP-59). Never
+  // pruned because an id is absent from today's data: a concert can be missing for a day
+  // (source failure, id change, past). A saved alias stays and its current id is added, so
+  // the plain `c.id` checks see it. Only the oldest ids beyond MAX_IDS are dropped (the
+  // lists are in insertion order). Display resolves current ids with currentIds.
+  const MAX_IDS = 500;
+  function keepIds(concerts, saved) {
+    const kept = [...new Set(saved)];
+    for (const id of currentIds(concerts, kept)) if (!kept.includes(id)) kept.push(id);
+    return kept.slice(-MAX_IDS);
+  }
+
+  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
