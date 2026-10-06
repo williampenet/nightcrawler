@@ -1,16 +1,24 @@
 """Merge the same concert listed by several sources (WIP-42).
 
-Two listings are one concert when they are on the same local day, start within
-MAX_GAP_MIN minutes of each other (or one time is unknown, i.e. 00:00), have similar
-cleaned titles or a shared performer, and are at the same venue or venues less than
-MAX_DISTANCE_M apart. The same act at the same time farther apart is kept twice and
-reported as a conflict (one of the two is likely mis-attributed).
+Two listings match when they are on the same local day, start within MAX_GAP_MIN
+minutes of each other (or one time is unknown, i.e. 00:00), have similar cleaned titles
+or a shared performer, and are at the same venue or venues less than MAX_DISTANCE_M
+apart. A listing joins a group only if it matches *every* member (complete linkage), so
+"Earth" + "Earth + Boris" + "Boris" or a festival's acts never chain into one concert.
+The same act at the same time farther apart is kept twice and reported as a conflict
+(one of the two is likely mis-attributed).
+
+Titles are similar when equal once cleaned, or when they share enough meaningful words:
+genre words ("jazz", "jam session") and words found in SERIES_TITLES or more different
+titles at the same venue that day (a festival or series name) do not count.
 
 This runs before artist enrichment (no `artists` keys yet): performer names from the
 sources stand in for them, so duplicates never cost extra artist lookups.
 
-The id is a hash of venue + local date + cleaned title of the kept listing: it does not
-depend on which source was read first, so it stays stable when a source comes or goes.
+The id is a hash of venue + local date + cleaned title of the kept (best-source)
+listing, so it changes when a better source appears or disappears. `aliases` holds the
+ids every merged listing would have alone; the page matches hidden concerts and #c- links
+on the id or any alias. Ids moved once to cleaned titles with WIP-42.
 """
 
 from __future__ import annotations
@@ -24,10 +32,13 @@ from urllib.parse import urlsplit
 
 from .models import Concert, Venue
 
+# Only listings on the same local calendar day are compared: a show starting at 23:30
+# and one at 00:30 the next day are never merged.
 MAX_GAP_MIN = 90
 MAX_DISTANCE_M = 300
 MIN_OVERLAP = 0.6
 MAX_EXAMPLES = 5
+SERIES_TITLES = 3
 
 NOISE_RE = re.compile(  # applied to lower-case text without accents
     r"\b(?:1\s*e?re|premiere|first)\s+partie\b|\+\s*guests?\b|\bcomplet\b"
@@ -39,6 +50,18 @@ GENERIC = {"concert", "concerts", "live", "showcase", "soiree", "presente", "pre
 STOPWORDS = GENERIC | {
     *("the le la les l de des du d et and a en x feat ft with avec w".split()),
     *("night party invite invites guest guests".split()),
+}
+# Genre and format words: they say what kind of night it is, not who plays.
+GENRE_WORDS = set(
+    "jazz rock pop electro electronique techno house funk soul blues folk punk metal rap hip"
+    " hop reggae dub disco rnb jam session sessions open mic boeuf blind test karaoke trio"
+    " quartet quintet orchestre orchestra band big hommage tribute festival fest dj djs set"
+    " club bal".split()
+)
+# Placeholder performer names: never evidence that two listings are the same show.
+GENERIC_PERFORMERS = {
+    *("variousartists artistesdivers divers invites invite guests guest specialguest".split()),
+    *("specialguests tba tbc dj djs unknown inconnu".split()),
 }
 # Which listing's title wins: the venue's own site, then agendas, platforms, ticketing.
 SOURCE_RANK = (("gancio:", 1), ("platform:", 2), ("ticketmaster", 3))
@@ -75,17 +98,25 @@ def source_rank(source: str) -> int:
     return next((r for prefix, r in SOURCE_RANK if source.startswith(prefix)), 0)
 
 
-def _tokens(c: Concert) -> set[str]:
-    return {w for w in clean_title(c.title, c.performers).split() if w not in STOPWORDS}
+def _tokens(clean: str) -> set[str]:
+    return {w for w in clean.split() if w not in STOPWORDS and w not in GENRE_WORDS}
 
 
-def similar(a: Concert, b: Concert) -> bool:
-    ta, tb = _tokens(a), _tokens(b)
-    small = min(len(ta), len(tb))
-    if small and len(ta & tb) / small >= MIN_OVERLAP:
+def _acts(c: Concert) -> set[str]:
+    keys = {_key(p) for p in c.performers}
+    return {k for k in keys if len(k) >= 4 and k not in GENERIC_PERFORMERS}
+
+
+def similar_titles(clean_a: str, clean_b: str, ta: set[str], tb: set[str]) -> bool:
+    """Equal cleaned titles, or >= 60 % of the shorter title's meaningful words shared,
+    with at least two shared words unless the shorter title is one word of >= 4 letters."""
+    if clean_a and clean_a == clean_b:
         return True
-    pa = {k for p in a.performers if len(k := _key(p)) >= 4}
-    return bool(pa & {k for p in b.performers if len(k := _key(p)) >= 4})
+    small = min(len(ta), len(tb))
+    shared = ta & tb
+    if not small or len(shared) / small < MIN_OVERLAP:
+        return False
+    return len(shared) >= 2 or (small == 1 and len(next(iter(shared))) >= 4)
 
 
 def make_links(url: str | None, ticket_url: str | None, source: str) -> list[dict[str, str]]:
@@ -169,59 +200,79 @@ def _merge(group: list[Concert]) -> Concert:
 
 
 def dedupe(concerts: list[Concert], venues: dict[str, Venue]) -> tuple[list[Concert], dict]:
-    """Merge duplicate listings; return the concerts and {merged, conflicts, examples}."""
-    parent = list(range(len(concerts)))
+    """Merge duplicate listings; return the concerts and the counts for the report."""
+    cleans = [clean_title(c.title, c.performers) for c in concerts]
+    tokens = [_tokens(t) for t in cleans]
+    acts = [_acts(c) for c in concerts]
+    # festival / series names: words shared by SERIES_TITLES+ different titles at a venue
+    titles: dict[tuple[str, str], set[frozenset[str]]] = {}
+    for i, c in enumerate(concerts):
+        titles.setdefault((c.venue_id, c.start[:10]), set()).add(frozenset(tokens[i]))
+    series = {
+        slot: {w for w in set().union(*ts) if sum(w in t for t in ts) >= SERIES_TITLES}
+        for slot, ts in titles.items()
+    }
+    tokens = [t - series[(c.venue_id, c.start[:10])] for t, c in zip(tokens, concerts, strict=True)]
 
-    def root(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
+    def alike(i: int, j: int) -> bool:
+        if not same_slot(concerts[i], concerts[j]):
+            return False
+        return bool(acts[i] & acts[j]) or similar_titles(cleans[i], cleans[j], tokens[i], tokens[j])
 
+    def joins(i: int, members: list[int]) -> bool:
+        return all(alike(i, m) and near(concerts[i], concerts[m], venues) for m in members)
+
+    groups: list[list[int]] = []
+    far_pairs: list[tuple[int, int]] = []
+    group_of: dict[int, int] = {}
     by_day: dict[str, list[int]] = {}
     for i, c in enumerate(concerts):
         by_day.setdefault(c.start[:10], []).append(i)
-    far_pairs: list[tuple[int, int]] = []
     for idx in by_day.values():
+        day_groups: list[int] = []
+        for i in idx:  # an unknown-time listing too joins one group at most
+            g = next((g for g in day_groups if joins(i, groups[g])), None)
+            if g is None:
+                g = len(groups)
+                groups.append([])
+                day_groups.append(g)
+            groups[g].append(i)
+            group_of[i] = g
         for n, i in enumerate(idx):
             for j in idx[n + 1 :]:
                 a, b = concerts[i], concerts[j]
-                if not (same_slot(a, b) and similar(a, b)):
-                    continue
-                if near(a, b, venues):
-                    parent[root(j)] = root(i)
-                else:
+                located = a.venue_id in venues and b.venue_id in venues  # not a bare place name
+                if located and not near(a, b, venues) and alike(i, j):
                     far_pairs.append((i, j))
-    groups: dict[int, list[Concert]] = {}
-    for i, c in enumerate(concerts):
-        groups.setdefault(root(i), []).append(c)
-    examples: list[dict] = []
-    conflicts = {tuple(sorted((root(i), root(j)))) for i, j in far_pairs if root(i) != root(j)}
-    for gi, gj in sorted(conflicts):
-        a, b = concerts[gi], concerts[gj]
-        examples.append(_example("conflict", [a, b]))
+    conflicts = sorted({tuple(sorted((group_of[i], group_of[j]))) for i, j in far_pairs})
+    conflict_examples = [
+        _example([concerts[groups[a][0]], concerts[groups[b][0]]]) for a, b in conflicts
+    ]
+    merge_examples: list[dict] = []
     out: list[Concert] = []
     seen_ids: set[str] = set()
-    for group in sorted(groups.values(), key=lambda g: g[0].start):
+    for members in sorted(groups, key=lambda g: concerts[g[0]].start):
+        group = [concerts[i] for i in members]
         if len(group) > 1:
-            examples.append(_example("merged", group))
+            merge_examples.append(_example(group))
         c = _merge(group)
         c.id = concert_id(c)
         if c.id in seen_ids:  # same title twice that day at different times
             c.id = hashlib.sha1(f"{c.id}|{c.start}".encode()).hexdigest()[:12]
         seen_ids.add(c.id)
+        c.aliases = sorted({concert_id(m) for m in group} - {c.id})
         out.append(c)
     stats = {
         "merged": len(concerts) - len(groups),
         "conflicts": len(conflicts),
-        "examples": examples[:MAX_EXAMPLES],
+        "merge_examples": merge_examples[:MAX_EXAMPLES],
+        "conflict_examples": conflict_examples[:MAX_EXAMPLES],
     }
     return out, stats
 
 
-def _example(kind: str, group: list[Concert]) -> dict:
+def _example(group: list[Concert]) -> dict:
     return {
-        "kind": kind,
         "date": group[0].start[:10],
         "titles": [c.title for c in group],
         "venues": [c.venue_name for c in group],

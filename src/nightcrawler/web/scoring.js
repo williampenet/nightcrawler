@@ -143,7 +143,20 @@
     return out;
   }
 
-  const api = { concertLinks, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // Saved concert ids -> current ids. A merged concert answers to its id and its
+  // `aliases` (the ids its listings had alone), so hidden concerts and shared links
+  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped.
+  function currentIds(concerts, saved) {
+    const byId = new Map(concerts.map((c) => [c.id, c.id])); // a current id wins over an alias
+    for (const c of concerts) {
+      for (const id of Array.isArray(c.aliases) ? c.aliases : []) {
+        if (!byId.has(id)) byId.set(id, c.id);
+      }
+    }
+    return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
+  }
+
+  const api = { concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

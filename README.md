@@ -8,7 +8,7 @@
 
 ## What it does
 
-- Discovers concert venues in your area automatically, including small independent ones, and collects their agendas daily. A concert listed by several sources (venue site, agenda, ticketing) is shown once, with all its links.
+- Discovers concert venues in your area automatically, including small independent ones, and collects their agendas daily. A concert listed by several sources (venue site, agenda, ticketing) is shown once, with all its links. (Concert ids moved to cleaned titles in WIP-42: links shared before that change and concerts hidden before it may not be recognised once.)
 - Scores every concert against your listening history, with a human-readable reason ("sounds like X").
 - Weekly email digest, plus instant Telegram alerts for the concerts you can't miss.
 - Listen to an extract, open the official ticket page, or share on WhatsApp in one tap.

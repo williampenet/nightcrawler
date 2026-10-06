@@ -103,7 +103,7 @@ def run(
         },
         "raw_events": len(raw),
         "concerts": len(concerts),
-        "dedup": dedup,  # {merged, conflicts, examples} (WIP-42)
+        "dedup": dedup,  # {merged, conflicts, merge_examples, conflict_examples} (WIP-42)
         "venues_with_concerts": len(per_venue),
         "artists": artist_stats,
     }
