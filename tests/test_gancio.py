@@ -11,6 +11,7 @@ from nightcrawler.events import build_concerts, tag_reason
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import gancio
+from nightcrawler.venues import merge
 
 BASE = "https://agenda.example"
 
@@ -221,3 +222,73 @@ def test_geocoder_survives_bad_answers(zone):
     geocode = gancio.Geocoder(Fetcher(cache_dir=None, min_interval=0), near=(45.75, 4.83))
     assert [geocode(f"{i} rue X") for i in range(6)] == [None] * 6
     assert route.calls[0].request.url.params["lat"] == "45.75"
+
+
+@respx.mock
+def test_places_at_null_island_are_unknown_not_out_of_zone(zone, tz):
+    # WIP-58: agenda.villemorte.fr stores Grrrnd Zero at latitude 0, longitude 0
+    gz_address = "60, avenue de Bohlen 69120 Vaulx-en-Velin"
+
+    def ban(request):
+        coords = {gz_address: [4.9183, 45.7695]}.get(request.url.params["q"])
+        feats = [{"geometry": {"coordinates": coords}, "properties": {"score": 0.9}}]
+        return httpx.Response(200, json={"features": feats if coords else []})
+
+    respx.get("https://data.geopf.fr/robots.txt").respond(404)
+    route = respx.get(gancio.GEOCODER_URL).mock(side_effect=ban)
+    gz = {"id": 10, "name": "Grrrnd Zero", "address": gz_address}
+    items = [
+        _item("gz-int", {**gz, "latitude": 0, "longitude": 0}),
+        _item("gz-str", {**gz, "latitude": "0.0", "longitude": "0"}),
+        _item(
+            "nan",
+            {
+                "id": 11,
+                "name": "Sans point",
+                "address": "nulle part",
+                "latitude": "nan",
+                "longitude": 4.85,
+            },
+        ),
+        _item("inf", {"id": 12, "name": "Infini", "latitude": "inf", "longitude": 4.85}),
+        # a real point outside the zone (Annecy) is still dropped, never geocoded
+        _item(
+            "annecy",
+            {"id": 13, "name": "Loin", "address": gz_address, "latitude": 45.9, "longitude": 6.12},
+        ),
+        # one coordinate at 0 is a real point (Greenwich meridian): outside the zone
+        _item(
+            "meridian",
+            {
+                "id": 14,
+                "name": "Méridien",
+                "address": gz_address,
+                "latitude": 45.75,
+                "longitude": 0,
+            },
+        ),
+    ]
+    geocode = gancio.Geocoder(Fetcher(cache_dir=None, min_interval=0))
+    venues, events = gancio.parse(items, BASE, zone, _now(tz), tz, geocode)
+    assert [e.title for e in events] == ["Gz-Int", "Gz-Str", "Nan", "Inf"]
+    # kept and attributed to Grrrnd Zero at the geocoded address, never at (0, 0)
+    assert [(v.id, v.name) for v in venues] == [("gancio:agenda.example:10", "Grrrnd Zero")]
+    assert (venues[0].latitude, venues[0].longitude) == (45.7695, 4.9183)
+    assert {e.venue_id for e in events[:2]} == {"gancio:agenda.example:10"}
+    # unknown and not found: event kept without a venue, no invented position
+    assert [e.location_name for e in events[2:]] == ["Sans point", "Infini"]
+    assert route.call_count == 2  # GZ address once (memoised) + "nulle part"
+    # merged with the same venue found on the map, so its events land there
+    osm_gz = Venue("osm:node/1", "Grrrnd Zero", 45.7696, 4.9184, "music_venue")
+    _, alias = merge([[osm_gz], venues])
+    assert alias["gancio:agenda.example:10"] == "osm:node/1"
+
+
+def test_null_island_without_geocoder_keeps_event_without_venue(zone, tz):
+    place = {"id": 10, "name": "Grrrnd Zero", "address": "Lyon", "latitude": 0, "longitude": 0}
+    venues, events = gancio.parse([_item("gz", place)], BASE, zone, _now(tz), tz)
+    assert venues == [] and [e.location_name for e in events] == ["Grrrnd Zero"]
+
+
+def test_bool_is_not_a_coordinate():
+    assert [gancio._coord(v) for v in (True, False, 1, "45.7")] == [None, None, 1.0, 45.7]
