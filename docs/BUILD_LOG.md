@@ -65,6 +65,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-44 | REQUEST_CHANGES: guard the DROP SCHEMA test against non-local databases + 8 non-blocking (IAM rights, migration lock, GITHUB_ENV guard, naming, paths, index, tests); fixed | PR #30 |
 | 2026-10-06 | agent:dev | build | WIP-44 step 3: feedback function (Scaleway Serverless Functions, python312: CORS, hashed bearer token, strict schema, parameterised insert), `deploy-feedback` command + Feedback function workflow, page queue (`feedback.js`) with send key in « Mes goûts » | PR #31 |
 | 2026-10-06 | agent:reviewer | review WIP-44 | REQUEST_CHANGES: feedback queue loses items (remove by id); ADR rate limit dropped (429 restored) + 10 non-blocking; fixed | PR #31 |
+| 2026-10-06 | agent:dev | fix | WIP-44 first real deploy: upload HTTP 403; upload headers de-duplicated, safer diagnostics | PR #32 |
+| 2026-10-06 | agent:reviewer | review WIP-44 fix | APPROVE (root cause unconfirmed until the next deploy) + 4 non-blocking, 3 applied | PR #32 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

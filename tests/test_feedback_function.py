@@ -325,3 +325,14 @@ def test_cli_http_error_reports_type_only(monkeypatch, capsys):
     assert cli.main(["deploy-feedback"]) == 1
     out = capsys.readouterr().out
     assert "ConnectError" in out and "Signature" not in out
+
+
+def test_upload_headers_are_not_duplicated():
+    from nightcrawler.store.deploy_function import upload_headers
+
+    h = upload_headers(
+        {"headers": {"content-type": ["application/octet-stream"], "x-amz-acl": "private"}}
+    )
+    assert h.get_list("content-type") == ["application/octet-stream"]
+    assert h["x-amz-acl"] == "private"
+    assert upload_headers({})["content-type"] == "application/octet-stream"
