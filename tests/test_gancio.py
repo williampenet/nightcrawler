@@ -240,7 +240,16 @@ def test_places_at_null_island_are_unknown_not_out_of_zone(zone, tz):
     items = [
         _item("gz-int", {**gz, "latitude": 0, "longitude": 0}),
         _item("gz-str", {**gz, "latitude": "0.0", "longitude": "0"}),
-        _item("nan", {"id": 11, "name": "Sans point", "address": "nulle part", "latitude": "nan"}),
+        _item(
+            "nan",
+            {
+                "id": 11,
+                "name": "Sans point",
+                "address": "nulle part",
+                "latitude": "nan",
+                "longitude": 4.85,
+            },
+        ),
         _item("inf", {"id": 12, "name": "Infini", "latitude": "inf", "longitude": 4.85}),
         # a real point outside the zone (Annecy) is still dropped, never geocoded
         _item(
@@ -279,3 +288,7 @@ def test_null_island_without_geocoder_keeps_event_without_venue(zone, tz):
     place = {"id": 10, "name": "Grrrnd Zero", "address": "Lyon", "latitude": 0, "longitude": 0}
     venues, events = gancio.parse([_item("gz", place)], BASE, zone, _now(tz), tz)
     assert venues == [] and [e.location_name for e in events] == ["Grrrnd Zero"]
+
+
+def test_bool_is_not_a_coordinate():
+    assert [gancio._coord(v) for v in (True, False, 1, "45.7")] == [None, None, 1.0, 45.7]

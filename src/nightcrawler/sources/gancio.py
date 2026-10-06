@@ -40,6 +40,8 @@ def _host(url: str) -> str:
 
 
 def _coord(value) -> float | None:
+    if isinstance(value, bool):  # float(True) == 1.0: not a coordinate
+        return None
     try:
         x = float(value)
     except (TypeError, ValueError):
