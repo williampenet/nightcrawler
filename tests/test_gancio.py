@@ -175,7 +175,8 @@ def test_places_without_coordinates_are_geocoded(zone, tz):
     venues, events = gancio.parse(items, BASE, zone, _now(tz), tz, geocode)
     assert [v.name for v in venues] == ["Marché Gare"]
     assert (round(venues[0].latitude, 4), round(venues[0].longitude, 4)) == (45.7425, 4.8223)
-    assert [e.title for e in events] == ["A", "B", "D"]  # Grenoble is outside the zone
+    # Grenoble is outside the zone: a likely mismatch, the event stays without a venue
+    assert [e.title for e in events] == ["A", "B", "C", "D"]
     assert route.call_count == 3  # same address asked once (whitespace normalised)
     assert (geocode.calls, geocode.found) == (3, 2)
 
@@ -187,3 +188,36 @@ def test_geocoder_is_capped():
 
     geocode = gancio.Geocoder(NoFetch(), limit=0)
     assert geocode("1 rue X") is None
+
+
+@respx.mock
+def test_geocoder_survives_bad_answers(zone):
+    respx.get("https://data.geopf.fr/robots.txt").respond(404)
+    answers = iter(
+        [
+            httpx.Response(500),
+            httpx.Response(200, text="not json"),
+            httpx.Response(200, json={"features": "x"}),
+            httpx.Response(200, json={"features": [{"properties": {"score": 0.9}}]}),
+            httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {"geometry": {"coordinates": [4.8, 45.7]}, "properties": {"score": 0.3}}
+                    ]
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {"geometry": {"coordinates": ["nan", 45.7]}, "properties": {"score": 0.9}}
+                    ]
+                },
+            ),
+        ]
+    )
+    route = respx.get(gancio.GEOCODER_URL).mock(side_effect=lambda r: next(answers))
+    geocode = gancio.Geocoder(Fetcher(cache_dir=None, min_interval=0), near=(45.75, 4.83))
+    assert [geocode(f"{i} rue X") for i in range(6)] == [None] * 6
+    assert route.calls[0].request.url.params["lat"] == "45.75"

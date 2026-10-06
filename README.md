@@ -41,7 +41,7 @@ The build agents are Claude (Anthropic); the sovereignty / open-weights policy a
 
 ## Stack
 
-Python 3.12 batch pipeline run daily by GitHub Actions, static page on GitHub Pages ([ADR-0001](docs/adr/0001-poc-architecture.md)). Sources: OpenStreetMap (venues), venue websites (schema.org JSON-LD, microdata, iCal), Ticketmaster Discovery API (optional), Gancio community agendas listed in `config/zone.yaml` (e.g. [Ville Morte](https://agenda.villemorte.fr), Lyon).
+Python 3.12 batch pipeline run daily by GitHub Actions, static page on GitHub Pages ([ADR-0001](docs/adr/0001-poc-architecture.md)). Sources: OpenStreetMap (venues), venue websites (schema.org JSON-LD, microdata, iCal), Ticketmaster Discovery API (optional), Gancio community agendas listed in `config/zone.yaml` (e.g. [Ville Morte](https://agenda.villemorte.fr), Lyon); addresses without coordinates are geocoded with the IGN Géoplateforme (Base Adresse Nationale, Licence Ouverte 2.0).
 
 ## Run locally
 

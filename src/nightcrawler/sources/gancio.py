@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import unicodedata
 from collections.abc import Callable
@@ -31,7 +32,7 @@ MAX_DETAILS = 60  # per instance and per run (responses are cached 20 h by the f
 MAX_GEOCODE = 60  # places without coordinates, per run
 # French national address API (IGN Géoplateforme, BAN data): free, no key, public service
 GEOCODER_URL = "https://data.geopf.fr/geocodage/search"
-MIN_GEOCODE_SCORE = 0.5
+MIN_GEOCODE_SCORE = 0.6
 
 
 def _host(url: str) -> str:
@@ -75,10 +76,8 @@ def parse(
             continue
         lat, lon = _coord(place.get("latitude")), _coord(place.get("longitude"))
         address = _text(place.get("address"))
-        if (lat is None or lon is None) and address and geocode:
-            lat, lon = geocode(address) or (None, None)
         if lat is not None and lon is not None and not zone.contains(lat, lon):
-            continue
+            continue  # the instance itself places it outside the zone
         name = _text(place.get("name"))
         tags = item.get("tags") if isinstance(item.get("tags"), list) else []
         ev = RawEvent(
@@ -92,6 +91,12 @@ def parse(
         )
         if not in_window(ev, now, zone.window_days):
             continue
+        if (lat is None or lon is None) and name and address and geocode:
+            found = geocode(address)
+            # a guessed point outside the zone is more likely a wrong match than a far-away
+            # event: keep the event, without a venue
+            if found and zone.contains(*found):
+                lat, lon = found
         if name and lat is not None and lon is not None and ev.venue_id not in venues:
             venues[ev.venue_id] = Venue(
                 id=ev.venue_id,
@@ -151,8 +156,10 @@ def window_params(zone: Zone, now: datetime) -> dict[str, str]:
 class Geocoder:
     """Address -> (lat, lon) with the national address API; capped, memoised per run."""
 
-    def __init__(self, fetcher: Fetcher, limit: int = MAX_GEOCODE):
-        self.fetcher, self.limit = fetcher, limit
+    def __init__(
+        self, fetcher: Fetcher, limit: int = MAX_GEOCODE, near: tuple[float, float] | None = None
+    ):
+        self.fetcher, self.limit, self.near = fetcher, limit, near
         self.memo: dict[str, tuple[float, float] | None] = {}
         self.calls = self.found = 0
 
@@ -165,12 +172,16 @@ class Geocoder:
         self.calls += 1
         result = None
         try:
-            resp = self.fetcher.get(GEOCODER_URL, params={"q": key[:200], "limit": "1"})
+            params = {"q": key[:200], "limit": "1"}
+            if self.near:  # ranks results near the zone first
+                params.update(lat=str(self.near[0]), lon=str(self.near[1]))
+            resp = self.fetcher.get(GEOCODER_URL, params=params)
             feats = json.loads(resp.text).get("features") if resp.status == 200 else None
             best = feats[0] if feats else None
             if best and float(best["properties"].get("score", 0)) >= MIN_GEOCODE_SCORE:
                 lon, lat = (float(x) for x in best["geometry"]["coordinates"][:2])
-                result = (lat, lon)
+                if math.isfinite(lat) and math.isfinite(lon):
+                    result = (lat, lon)
         except (httpx.HTTPError, RobotsBlocked, ValueError, KeyError, TypeError, AttributeError):
             log.info("geocoding failed for a Gancio place")
         self.found += result is not None
@@ -187,7 +198,7 @@ def collect(
     venues: list[Venue] = []
     events: list[RawEvent] = []
     errors: list[str] = []
-    geocode = Geocoder(fetcher)
+    geocode = Geocoder(fetcher, near=(zone.latitude, zone.longitude))
     for inst in zone.gancio_instances:
         base = str(inst["url"]).rstrip("/")
         name = inst.get("name") or _host(base)
@@ -203,15 +214,8 @@ def collect(
             errors.append(f"{name}: {reason[:200]}")
             continue
         details = _add_details(base, e, fetcher)
-        log.info(
-            "Gancio %s: %d places, %d events, %d details, geocoded %d/%d",
-            name,
-            len(v),
-            len(e),
-            details,
-            geocode.found,
-            geocode.calls,
-        )
+        log.info("Gancio %s: %d places, %d events, %d details", name, len(v), len(e), details)
         venues.extend(v)
         events.extend(e)
+    log.info("Gancio geocoding: %d/%d addresses found", geocode.found, geocode.calls)
     return venues, events, ("error: " + "; ".join(errors)) if errors else "ok"
