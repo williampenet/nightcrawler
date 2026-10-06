@@ -53,6 +53,16 @@ def test_ensure_fails_clearly():
 
 
 @respx.mock
+def test_lookup_only_never_creates():
+    respx.get(f"{provision.API}/iam/v1alpha1/api-keys/SCWACCESS").respond(json={"user_id": "u"})
+    respx.get(DBS).respond(json={"databases": []})
+    create = respx.post(DBS).respond(json={})
+    with pytest.raises(provision.ProvisionError, match="not found"):
+        provision.ensure(CREDS, create=False)
+    assert not create.called
+
+
+@respx.mock
 def test_existing_database_is_reused():
     respx.get(f"{provision.API}/iam/v1alpha1/api-keys/SCWACCESS").respond(json={"user_id": "u"})
     listing = respx.get(DBS).respond(

@@ -67,12 +67,17 @@ def principal_id(client: httpx.Client, creds: Credentials) -> str:
     return pid
 
 
-def ensure_database(client: httpx.Client, creds: Credentials, wait_s: float = 600) -> dict:
+def ensure_database(
+    client: httpx.Client, creds: Credentials, wait_s: float = 600, create: bool = True
+) -> dict:
+    """The database, created first if missing (create=False: ProvisionError instead)."""
     base = f"/serverless-sqldb/v1alpha1/regions/{REGION}/databases"
     found = _check(
         client.get(base, params={"name": DB_NAME, "project_id": creds.project_id}), "list databases"
     )
     db = next((d for d in found.get("databases", []) if d.get("name") == DB_NAME), None)
+    if db is None and not create:
+        raise ProvisionError("database not found")
     if db is None:
         log.info("creating Serverless SQL Database %s in %s", DB_NAME, REGION)
         db = _check(
@@ -108,10 +113,11 @@ def connection_url(endpoint: str, user: str, password: str) -> str:
     return urlunsplit(("postgresql", netloc, parts.path, query, ""))
 
 
-def ensure(creds: Credentials | None = None) -> tuple[dict, str]:
-    """Returns the database description and its connection URL."""
+def ensure(creds: Credentials | None = None, create: bool = True) -> tuple[dict, str]:
+    """Returns the database description and its connection URL; create=False only looks
+    the database up (read-only callers such as the taste eval, WIP-52)."""
     creds = creds or Credentials.from_env()
     with _client(creds) as client:
         user = principal_id(client, creds)
-        db = ensure_database(client, creds)
+        db = ensure_database(client, creds, create=create)
     return db, connection_url(db["endpoint"], user, creds.secret_key)
