@@ -246,14 +246,18 @@ def test_deploy_reuses_and_updates(tmp_path, monkeypatch):
     )
     create = respx.post(f"{FN}/functions").respond(500)
     patch = respx.patch(f"{FN}/functions/f1").respond(json={"id": "f1", "status": "pending"})
+    # a previous failed build is replaced: upload + deploy again, then report the new failure
     respx.get(f"{FN}/functions/f1").respond(
         json={"id": "f1", "status": "error", "error_message": "build failed"}
     )
+    respx.get(f"{FN}/functions/f1/upload-url").respond(json={"url": "https://s3.test/up"})
+    put = respx.put("https://s3.test/up").respond(200)
+    deploy = respx.post(f"{FN}/functions/f1/deploy").respond(json={"id": "f1"})
     archive = tmp_path / "f.zip"
     archive.write_bytes(b"z")
     with pytest.raises(provision.ProvisionError, match="build failed"):
         dfn.deploy(CREDS, dfn.function_settings(ORIGIN, "u", "h"), archive)
-    assert patch.called and not create.called
+    assert patch.called and not create.called and put.called and deploy.called
 
 
 @respx.mock
@@ -336,3 +340,26 @@ def test_upload_headers_are_not_duplicated():
     assert h.get_list("content-type") == ["application/octet-stream"]
     assert h["x-amz-acl"] == "private"
     assert upload_headers({})["content-type"] == "application/octet-stream"
+
+
+def test_wait_can_accept_a_previous_error(monkeypatch):
+    import httpx as _httpx
+    import respx as _respx
+
+    from nightcrawler.store import deploy_function as d
+
+    monkeypatch.setattr(d.time, "sleep", lambda s: None)
+    with _respx.mock:
+        _respx.get("https://x.test/f").mock(
+            side_effect=[
+                _httpx.Response(200, json={"status": "pending"}),
+                _httpx.Response(200, json={"status": "error", "error_message": "old build"}),
+            ]
+        )
+        with _httpx.Client() as c:
+            assert (
+                d._wait(c, "https://x.test/f", "function", 60, ok=("ready", "error"), fail=())[
+                    "status"
+                ]
+                == "error"
+            )

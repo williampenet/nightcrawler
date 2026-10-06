@@ -67,6 +67,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-44 | REQUEST_CHANGES: feedback queue loses items (remove by id); ADR rate limit dropped (429 restored) + 10 non-blocking; fixed | PR #31 |
 | 2026-10-06 | agent:dev | fix | WIP-44 first real deploy: upload HTTP 403; upload headers de-duplicated, safer diagnostics | PR #32 |
 | 2026-10-06 | agent:reviewer | review WIP-44 fix | APPROVE (root cause unconfirmed until the next deploy) + 4 non-blocking, 3 applied | PR #32 |
+| 2026-10-06 | agent:dev | fix | WIP-44 upload fixed (duplicated content-type confirmed); Scaleway build then failed in its preparation phase; redeploy over a failed build | PR #33 |
+| 2026-10-06 | agent:reviewer | review WIP-44 redeploy | APPROVE + 2 non-blocking | PR #33 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
