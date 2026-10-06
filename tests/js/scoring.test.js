@@ -110,3 +110,57 @@ test("a liked artist still counts after a wrong-match report", () => {
   const p = S.buildProfile({ seeds: [], liked: ["boris"], wrong: ["boris"] }, artists);
   assert.equal(S.scoreConcert(c("1", ["boris"]), artists, p).score, 0.9);
 });
+
+// ratings of concerts without an identified artist (WIP-47)
+const anon = (id, performers) => ({ id, start: "2026-10-10T20:00:00+02:00", artists: [], performers });
+
+test("a liked concert without artists scores 0.9", () => {
+  const p = S.buildProfile({ likedConcerts: ["aaaaaaaaaaaa"] }, artists);
+  assert.equal(S.isEmpty(p), false);
+  const m = S.scoreConcert(anon("aaaaaaaaaaaa", []), artists, p);
+  assert.equal(m.score, 0.9);
+  assert.equal(m.reason, "Tu as aimé ce concert");
+  assert.equal(m.artist, null);
+  assert.equal(m.discovery, false);
+});
+
+test("a liked name matches another concert by its performers", () => {
+  const p = S.buildProfile({ likedNames: S.performerKeys(anon("a", ["Les Dégâts"])) }, artists);
+  const m = S.scoreConcert(anon("bbbbbbbbbbbb", ["Autre groupe", "LES DEGATS"]), artists, p);
+  assert.equal(m.score, 0.9);
+  assert.equal(m.reason, "Tu as aimé LES DEGATS");
+  // once identified, the name is an artist key: it still counts
+  const n = S.scoreConcert(c("2", ["earth"]), artists, S.buildProfile({ likedNames: ["earth"] }, artists));
+  assert.equal(n.reason, "Tu as aimé Earth");
+});
+
+test("a disliked name is excluded like a disliked artist", () => {
+  const p = S.buildProfile(
+    { seeds: [{ name: "Earth", tags: ["drone"] }], likedNames: ["lesdegats"], dislikedNames: ["lesdegats", "earth"] },
+    artists,
+  );
+  assert.equal(S.scoreConcert(anon("1", ["Les Dégâts"]), artists, p).score, 0);
+  assert.equal(S.scoreConcert(c("2", ["earth"]), artists, p).score, 0);
+});
+
+test("performerKeys normalises, dedupes and drops empty names", () => {
+  assert.deepEqual(S.performerKeys({ performers: ["Björk", "bjork", "!!!", 3] }), ["bjork"]);
+  assert.deepEqual(S.performerKeys({}), []);
+});
+
+test("sanitizeState keeps well-typed rating fields only", () => {
+  const s = S.sanitizeState({
+    liked: ["earth", 1],
+    likedConcerts: ["aaaaaaaaaaaa", null],
+    likedNames: ["lesdegats", "Les Dégâts", "lesdegats", ""],
+    dislikedNames: "earth",
+    sort: "me",
+  });
+  assert.deepEqual(s.liked, ["earth"]);
+  assert.deepEqual(s.likedConcerts, ["aaaaaaaaaaaa"]);
+  assert.deepEqual(s.likedNames, ["lesdegats"]);
+  assert.deepEqual(s.dislikedNames, []);
+  assert.equal(s.sort, "me");
+  assert.deepEqual(S.sanitizeState([1]), S.defaultState());
+  assert.deepEqual(S.sanitizeState(null).likedConcerts, []);
+});

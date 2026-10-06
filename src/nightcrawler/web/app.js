@@ -35,27 +35,9 @@ const STATUS_LABEL = {
 // ---------------------------------------------------------------- state (this browser only)
 
 const DATA = { concerts: [], artists: {}, venues: [], report: null };
+const defaultState = S.defaultState;
+const sanitizeState = S.sanitizeState; // saved state is untrusted: see scoring.js
 let state = loadState();
-
-function defaultState() {
-  return { seeds: [], liked: [], disliked: [], hidden: [], wrong: [], sort: "date", when: "all", style: "", venue: "" };
-}
-
-// Saved state is untrusted (old versions, manual edits): keep only well-typed fields.
-function sanitizeState(raw) {
-  const s = defaultState();
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return s;
-  const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-  if (Array.isArray(raw.seeds)) {
-    s.seeds = raw.seeds
-      .map((x) => (typeof x === "string" ? { name: x, tags: null } : x))
-      .filter((x) => x && typeof x.name === "string")
-      .map((x) => ({ name: x.name, tags: Array.isArray(x.tags) ? strings(x.tags) : null }));
-  }
-  for (const k of ["liked", "disliked", "hidden", "wrong"]) s[k] = strings(raw[k]);
-  for (const k of ["sort", "when", "style", "venue"]) if (typeof raw[k] === "string") s[k] = raw[k];
-  return s;
-}
 
 function loadState() {
   try {
@@ -206,17 +188,25 @@ const SPOTIFY_CALLBACK = (() => {
 })();
 
 async function connectSpotify() {
-  const verifier = SP.randomString();
-  const st = SP.randomString(16);
   try {
-    sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
-  } catch {
-    return setStatus("Connexion impossible : le stockage de session est bloqué dans ce navigateur.");
+    if (!window.crypto || !window.crypto.subtle) {
+      return notify("Connexion Spotify impossible : ce navigateur ne permet pas le chiffrement nécessaire (page non sécurisée ?).");
+    }
+    const verifier = SP.randomString();
+    const st = SP.randomString(16);
+    const challenge = await SP.challengeFor(verifier);
+    try {
+      sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
+    } catch {
+      return notify("Connexion Spotify impossible : le stockage de session est bloqué dans ce navigateur.");
+    }
+    notify("Redirection vers Spotify…", "info");
+    location.assign(
+      SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
+    );
+  } catch (err) {
+    notify(`Connexion Spotify impossible : ${shortMessage(err)}`);
   }
-  const challenge = await SP.challengeFor(verifier);
-  location.assign(
-    SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
-  );
 }
 
 // Back from Spotify: exchange the code, import names, forget the token.
@@ -225,15 +215,16 @@ async function finishSpotify() {
   if (cb.status === "none") return;
   document.getElementById("taste").open = true;
   if (cb.status === "error") {
-    return setStatus(
+    return notify(
       cb.reason === "denied"
         ? "Connexion Spotify annulée."
         : "Connexion Spotify refusée : la réponse ne correspond pas à la demande.",
+      cb.reason === "denied" ? "info" : "error",
     );
   }
-  if (!SP.validClientId(APP_CONFIG.spotify_client_id)) return setStatus("Spotify n'est pas configuré.");
+  if (!SP.validClientId(APP_CONFIG.spotify_client_id)) return notify("Spotify n'est pas configuré.");
   try {
-    setStatus("Import depuis Spotify…");
+    notify("Import depuis Spotify…", "info");
     const token = await SP.exchangeCode({
       clientId: APP_CONFIG.spotify_client_id,
       redirectUri: redirectUri(),
@@ -246,14 +237,16 @@ async function finishSpotify() {
     box.value = merged.join("\n");
     state.sort = "me";
     document.getElementById("sort").value = "me";
-    await setSeeds(merged);
-    setStatus(
+    // styles are then read from MusicBrainz in the background (about 1 s per artist)
+    setSeeds(merged).catch((err) => showBanner(`Une erreur est survenue : ${shortMessage(err)}`));
+    notify(
       `${names.length} artistes importés depuis Spotify` +
         (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : "."),
+      failed ? "error" : "info",
     );
   } catch (err) {
     const why = String(err && err.message);
-    setStatus(
+    notify(
       why === "forbidden"
         ? "Ce compte Spotify n'est pas autorisé sur l'app (à ajouter dans le tableau de bord Spotify)."
         : "Import Spotify impossible pour le moment.",
@@ -264,6 +257,34 @@ async function finishSpotify() {
 function setStatus(text) {
   document.getElementById("taste-status").textContent = text;
 }
+
+// Visible messages (WIP-47): a dismissible banner at the top of the page, for errors and
+// Spotify connection news; the "Mes goûts" panel is opened and keeps the same line.
+function shortMessage(err) {
+  const m = String((err && err.message) || err || "erreur inconnue").replace(/\s+/g, " ").trim();
+  return m.length > 120 ? m.slice(0, 117) + "…" : m;
+}
+
+function showBanner(text, kind = "error") {
+  const box = document.getElementById("banner");
+  if (!box) return;
+  box.className = `banner ${kind}`;
+  box.querySelector(".banner-text").textContent = text;
+  box.hidden = false;
+}
+
+function notify(text, kind = "error") {
+  setStatus(text);
+  const taste = document.getElementById("taste");
+  if (taste) taste.open = true;
+  showBanner(text, kind);
+}
+
+document.getElementById("banner-close").addEventListener("click", () => {
+  document.getElementById("banner").hidden = true;
+});
+window.addEventListener("error", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.error || e.message)}`));
+window.addEventListener("unhandledrejection", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.reason)}`));
 
 // ---------------------------------------------------------------- feedback
 
@@ -276,6 +297,7 @@ function feedback(concert, kind, li) {
     for (const v of values) on ? set.add(v) : set.delete(v);
     return [...set];
   };
+  if (!keys.length) return feedbackByName(concert, kind, li, toggle);
   if (kind === "like") {
     const on = !keys.every((k) => state.liked.includes(k)); // second click undoes
     state.liked = toggle(state.liked, keys, on);
@@ -285,6 +307,29 @@ function feedback(concert, kind, li) {
     sendFeedback("dislike", concert.id, keys);
     state.disliked = toggle(state.disliked, keys, true);
     state.liked = toggle(state.liked, keys, false);
+    state.hidden = toggle(state.hidden, [concert.id], true);
+  }
+  saveState();
+  render();
+  refocus(kind === "like" ? concert.id : next);
+}
+
+// Concerts without an identified artist (WIP-47): remember the concert and its performer
+// names; the feedback function gets the concert id only.
+function feedbackByName(concert, kind, li, toggle) {
+  const names = S.performerKeys(concert);
+  const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
+  if (kind === "like") {
+    const on = !state.likedConcerts.includes(concert.id); // second click undoes
+    state.likedConcerts = toggle(state.likedConcerts, [concert.id], on);
+    state.likedNames = toggle(state.likedNames, names, on);
+    state.dislikedNames = toggle(state.dislikedNames, names, false);
+    sendFeedback(on ? "like" : "unlike", concert.id, []);
+  } else {
+    sendFeedback("dislike", concert.id, []);
+    state.dislikedNames = toggle(state.dislikedNames, names, true);
+    state.likedNames = toggle(state.likedNames, names, false);
+    state.likedConcerts = toggle(state.likedConcerts, [concert.id], false);
     state.hidden = toggle(state.hidden, [concert.id], true);
   }
   saveState();
@@ -464,8 +509,10 @@ function concertRow(c, match, showDate) {
   const actions = el("span", null, "links");
   const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
-  if ((c.artists || []).length) {
-    const liked = c.artists.every((k) => state.liked.includes(k));
+  {
+    // every row can be rated; without an identified artist the concert itself is (WIP-47)
+    const keys = c.artists || [];
+    const liked = keys.length ? keys.every((k) => state.liked.includes(k)) : state.likedConcerts.includes(c.id);
     const like = button("J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
     like.setAttribute("aria-pressed", String(liked));
     actions.append(like);
@@ -610,6 +657,7 @@ function setupControls() {
   // a saved id may be an alias since sources were merged (WIP-42): keep the current id;
   // concerts that are gone are forgotten
   state.hidden = S.currentIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.currentIds(DATA.concerts, state.likedConcerts);
   saveState();
 
   const box = document.getElementById("seeds");
@@ -638,7 +686,9 @@ function setupControls() {
   );
   document.getElementById("reset").addEventListener("click", () => {
     tagRun++; // stop a running tag loop
-    state = Object.assign(loadState(), { seeds: [], liked: [], disliked: [], hidden: [], wrong: [] });
+    state = Object.assign(loadState(), {
+      seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
+    });
     saveState();
     box.value = "";
     setStatus("Goûts et avis effacés de ce navigateur.");
@@ -682,10 +732,11 @@ async function main() {
     renderSources(venues, report);
     renderAgendaCredits(report);
     focusDeepLink();
-    finishSpotify();
+    finishSpotify().catch((err) => notify(`Import Spotify impossible : ${shortMessage(err)}`));
     flushFeedback(); // ratings left over from a previous visit
-  } catch {
+  } catch (err) {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
+    if (err instanceof Error) showBanner(`Une erreur est survenue : ${shortMessage(err)}`); // a bug, not a missing file
   }
 }
 

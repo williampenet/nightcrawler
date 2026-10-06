@@ -94,3 +94,13 @@ button.linkish {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* visible errors and Spotify news (WIP-47) */
+.banner {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; gap: 8px; align-items: baseline; justify-content: space-between;
+  margin: 8px 0 0; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, #c62828 14%, var(--bg)); border: 1px solid #c62828;
+}
+.banner.info { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); border-color: var(--accent); }
+.banner[hidden] { display: none; }
