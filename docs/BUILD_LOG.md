@@ -87,6 +87,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | scope | Reports Ghinzu duplicates; asks to remove Radiant Bellevue and Toï Toï le Zinc from the sources | |
 | 2026-10-06 | agent:dev | build | WIP-51: same normalised name merges up to 1.5 km (Transbordeur TM/OSM ~590 m apart, distance_m on measured coordinates); `excluded_venues` in zone config | PR #41 |
 | 2026-10-06 | agent:reviewer | review WIP-51 | REQUEST_CHANGES: 2 blocking (excluded venue leaking via other pages; exclusion after merge) + 5 non-blocking (same-source far merges, substring exclusion, 580→590 m, tests); fixed | PR #41 |
+| 2026-10-06 | agent:reviewer | re-review WIP-51 | APPROVE: both blocking fixed and re-verified; 4 non-blocking (short name variants, venues_excluded counts per source, dropped-event counter, post-run re-measure) | PR #41 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
