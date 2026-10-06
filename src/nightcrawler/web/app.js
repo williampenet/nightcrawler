@@ -286,8 +286,11 @@ function feedback(concert, kind, li) {
   }
   saveState();
   render();
-  // keep keyboard users where they were: same row, or the next one if it was hidden
-  const wanted = kind === "like" ? concert.id : next;
+  refocus(kind === "like" ? concert.id : next);
+}
+
+// keep keyboard users where they were: the wanted row, else the first button of the list
+function refocus(wanted) {
   const row = [...document.querySelectorAll("#concerts li")].find((r) => r.dataset.id === wanted);
   const target = (row && row.querySelector("button")) || document.querySelector("#concerts button");
   if (target) target.focus();
@@ -395,9 +398,13 @@ function concertRow(c, match, showDate) {
       // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
       const wrong = button("Mauvais rapprochement", "linkish", () => {
         if (c.id === deepLinkId) deepLinkId = null;
+        const next = li.nextElementSibling && li.nextElementSibling.dataset.id;
         if (!state.wrong.includes(match.artist)) state.wrong.push(match.artist);
         saveState();
         render();
+        // the row may leave the "Pour moi" list: same row if still there, else the next one
+        const still = [...document.querySelectorAll("#concerts li")].some((r) => r.dataset.id === c.id);
+        refocus(still ? c.id : next);
         setStatus("Noté : ce rapprochement ne sera plus utilisé.");
       });
       why.append(wrong);
@@ -409,7 +416,7 @@ function concertRow(c, match, showDate) {
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   if ((c.artists || []).length) {
     const liked = c.artists.every((k) => state.liked.includes(k));
-    const like = button(liked ? "J'aime ✓" : "J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
+    const like = button("J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
     like.setAttribute("aria-pressed", String(liked));
     actions.append(like);
     actions.append(button("Pas pour moi", "ghost", () => feedback(c, "dislike", li)));

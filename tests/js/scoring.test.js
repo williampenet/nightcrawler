@@ -105,3 +105,8 @@ test("a reported wrong match stops related and style guesses for that artist (WI
   const seeded = S.buildProfile({ seeds: [{ name: "Earth", tags: [] }], wrong: ["earth"] }, artists);
   assert.equal(S.scoreConcert(c("1", ["earth"]), artists, seeded).score, 1); // own artists still match
 });
+
+test("a liked artist still counts after a wrong-match report", () => {
+  const p = S.buildProfile({ seeds: [], liked: ["boris"], wrong: ["boris"] }, artists);
+  assert.equal(S.scoreConcert(c("1", ["boris"]), artists, p).score, 0.9);
+});
