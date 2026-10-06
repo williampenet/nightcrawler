@@ -109,7 +109,11 @@ def upload_headers(up: dict) -> httpx.Headers:
     """Headers the presigned upload URL was signed with, once each (case-insensitive)."""
     headers = httpx.Headers()
     for k, v in (up.get("headers") or {}).items():
-        headers[k] = v[0] if isinstance(v, list) and v else str(v)
+        if isinstance(v, list):
+            if v:
+                headers[k] = str(v[0])
+        elif v is not None:
+            headers[k] = str(v)
     if "content-type" not in headers:
         headers["Content-Type"] = "application/octet-stream"
     return headers
@@ -141,14 +145,16 @@ def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 60
         up = _check(
             client.get(f"{path}/upload-url", params={"content_length": len(data)}), "upload url"
         )
-        put = httpx.put(up["url"], content=data, headers=upload_headers(up), timeout=120)
+        sent = upload_headers(up)
+        put = httpx.put(up["url"], content=data, headers=sent, timeout=120)
         if put.status_code >= 400:
-            # S3 error codes are safe to show; the body itself may echo signing details
+            # S3 error code and header *names* only: values, URL and body may hold signatures
             code = re.search(r"<Code>([A-Za-z]+)</Code>", put.text or "")
-            names = ",".join(sorted(upload_headers(up).keys()))
+            signed = re.search(r"[?&][Xx]-[Aa]mz-[Ss]igned[Hh]eaders=([a-z0-9%;.-]+)", up["url"])
             raise ProvisionError(
                 f"upload: HTTP {put.status_code} {code.group(1) if code else ''} "
-                f"(headers sent: {names})"
+                f"(sent: {','.join(sorted(sent.keys()))}; "
+                f"signed: {signed.group(1).replace('%3B', ';') if signed else '?'})"
             )
         _check(client.post(f"{path}/deploy", json={}), "deploy")  # status becomes pending
         return _wait(client, path, "function", wait_s)
