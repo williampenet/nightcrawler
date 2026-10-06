@@ -1,6 +1,6 @@
 # ADR-0005: Event store and server-side feedback (Scaleway, EU)
 
-- **Status:** Proposed — needs William's validation and a Scaleway account (human-only action)
+- **Status:** ✋ Accepted (William, 2026-10-06) — Scaleway account and API key: William
 - **Date:** 2026-10-06
 - **Deciders:** William (PM), Claude (engineer)
 
@@ -32,7 +32,7 @@ pipeline + a few page sessions) ≈ 12–13 h/month at 0.5–1 vCPU → **€0.9
 month, min scale 0 → **€0**. Watch item: the inactivity delay before the database goes idle is
 not documented; the first month's invoice is checked against this estimate.
 
-## Decision (proposed)
+## Decision
 Scaleway, region fr-par:
 1. **Serverless SQL Database (PostgreSQL)**, autoscaling min 0 / max 1 vCPU. Tables:
    `raw_events` (source, source id/url, payload, first/last seen), `concerts` (canonical record,

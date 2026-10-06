@@ -57,6 +57,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-42 | REQUEST_CHANGES: 3 blocking (chained/unknown-time merges, short-title overlap, unstable ids) + 8 non-blocking; fixed | PR #27 |
 | 2026-10-06 | human:william | scope | Wants feedback sent to the service (no export), duplicates fixed, asks for a central store with de-dup rules; asks for Scaleway pricing | |
 | 2026-10-06 | agent:dev | adr | ADR-0005 proposed: Scaleway Serverless SQL (PostgreSQL, min 0 vCPU) + one function for feedback, ≈ €1–2/month | [ADR](adr/0005-event-store-and-feedback.md) |
+| 2026-10-06 | human:william | validation | ADR-0005 accepted; William creates the Scaleway account | [ADR](adr/0005-event-store-and-feedback.md) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
