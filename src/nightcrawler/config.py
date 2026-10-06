@@ -20,6 +20,8 @@ class Zone:
     osm_extract_url: str | None = None
     # Gancio community agendas: ({"name": ..., "url": ...}, ...)
     gancio_instances: tuple[dict, ...] = field(default=())
+    # venue names dropped from every source, matched on normalised names (WIP-51)
+    excluded_venues: tuple[str, ...] = field(default=())
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """True when the point is within radius_km of the zone centre (haversine)."""
@@ -54,4 +56,5 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
             {"name": str(i.get("name") or i["url"]), "url": str(i["url"])}
             for i in data.get("gancio_instances") or []
         ),
+        excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
     )

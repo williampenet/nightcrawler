@@ -53,3 +53,66 @@ def test_ticketmaster_failure_does_not_stop(zone, tz, monkeypatch):
         [],
         "error: ConnectError",
     )
+
+
+def test_merge_identical_name_up_to_1500m():
+    # coordinates measured on the 2026-10-06 run: same hall, 580 m apart (WIP-51)
+    osm_v = Venue("osm:way/85000536", "Le Transbordeur", 45.78397, 4.86088, "music_venue")
+    tm_v = Venue("tm:rZ6SnyZ6A6", "LE TRANSBORDEUR", 45.778753, 4.859536, "music_venue")
+    merged, alias = merge([[osm_v], [tm_v]])
+    assert [v.id for v in merged] == ["osm:way/85000536"]
+    assert alias["tm:rZ6SnyZ6A6"] == "osm:way/85000536"
+
+
+def test_merge_far_or_partial_or_generic_names_stay_apart():
+    a = Venue("osm:1", "Le Transbordeur", 45.78397, 4.86088, "music_venue")
+    far = Venue("tm:1", "Le Transbordeur", 45.80, 4.86088, "music_venue")  # ~1.8 km
+    partial = Venue("tm:2", "Transbordeur Café", 45.7795, 4.8600, "music_venue")  # ~500 m
+    fetes1 = Venue("osm:2", "Salle des fêtes", 45.70, 4.80, "music_venue")
+    fetes2 = Venue("tm:3", "Salle des fêtes", 45.705, 4.80, "music_venue")  # ~560 m
+    _, alias = merge([[a, fetes1], [far, partial, fetes2]])
+    assert alias == {v: v for v in ("osm:1", "osm:2", "tm:1", "tm:2", "tm:3")}
+
+
+def test_same_source_same_name_stays_apart():
+    # two OSM objects with one name are distinct features; only sources disagree on coordinates
+    a = Venue("osm:1", "Le Sonic", 45.75, 4.85, "music_venue")
+    b = Venue("osm:2", "Le Sonic", 45.76, 4.85, "music_venue")  # ~1.1 km
+    merged, _ = merge([[a, b]])
+    assert len(merged) == 2
+
+
+def test_excluded_venue_names():
+    from nightcrawler.venues import is_excluded
+
+    excluded = ("Radiant Bellevue", "Toï Toï le Zinc", "Le Sucre")
+    assert is_excluded(Venue("tm:x", "RADIANT-BELLEVUE", 45.8, 4.8, "music_venue"), excluded)
+    assert is_excluded(Venue("g:x", "Toi Toi Le Zinc", 45.8, 4.8, "music_venue"), excluded)
+    assert not is_excluded(Venue("o:x", "Le Transbordeur", 45.8, 4.8, "music_venue"), excluded)
+    assert not is_excluded(Venue("o:y", "Le Sucre Salé", 45.8, 4.8, "music_venue"), excluded)
+
+
+def test_exclusion_applies_before_merge(tmp_path, zone, monkeypatch):
+    # OSM "Radiant" and TM "Radiant-Bellevue" 55 m apart would merge under the OSM name;
+    # filtering each source first keeps the excluded TM venue (and its events) out
+    from dataclasses import replace
+
+    from nightcrawler import pipeline
+    from nightcrawler.models import RawEvent
+
+    osm_v = Venue("osm:1", "Radiant", 45.80, 4.85, "music_venue")
+    tm_v = Venue("tm:1", "Radiant-Bellevue", 45.8005, 4.85, "music_venue", sources=["ticketmaster"])
+    when = datetime.fromisoformat("2026-10-10T20:00:00+02:00")
+    tm_ev = RawEvent(title="Gig", start=when, source="ticketmaster", venue_id="tm:1")
+    monkeypatch.setattr(pipeline.osm, "discover", lambda *a, **k: [osm_v])
+    monkeypatch.setattr(pipeline.ticketmaster, "collect", lambda *a: ([tm_v], [tm_ev], "ok"))
+    monkeypatch.setattr(pipeline.gancio, "collect", lambda *a: ([], [], "ok"))
+    monkeypatch.setattr(
+        pipeline, "probe_venue", lambda v, *a: (pipeline.Probe(v.id, "no_website"), [])
+    )
+    monkeypatch.setattr(pipeline, "enrich", lambda concerts, f: ({}, {}))
+    zone = replace(zone, excluded_venues=("Radiant Bellevue",))
+    report = pipeline.run(
+        zone, tmp_path, None, now=datetime.fromisoformat("2026-10-05T12:00:00+02:00")
+    )
+    assert report["venues_excluded"] == 1 and report["concerts"] == 0
