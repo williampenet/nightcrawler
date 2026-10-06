@@ -37,7 +37,7 @@ const DATA = { concerts: [], artists: {}, venues: [], report: null };
 let state = loadState();
 
 function defaultState() {
-  return { seeds: [], liked: [], disliked: [], hidden: [], sort: "date", when: "all", style: "", venue: "" };
+  return { seeds: [], liked: [], disliked: [], hidden: [], wrong: [], sort: "date", when: "all", style: "", venue: "" };
 }
 
 // Saved state is untrusted (old versions, manual edits): keep only well-typed fields.
@@ -51,7 +51,7 @@ function sanitizeState(raw) {
       .filter((x) => x && typeof x.name === "string")
       .map((x) => ({ name: x.name, tags: Array.isArray(x.tags) ? strings(x.tags) : null }));
   }
-  for (const k of ["liked", "disliked", "hidden"]) s[k] = strings(raw[k]);
+  for (const k of ["liked", "disliked", "hidden", "wrong"]) s[k] = strings(raw[k]);
   for (const k of ["sort", "when", "style", "venue"]) if (typeof raw[k] === "string") s[k] = raw[k];
   return s;
 }
@@ -391,6 +391,17 @@ function concertRow(c, match, showDate) {
     const why = el("span", null, "why");
     why.append(el("span", match.reason));
     if (match.discovery) why.append(el("span", "Découverte", "badge"));
+    if (match.inferred && match.artist) {
+      // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
+      const wrong = button("Mauvais rapprochement", "linkish", () => {
+        if (c.id === deepLinkId) deepLinkId = null;
+        if (!state.wrong.includes(match.artist)) state.wrong.push(match.artist);
+        saveState();
+        render();
+        setStatus("Noté : ce rapprochement ne sera plus utilisé.");
+      });
+      why.append(wrong);
+    }
     body.append(why);
   }
   const actions = el("span", null, "links");
@@ -398,7 +409,7 @@ function concertRow(c, match, showDate) {
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   if ((c.artists || []).length) {
     const liked = c.artists.every((k) => state.liked.includes(k));
-    const like = button(liked ? "Aimé" : "Pertinent", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
+    const like = button(liked ? "J'aime ✓" : "J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
     like.setAttribute("aria-pressed", String(liked));
     actions.append(like);
     actions.append(button("Pas pour moi", "ghost", () => feedback(c, "dislike", li)));
@@ -560,7 +571,7 @@ function setupControls() {
   );
   document.getElementById("reset").addEventListener("click", () => {
     tagRun++; // stop a running tag loop
-    state = Object.assign(loadState(), { seeds: [], liked: [], disliked: [], hidden: [] });
+    state = Object.assign(loadState(), { seeds: [], liked: [], disliked: [], hidden: [], wrong: [] });
     saveState();
     box.value = "";
     setStatus("Goûts et avis effacés de ce navigateur.");
