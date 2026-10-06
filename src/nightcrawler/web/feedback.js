@@ -13,15 +13,25 @@
   const CONCERT_ID_RE = /^[0-9a-f]{12}$/;
   const ARTIST_KEY_RE = /^[a-z0-9]{1,100}$/;
 
+  // Each queued item has a local id, so sent items are removed by id even if the queue
+  // changed meanwhile (cap trimming, another tab). The id is never sent.
+  let counter = 0;
+  function newId() {
+    if (root.crypto && typeof root.crypto.randomUUID === "function") return root.crypto.randomUUID();
+    counter += 1;
+    return `${Date.now().toString(36)}-${counter}-${Math.random().toString(36).slice(2)}`;
+  }
+
   // A well-formed item, or null (same rules as the function).
-  function makeItem(kind, concertId, artistKeys) {
+  function makeItem(kind, concertId, artistKeys, id) {
     if (!KINDS.has(kind)) return null;
     const cid = typeof concertId === "string" && CONCERT_ID_RE.test(concertId) ? concertId : null;
     const keys = [...new Set(Array.isArray(artistKeys) ? artistKeys : [])]
       .filter((k) => typeof k === "string" && ARTIST_KEY_RE.test(k))
       .slice(0, 12);
     if (!cid && !keys.length) return null;
-    return { kind, concert_id: cid, artist_keys: keys };
+    const ok = typeof id === "string" && id.length > 0 && id.length <= 64;
+    return { id: ok ? id : newId(), kind, concert_id: cid, artist_keys: keys };
   }
 
   // Saved queue is untrusted: keep only valid items, newest MAX_QUEUE.
@@ -34,7 +44,7 @@
     }
     if (!Array.isArray(raw)) return [];
     return raw
-      .map((x) => x && makeItem(x.kind, x.concert_id, x.artist_keys))
+      .map((x) => x && makeItem(x.kind, x.concert_id, x.artist_keys, x.id))
       .filter(Boolean)
       .slice(-MAX_QUEUE);
   }
@@ -43,18 +53,20 @@
     return item ? [...queue, item].slice(-MAX_QUEUE) : queue;
   }
 
+  const wire = ({ kind, concert_id, artist_keys }) => ({ kind, concert_id, artist_keys });
+
   // The first items that fit in one request.
   function nextBatch(queue) {
     const out = [];
     for (const item of queue.slice(0, MAX_ITEMS)) {
-      if (JSON.stringify({ items: [...out, item] }).length > MAX_BODY) break;
+      if (JSON.stringify({ items: [...out, item].map(wire) }).length > MAX_BODY) break;
       out.push(item);
     }
     return out;
   }
 
   // Sends the queue in batches. io: { load(), save(queue), fetch }. Returns
-  // "sent" | "empty" | "unauthorized" | "error" | "unconfigured".
+  // "sent" | "empty" | "unauthorized" | "error" (429 included: kept for later) | "unconfigured".
   async function flush(url, token, io) {
     if (!url || !token) return "unconfigured";
     let queue = io.load();
@@ -65,9 +77,8 @@
       try {
         res = await io.fetch(url, {
           method: "POST",
-          keepalive: true,
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ items: batch }),
+          body: JSON.stringify({ items: batch.map(wire) }),
         });
       } catch {
         return "error";
@@ -75,8 +86,9 @@
       if (res.status === 401) return "unauthorized";
       // 400: the function rejects this batch for good; drop it rather than block the queue
       if (!res.ok && res.status !== 400) return "error";
-      // re-read: items queued while the request was in flight are kept
-      queue = io.load().slice(batch.length);
+      // re-read and remove by id: items queued or trimmed while in flight are handled right
+      const sent = new Set(batch.map((x) => x.id));
+      queue = io.load().filter((x) => !sent.has(x.id));
       io.save(queue);
     }
     return "sent";

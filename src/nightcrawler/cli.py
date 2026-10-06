@@ -117,6 +117,8 @@ def deploy_feedback_command() -> int:
     import hashlib
     import tempfile
 
+    import httpx
+
     from .store.deploy_function import build_zip, deploy, function_settings, smoke_test
     from .store.provision import Credentials, ProvisionError, ensure
 
@@ -138,14 +140,19 @@ def deploy_feedback_command() -> int:
     except (ProvisionError, OSError, subprocess.CalledProcessError) as exc:
         annotate("error", f"Feedback function: {type(exc).__name__}: {str(exc)[:300]}")
         return 1
+    except httpx.HTTPError as exc:  # its message may carry a signed upload URL: type only
+        annotate("error", f"Feedback function: {type(exc).__name__}")
+        return 1
     public = f"https://{fn.get('domain_name', '')}"
-    status = smoke_test(public, origin)
+    preflight, refused = smoke_test(public, origin)
+    ok = preflight == 204 and refused == 401
     annotate(
-        "notice" if status == 204 else "error",
+        "notice" if ok else "error",
         f"Feedback function: {fn.get('status')} at {public} (runtime {fn.get('runtime')}, "
-        f"preflight HTTP {status}); paste this URL into config/app.yaml feedback_url",
+        f"preflight HTTP {preflight}, wrong token HTTP {refused}); "
+        "paste this URL into config/app.yaml feedback_url",
     )
-    return 0 if status == 204 else 1
+    return 0 if ok else 1
 
 
 PUBLIC_KEYS = {"spotify_client_id", "feedback_url"}  # only these settings reach the public page

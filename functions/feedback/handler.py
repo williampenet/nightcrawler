@@ -33,9 +33,14 @@ MAX_KEYS = 12
 KINDS = {"like", "unlike", "dislike", "wrong"}
 CONCERT_ID_RE = re.compile(r"^[0-9a-f]{12}$")  # dedup.concert_id: 12 hex chars
 ARTIST_KEY_RE = re.compile(r"^[a-z0-9]{1,100}$")  # artists.norm: lower-case alphanumerics
+RATE_LIMIT = 300  # rows per minute for the (single, personal) token (ADR-0005)
 
 
 class Invalid(ValueError):
+    pass
+
+
+class RateLimited(Exception):
     pass
 
 
@@ -113,6 +118,8 @@ def process(method: str, headers: dict, body: bytes, store) -> dict:
         return _response(400, allowed, {"error": str(exc)})
     try:
         stored = store(rows)
+    except RateLimited:
+        return _response(429, allowed, {"error": "too many ratings, retry later"})
     except Exception as exc:  # the DB may be waking up or down: the page keeps its queue
         log.warning("store failed: %s", type(exc).__name__)
         return _response(503, allowed, {"error": "storage unavailable"})
@@ -120,8 +127,14 @@ def process(method: str, headers: dict, body: bytes, store) -> dict:
 
 
 def pg_store(rows: list[tuple[str | None, str | None, str]]) -> int:
+    """Inserts the rows in one transaction, unless the last minute already holds too many."""
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=15) as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM feedback WHERE created_at > now() - interval '1 minute'"
+            )
+            if cur.fetchone()[0] + len(rows) > RATE_LIMIT:
+                raise RateLimited
             cur.executemany(
                 "INSERT INTO feedback (concert_id, artist_key, kind) VALUES (%s, %s, %s)", rows
             )

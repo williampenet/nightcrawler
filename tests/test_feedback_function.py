@@ -151,6 +151,28 @@ def test_pg_store_on_real_postgres(monkeypatch):
     assert handler.pg_store([(CID, "asna", "like"), (CID, None, "wrong")]) == 2
     with psycopg.connect(url) as conn:
         assert conn.execute("SELECT count(*) FROM feedback").fetchone()[0] == 2
+    # rate limit: the last minute already holds RATE_LIMIT - 1 rows, two more are refused
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("DELETE FROM feedback")
+        conn.execute(
+            "INSERT INTO feedback (artist_key, kind) "
+            "SELECT 'asna', 'like' FROM generate_series(1, %s)",
+            (handler.RATE_LIMIT - 1,),
+        )
+    with pytest.raises(handler.RateLimited):
+        handler.pg_store([(CID, "a", "like"), (CID, "b", "like")])
+    assert handler.pg_store([(CID, "a", "like")]) == 1
+    with psycopg.connect(url) as conn:
+        count = conn.execute("SELECT count(*) FROM feedback").fetchone()[0]
+        assert count == handler.RATE_LIMIT
+
+
+def test_rate_limited_is_429():
+    def limited(rows):
+        raise handler.RateLimited
+
+    resp, _ = call(body={"items": [{"kind": "like", "artist_keys": ["a"]}]}, store=limited)
+    assert resp["statusCode"] == 429
 
 
 # ---------------------------------------------------------------- packaging and deploy
@@ -240,8 +262,11 @@ def test_smoke_test(monkeypatch):
     route = respx.options("https://d.fn").mock(
         side_effect=[httpx.ConnectError("cold"), httpx.Response(204)]
     )
-    assert dfn.smoke_test("https://d.fn", ORIGIN) == 204
+    post = respx.post("https://d.fn").respond(401)
+    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401)
     assert route.calls[1].request.headers["Origin"] == ORIGIN
+    sent = post.calls[0].request.headers["Authorization"]
+    assert sent.startswith("Bearer ") and len(sent) > 20
 
 
 def test_cli_skips_without_token(monkeypatch, capsys):
@@ -265,10 +290,38 @@ def test_cli_deploys_with_hashed_token_and_masked_url(monkeypatch, capsys):
         return {"status": "ready", "domain_name": "d.fn", "runtime": "python312"}
 
     monkeypatch.setattr(dfn, "deploy", fake_deploy)
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: 204)
+    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401))
     assert cli.main(["deploy-feedback"]) == 0
     out = capsys.readouterr().out
     assert "::add-mask::postgresql://u:pw@h/db" in out and "https://d.fn" in out
     assert "s3cret" not in out
     secrets = {s["key"]: s["value"] for s in got["secret_environment_variables"]}
     assert secrets["FEEDBACK_TOKEN_SHA256"] == hashlib.sha256(b"s3cret").hexdigest()
+
+
+def test_cli_fails_when_wrong_token_is_accepted(monkeypatch, capsys):
+    monkeypatch.setenv("FEEDBACK_TOKEN", "s3cret")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    for k, v in (("SCW_ACCESS_KEY", "a"), ("SCW_SECRET_KEY", "b"), ("SCW_DEFAULT_PROJECT_ID", "p")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(provision, "ensure", lambda creds: ({}, "postgresql://u:pw@h/db"))
+    monkeypatch.setattr(dfn, "build_zip", lambda dest: dest)
+    monkeypatch.setattr(dfn, "deploy", lambda c, s, a: {"domain_name": "d.fn"})
+    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 202))
+    assert cli.main(["deploy-feedback"]) == 1
+    assert "::error::" in capsys.readouterr().out
+
+
+def test_cli_http_error_reports_type_only(monkeypatch, capsys):
+    monkeypatch.setenv("FEEDBACK_TOKEN", "s3cret")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    for k, v in (("SCW_ACCESS_KEY", "a"), ("SCW_SECRET_KEY", "b"), ("SCW_DEFAULT_PROJECT_ID", "p")):
+        monkeypatch.setenv(k, v)
+
+    def boom(creds):
+        raise httpx.ConnectError("https://s3.example/up?X-Amz-Signature=secret")
+
+    monkeypatch.setattr(provision, "ensure", boom)
+    assert cli.main(["deploy-feedback"]) == 1
+    out = capsys.readouterr().out
+    assert "ConnectError" in out and "Signature" not in out

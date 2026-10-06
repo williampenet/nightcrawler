@@ -11,6 +11,7 @@ for the Python runtimes), as manylinux x86_64 wheels for the runtime's Python ve
 from __future__ import annotations
 
 import logging
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -140,19 +141,29 @@ def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 60
         return _wait(client, path, "function", wait_s)
 
 
-def smoke_test(url: str, origin: str, tries: int = 6) -> int:
-    """CORS preflight against the deployed function (cold start allowed); returns the status."""
-    status = 0
+def smoke_test(url: str, origin: str, tries: int = 6) -> tuple[int, int]:
+    """CORS preflight (cold start allowed), then a POST with a random wrong token, which must
+    be refused (401) before anything is written. Returns both HTTP statuses (0: no answer)."""
+    preflight = 0
     for _ in range(tries):
         try:
-            status = httpx.options(
+            preflight = httpx.options(
                 url,
                 headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
                 timeout=30,
             ).status_code
         except httpx.HTTPError:
-            status = 0
-        if status == 204:
+            preflight = 0
+        if preflight == 204:
             break
         time.sleep(5)
-    return status
+    try:
+        refused = httpx.post(
+            url,
+            headers={"Origin": origin, "Authorization": f"Bearer {secrets.token_urlsafe(24)}"},
+            json={"items": [{"kind": "like", "artist_keys": ["smoketest"]}]},
+            timeout=30,
+        ).status_code
+    except httpx.HTTPError:
+        refused = 0
+    return preflight, refused

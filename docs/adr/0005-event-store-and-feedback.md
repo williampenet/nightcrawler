@@ -71,13 +71,15 @@ Scaleway, region fr-par:
   the page.
 - Implementation notes (WIP-44, function and page): the function accepts a batch (≤ 50 items,
   ≤ 4 KB) rather than a single row, so the page can flush its queue in one request; one row is
-  stored per (item, artist key). The token hash and the database URL are secret environment
-  variables of the function (the URL is built at deploy time, as in the pipeline). Per-token rate
-  limiting is not implemented: max scale 1 and the single personal token bound the load; to be
-  revisited if the page is opened to friends. The function uses the pipeline's API key for now
-  (follow-up: dedicated IAM application with Serverless SQL rights only).
+  stored per (item, artist key). The rate limit is 300 rows per minute (429 above; the page
+  keeps the items queued). The token hash and the database URL are secret environment
+  variables of the function (the URL is built at deploy time, as in the pipeline).
+- Follow-up WIP-45: the function connects with the pipeline's API key for now; a dedicated IAM
+  application with Serverless SQL rights only will replace it.
 
 ## Cost impact
 ≈ €1–2/month excl. VAT, inside the ~€20 budget (current total: €0 + this).
+The function is public: unauthenticated calls (refused with 401/403 before any database
+access) still count as invocations, which the free tier (1,000,000 requests/month) covers.
 Actions for William: create the Scaleway account (fr-par), a project and an API key, add
 `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID` as GitHub secrets.

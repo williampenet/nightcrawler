@@ -315,15 +315,22 @@ function feedbackUrl() {
 }
 
 function sendFeedback(kind, concertId, keys) {
+  if (!feedbackUrl()) return; // no service configured: nothing is queued
   fbSave(FB.enqueue(fbLoad(), FB.makeItem(kind, concertId, keys)));
   flushFeedback();
 }
 
 async function flushFeedback() {
-  if (fbBusy) return;
+  if (fbBusy || !feedbackUrl()) return;
   fbBusy = true;
-  const result = await FB.flush(feedbackUrl(), fbToken(), { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
-  fbBusy = false;
+  let result = "error";
+  try {
+    result = await FB.flush(feedbackUrl(), fbToken(), { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
+  } catch {
+    /* storage or network trouble: the queue stays as it is */
+  } finally {
+    fbBusy = false;
+  }
   const line = document.getElementById("feedback-status");
   const pending = fbLoad().length;
   if (result === "unauthorized") line.textContent = "Clé refusée";
@@ -618,6 +625,7 @@ function setupControls() {
   }
   if (feedbackUrl()) {
     document.getElementById("feedback-row").hidden = false;
+    document.getElementById("feedback-status").hidden = false;
     const key = document.getElementById("feedback-key");
     key.value = fbToken();
     key.addEventListener("change", () => {
