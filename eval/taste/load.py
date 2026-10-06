@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from nightcrawler.cli import STORE_SECRETS, annotate
 from nightcrawler.store.sync import CONNECT
@@ -144,7 +146,9 @@ def summary_markdown(result: dict, generated_at: str | None) -> str:
         f"Labels: {lab['total']} ({lab['liked']} liked, {lab['disliked']} disliked; "
         f"{lab['from_feedback']} from the rating history, {lab['from_state_only']} from the "
         f"profile only). Rating events on concerts no longer published: "
-        f"{lab['feedback_events_on_unpublished_concerts']}.",
+        f"{lab['feedback_events_on_unpublished_concerts']}. Not labelled: "
+        f"{lab['stale_feedback']} stale ratings (undone since), "
+        f"{lab['ambiguous_dislikes']} ambiguous dislikes.",
         "",
     ]
     if not lab["total"]:
@@ -177,7 +181,20 @@ def publish(result: dict, generated_at: str | None) -> None:
             fh.write(summary)
 
 
+def mask(url: str) -> None:
+    """Masks the URL and, separately, its host, user and password in the Actions log."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    parts = urlsplit(url)
+    values = [url, parts.hostname, parts.username, parts.password]
+    values += [unquote(v) for v in (parts.username, parts.password) if v]
+    for value in dict.fromkeys(v for v in values if v and "\n" not in v and "\r" not in v):
+        print(f"::add-mask::{value}", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
+    # httpx logs every request URL at INFO; keep the log to warnings
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--site", default=os.environ.get("TASTE_SITE", "site"))
     args = ap.parse_args(argv)
@@ -189,8 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     if not url:
         annotate("notice", "Taste eval: skipped: no DATABASE_URL or SCW_* secrets")
         return 0
-    if os.environ.get("GITHUB_ACTIONS") == "true":
-        print(f"::add-mask::{url}", flush=True)
+    mask(url)
     try:
         store = load_store(url)
     except Exception as exc:  # libpq messages name the host and user: the type only

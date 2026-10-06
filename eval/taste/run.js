@@ -37,7 +37,10 @@ function idMap(concerts) {
 //    id in hidden with every artist key in `disliked` (or, without an identified artist,
 //    every performer name in `dislikedNames`) -> disliked. isLiked() through artist keys
 //    alone is not a label: liking one concert of an artist lights up all of them.
-// 2. feedback history (oldest first): the latest like / unlike / dislike of a concert wins.
+// 2. feedback history (oldest first): the latest like / unlike / dislike of a concert wins,
+//    if the state still shows it: a like only while isLiked(), a dislike only while the
+//    concert is hidden. Otherwise it is stale (undone through a sibling concert of the same
+//    artist, or by "Tout effacer"): no label.
 function buildLabels(state, feedback, concerts) {
   const out = new Map();
   const source = new Map();
@@ -56,6 +59,7 @@ function buildLabels(state, feedback, concerts) {
     if (out.has(c.id)) source.set(c.id, "state");
   }
   const ids = idMap(concerts);
+  const byId = new Map(concerts.map((c) => [c.id, c]));
   const last = new Map();
   let pastEvents = 0;
   for (const ev of Array.isArray(feedback) ? feedback : []) {
@@ -68,20 +72,46 @@ function buildLabels(state, feedback, concerts) {
     last.set(id, ev.kind);
   }
   let unliked = 0;
+  let stale = 0;
+  const staleLikedNames = new Set();
   for (const [id, kind] of last) {
-    if (kind === "unlike") {
-      if (out.delete(id)) unliked += 1;
+    const holds = kind === "like" ? S.isLiked(state, byId.get(id)) : kind === "dislike" && hidden.has(id);
+    if (!holds) {
+      if (kind === "unlike") {
+        if (out.has(id)) unliked += 1;
+      } else stale += 1;
+      if (kind === "like") for (const k of concertNames(byId.get(id))) staleLikedNames.add(k);
+      out.delete(id);
       source.delete(id);
       continue;
     }
     out.set(id, kind === "like" ? "liked" : "disliked");
     source.set(id, "feedback");
   }
-  return { labels: out, source, pastEvents, unliked };
+  // A dislike sharing an artist or name with a stale like is ambiguous: either it undid that
+  // like (dislike through a sibling concert: without it the like would count) or a reset
+  // did (then it would not). The history cannot tell them apart: no label, counted.
+  let ambiguous = 0;
+  for (const [id, label] of out) {
+    if (label === "disliked" && concertNames(byId.get(id)).some((k) => staleLikedNames.has(k))) {
+      out.delete(id);
+      source.delete(id);
+      ambiguous += 1;
+    }
+  }
+  return { labels: out, source, pastEvents, unliked, stale, ambiguous };
 }
 
-// What a concert's own rating put in the state (rate() for its label), per list.
-function contribution(c, label) {
+// What rate() writes for this rating, per list: what counts as "produced by" a concert.
+function produced(c, label) {
+  const keys = c.artists || [];
+  if (label === "liked") return keys.length ? { liked: keys } : { likedConcerts: [c.id], likedNames: concertNames(c) };
+  return { ...(keys.length ? { disliked: keys } : { dislikedNames: concertNames(c) }), hidden: [c.id] };
+}
+
+// What leave-one-out removes for this concert: broader than produced(), so a value saved by
+// an older version of the page (e.g. a name liked before its artist was identified) goes too.
+function removal(c, label) {
   const keys = c.artists || [];
   const names = concertNames(c);
   return label === "liked"
@@ -89,23 +119,26 @@ function contribution(c, label) {
     : { disliked: keys, dislikedNames: names, hidden: [c.id] };
 }
 
-// Per list, how many labelled concerts put each value there.
+// Per list, how many labelled concerts produced each value.
 function producers(labelled) {
   const counts = Object.fromEntries(LISTS.map((k) => [k, new Map()]));
   for (const [c, label] of labelled) {
-    for (const [list, values] of Object.entries(contribution(c, label))) {
+    for (const [list, values] of Object.entries(produced(c, label))) {
       for (const v of new Set(values)) counts[list].set(v, (counts[list].get(v) || 0) + 1);
     }
   }
   return counts;
 }
 
-// The state without what this concert's own label produced; a value another labelled
+// The state without what this concert's own label put there; a value another labelled
 // concert also produced stays.
 function withoutOwnLabel(state, c, label, counts) {
   const s = { ...state };
-  for (const [list, values] of Object.entries(contribution(c, label))) {
-    const drop = new Set(values.filter((v) => (counts[list].get(v) || 0) <= 1));
+  const own = produced(c, label);
+  for (const [list, values] of Object.entries(removal(c, label))) {
+    const mine = new Set(own[list] || []);
+    const others = (v) => (counts[list].get(v) || 0) - (mine.has(v) ? 1 : 0);
+    const drop = new Set(values.filter((v) => others(v) <= 0));
     s[list] = (state[list] || []).filter((v) => !drop.has(v));
   }
   return s;
@@ -129,21 +162,29 @@ function tierOf(score) {
   return score > 0 ? "inferred" : "none";
 }
 
-function evaluate(input) {
+// Per label: {id, label, score} with the leave-one-out score. Internal (tests): ids never
+// leave the runner, evaluate() prints aggregates only.
+function scoreLabels(input) {
   const inp = input && typeof input === "object" ? input : {};
   const concerts = (Array.isArray(inp.concerts) ? inp.concerts : []).filter((c) => c && typeof c.id === "string");
   const artists = inp.artists && typeof inp.artists === "object" && !Array.isArray(inp.artists) ? inp.artists : {};
   const state = pageState(inp.state, concerts);
-  const { labels, source, pastEvents, unliked } = buildLabels(state, inp.feedback, concerts);
+  const built = buildLabels(state, inp.feedback, concerts);
   const byId = new Map(concerts.map((c) => [c.id, c]));
-  const labelled = [...labels].map(([id, label]) => [byId.get(id), label]);
+  const labelled = [...built.labels].map(([id, label]) => [byId.get(id), label]);
   const counts = producers(labelled);
+  const scored = labelled.map(([c, label]) => {
+    const reduced = withoutOwnLabel(state, c, label, counts);
+    return { id: c.id, label, score: S.scoreConcert(c, artists, S.buildProfile(reduced, artists)).score };
+  });
+  return { concerts: concerts.length, scored, ...built };
+}
 
+function evaluate(input) {
+  const { concerts, scored, source, pastEvents, unliked, stale, ambiguous } = scoreLabels(input);
   const tiers = Object.fromEntries(["sure", "inferred", "none"].map((t) => [t, { n: 0, liked: 0, disliked: 0 }]));
   const scores = { liked: [], disliked: [] };
-  for (const [c, label] of labelled) {
-    const reduced = withoutOwnLabel(state, c, label, counts);
-    const score = S.scoreConcert(c, artists, S.buildProfile(reduced, artists)).score;
+  for (const { label, score } of scored) {
     const t = tiers[tierOf(score)];
     t.n += 1;
     t[label] += 1;
@@ -159,14 +200,16 @@ function evaluate(input) {
   const pairs = scores.liked.length * scores.disliked.length;
   const fromFeedback = [...source.values()].filter((s) => s === "feedback").length;
   return {
-    concerts: concerts.length,
+    concerts,
     labels: {
-      total: labelled.length,
+      total: scored.length,
       liked: scores.liked.length,
       disliked: scores.disliked.length,
       from_feedback: fromFeedback,
-      from_state_only: labelled.length - fromFeedback,
+      from_state_only: scored.length - fromFeedback,
       unliked_by_feedback: unliked,
+      stale_feedback: stale,
+      ambiguous_dislikes: ambiguous,
       feedback_events_on_unpublished_concerts: pastEvents,
     },
     tiers,
@@ -174,7 +217,7 @@ function evaluate(input) {
   };
 }
 
-module.exports = { buildLabels, contribution, producers, withoutOwnLabel, pageState, wilson, tierOf, evaluate };
+module.exports = { buildLabels, produced, removal, producers, scoreLabels, withoutOwnLabel, pageState, wilson, tierOf, evaluate };
 
 if (require.main === module) {
   const chunks = [];

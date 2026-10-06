@@ -111,6 +111,8 @@ def test_summary_without_labels():
                 "from_feedback",
                 "from_state_only",
                 "unliked_by_feedback",
+                "stale_feedback",
+                "ambiguous_dislikes",
                 "feedback_events_on_unpublished_concerts",
             ),
             0,
@@ -133,21 +135,57 @@ def test_skipped_without_credentials(monkeypatch, capsys):
     assert "::notice::Taste eval: skipped" in capsys.readouterr().out
 
 
-def test_store_errors_print_the_type_only(monkeypatch, capsys):
+SECRET_URL = "postgresql://u-secret:p%40ss@db.secret-host:5432/x?sslmode=require"
+LEAK = 'connection to "db.secret-host" user "u-secret" failed: Earth aaaaaaaaaaa1'
+
+
+def _raise(exc):
+    def f(*args, **kwargs):
+        raise exc
+
+    return f
+
+
+@pytest.mark.parametrize(
+    "step, patch, message",
+    [
+        ("lookup", "database_url", "event store lookup failed (ProvisionError)"),
+        ("store", "load_store", "event store unavailable (OperationalError)"),
+        ("site", "load_site", "site data unavailable (HTTPStatusError)"),
+        ("runner", "run_eval", "runner failed (RuntimeError)"),
+    ],
+)
+def test_errors_print_the_exception_type_only(step, patch, message, tmp_path, monkeypatch, capsys):
+    import httpx
     import psycopg
 
-    def down(url, **kw):
-        raise psycopg.OperationalError('connection to "db.secret-host" user "u-secret" failed')
+    from nightcrawler.store.provision import ProvisionError
 
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u-secret:pw@db.secret-host/x")
+    errors = {
+        "lookup": ProvisionError(f"list databases: HTTP 403 {LEAK}"),
+        "store": psycopg.OperationalError(LEAK),
+        "site": httpx.HTTPStatusError(
+            LEAK, request=httpx.Request("GET", "https://x"), response=None
+        ),
+        "runner": RuntimeError(LEAK),
+    }
+    monkeypatch.setenv("DATABASE_URL", SECRET_URL)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setattr(load, "load_store", lambda url: down(url))
-    assert load.main(["--site", "nowhere"]) == 1
+    monkeypatch.setattr(load, "load_store", lambda url: {"state": None, "feedback": []})
+    monkeypatch.setattr(load, patch, _raise(errors[step]))
+    assert load.main(["--site", _site(tmp_path)]) == 1
     out = capsys.readouterr().out
-    assert "::error::Taste eval: event store unavailable (OperationalError)" in out
-    assert "secret-host" not in out.replace(
-        "::add-mask::postgresql://u-secret:pw@db.secret-host/x", ""
-    )
+    assert f"::error::Taste eval: {message}" in out
+    public = "\n".join(line for line in out.splitlines() if not line.startswith("::add-mask::"))
+    for secret in ("secret-host", "u-secret", "p@ss", "Earth", "aaaaaaaaaaa1"):
+        assert secret not in public, secret
+
+
+def test_host_user_and_password_are_masked_separately(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    load.mask(SECRET_URL)
+    masks = {line[len("::add-mask::") :] for line in capsys.readouterr().out.splitlines()}
+    assert {SECRET_URL, "db.secret-host", "u-secret", "p%40ss", "p@ss"} <= masks
 
 
 @needs_node

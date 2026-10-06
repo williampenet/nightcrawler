@@ -18,7 +18,7 @@ leakage of a rating into its own score.
 | What | Where | Why |
 |---|---|---|
 | Profile (`state`) | `profile.data` where `id = 'me'` (`002_profile.sql`) | The browser state synced by the page (shape: `profile.js` `extract()`, validated by `functions/feedback/handler.py` `validate_profile()`). |
-| Rating history (`feedback`) | `feedback` rows with a `concert_id` and kind `like` / `unlike` / `dislike`, ordered by `created_at, id` | The page sends one item per click with the concert id (`feedback.js` `makeItem()`); one request is one transaction, so its rows share `created_at` and `id` keeps their order. |
+| Rating history (`feedback`) | `feedback` rows with a `concert_id` and kind `like` / `unlike` / `dislike`, ordered by `created_at, id` | The page sends one item per click with the concert id (`feedback.js` `makeItem()`). The function stores **one row per artist key** of the item (one row with a null `artist_key` for a concert without an identified artist: `handler.py` `validate()`); rows of one click carry the same kind, so they count as one event per concert. One request is one transaction, so its rows share `created_at` and `id` keeps their order. |
 | Concerts, artists | Published site: `data/concerts.json`, `data/artists.json` (GitHub Pages) | Exactly what the page scores. The store's `concerts.data` is not usable: it is written by `store/sync.py` (`kept.to_dict()`) **before** artist enrichment (`pipeline.py`: `sync.sync(...)` then `enrich(...)`, which sets `c.artists` in `artists.py`), so its `artists` lists are empty, and artists are not stored at all. |
 
 The loader opens one connection (the store's `CONNECT` settings), runs both reads in one
@@ -44,27 +44,56 @@ mapped to current ids through `aliases` (`currentIds()`, as the page does on loa
    - Not a label: `isLiked()` through artist keys alone. Liking one concert of an artist
      lights "J'aime" on all of that artist's concerts; counting them would score the same
      click several times, against itself.
-2. **Rating history: the latest event per concert wins.** `like` → liked, `dislike` →
-   disliked, `unlike` → no label (even if the profile still holds it, e.g. after a
-   multi-device merge brought a removed like back, a known limit of `profile.js merge()`).
-   `wrong` events rate the artist match, not the taste: ignored.
+2. **Rating history: the latest event per concert wins**, if the profile still shows it.
+   `like` → liked, only while `isLiked(state, concert)`; `dislike` → disliked, only while
+   the concert id is in `hidden`; `unlike` → no label (even if the profile still holds it,
+   e.g. after a multi-device merge brought a removed like back, a known limit of
+   `profile.js merge()`). `wrong` events rate the artist match, not the taste: ignored.
+   - A like or dislike the profile no longer shows is **stale** (`stale_feedback`), no
+     label. It happens when the rating was undone without an event on that concert: a
+     click on a sibling concert of the same artist (its lit "J'aime" sends an `unlike`
+     for the sibling and removes the artist from `liked`; a dislike of the sibling moves
+     the artist to `disliked`), or « Tout effacer », which empties the profile but not the
+     history.
+   - A dislike that shares an artist key or performer name with a stale like is
+     **ambiguous** (`ambiguous_dislikes`), no label. Either it undid that like (dislike
+     through a sibling: without it, the like would still count and the leave-one-out
+     score would be higher) or a reset did (then it would not); the history does not
+     record resets, so the two cannot be told apart.
 
 The summary reports how many labels come from the history and how many from the profile
-only, and how many rating events point to concerts no longer published (past concerts).
+only, how many ratings are stale or ambiguous, and how many rating events point to
+concerts no longer published (past concerts).
 
 ## Leakage handling (leave-one-out)
 
-For each labelled concert, the profile is reduced before scoring by removing what its own
-rating put there (the lists `rate()` writes):
+For each labelled concert, the profile is reduced before scoring. What a rating
+**produces** mirrors `rate()`:
 
-- liked: its id from `likedConcerts`, its artist keys from `liked`, its performer names
-  and artist keys from `likedNames`;
-- disliked: its id from `hidden`, its artist keys from `disliked`, its performer names and
-  artist keys from `dislikedNames`.
+- like: its artist keys in `liked`; without an identified artist, its id in
+  `likedConcerts` and its performer names in `likedNames`;
+- dislike: its artist keys in `disliked`; without an identified artist, its performer names
+  in `dislikedNames`; in both cases its id in `hidden`.
 
-A value is kept when another labelled concert also produced it (two liked concerts of the
-same artist: each one keeps the artist for the other). A value produced by a concert that
-is not labelled (a past concert) is removed with the label: conservative, no leakage.
+What is **removed** is broader, so values saved by older versions of the page (e.g. a name
+liked before its artist was identified) go too: for a like, its id from `likedConcerts`,
+its artist keys from `liked`, its performer names and artist keys from `likedNames`; for a
+dislike, its id from `hidden`, its artist keys from `disliked`, its performer names and
+artist keys from `dislikedNames`.
+
+A removed value is kept when another labelled concert produced it in the same list (two
+disliked concerts of the same artist: each one keeps the artist in `disliked` for the
+other; a liked concert without an artist keeps its name in `likedNames` for a liked
+concert whose artist has that name, not the other way round). A value produced by a
+concert that is not labelled (a past concert) is removed with the label: conservative, no
+leakage. Two likes on concerts of the same artist cannot both be labels: the second click
+on a lit "J'aime" is an `unlike`.
+
+Tests (`tests/js/taste.test.js`, "replay") check this against a ground truth: they build
+the profile and the history by replaying clicks with `rate()` (concerts with and without
+artists, an unlike through a sibling, a dislike through a sibling, a reset), and for each
+label compare the leave-one-out score with the score after replaying every click except
+the ones on that concert.
 
 Then `scoreConcert(concert, artists, buildProfile(reduced, artists))`. Seeds (artist names
 typed or imported from Spotify, with their styles) are kept: they are inputs, not labels.
@@ -125,7 +154,7 @@ liked concert is ranked above a random disliked one, i.e. the ROC AUC (Hanley & 
 
 The repository is public, so annotations and job summaries are public. The eval publishes
 only counts and rates (one `::notice` annotation and `$GITHUB_STEP_SUMMARY`), never an
-artist name, title, concert id, the profile or the connection details; the URL is masked,
+artist name, title, concert id, the profile or the connection details; the URL and, separately, its host, user and password are masked, the `httpx` request log is off,
 errors print the exception type only, and nothing is committed. Tests check that the output
 contains none of the synthetic names and ids.
 

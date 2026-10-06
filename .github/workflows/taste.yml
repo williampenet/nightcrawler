@@ -10,6 +10,7 @@ on:
   workflow_run:
     workflows: [Pipeline]
     types: [completed]
+    branches: [main]
 
 permissions:
   contents: read

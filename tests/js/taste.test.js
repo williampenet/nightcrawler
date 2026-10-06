@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const T = require("../../eval/taste/run.js");
+const S = require("../../src/nightcrawler/web/scoring.js");
 
 const RUNNER = path.join(__dirname, "..", "..", "eval", "taste", "run.js");
 
@@ -35,10 +36,26 @@ test("leave-one-out removes the concert's own artist key", () => {
   assert.deepEqual(reduced.liked, []);
 });
 
-test("a key another labelled concert also produced is kept", () => {
-  const A2 = concert("aaaaaaaaaaa2", ["earth"]);
-  const out = run({ state: { liked: ["earth"] }, feedback: [like(A.id), like(A2.id)], concerts: [A, A2], artists });
-  assert.equal(out.tiers.sure.liked, 2);
+test("a key another labelled concert also produced is kept (two dislikes)", () => {
+  // two likes on one artist cannot happen: the second click on a lit "J'aime" is an unlike
+  const D2 = concert("ddddddddddd2", ["popstar"]);
+  const state = { disliked: ["popstar"], hidden: [D.id, D2.id] };
+  const feedback = [{ concert_id: D.id, kind: "dislike" }, { concert_id: D2.id, kind: "dislike" }];
+  const s = T.pageState(state, [D, D2]);
+  const counts = T.producers([[D, "disliked"], [D2, "disliked"]]);
+  const d = T.withoutOwnLabel(s, D, "disliked", counts);
+  assert.deepEqual([d.disliked, d.hidden], [["popstar"], [D2.id]]);
+  assert.equal(run({ state, feedback, concerts: [D, D2], artists }).labels.disliked, 2);
+});
+
+test("producers mirror rate(): a keyed like does not keep a keyless concert's name", () => {
+  // K (no artist, performer "Boris") and C (artist boris) both liked: K's name is K's alone
+  const K = concert("kkkkkkkkkkk1", [], ["Boris"]);
+  const state = { liked: ["boris"], likedConcerts: [K.id], likedNames: ["boris"] };
+  const got = T.scoreLabels({ state, feedback: [like(K.id), like(C.id)], concerts: [C, K], artists });
+  const score = Object.fromEntries(got.scored.map((x) => [x.id, x.score]));
+  assert.equal(score[K.id], 0); // C's "boris" key does not match a concert without artists
+  assert.equal(score[C.id], 0.9); // K's liked name still matches C's artist
 });
 
 test("a liked key from a concert that is not labelled is removed (no leakage)", () => {
@@ -64,7 +81,7 @@ test("concert-level likes and dislikes lose their ids and names", () => {
 });
 
 test("labels: state evidence, latest feedback wins, aliases, unknown concerts", () => {
-  const state = { liked: ["earth"], likedConcerts: [E.id], disliked: ["popstar"], hidden: [D.id] };
+  const state = { liked: ["earth", "popstar"], likedConcerts: [E.id], disliked: ["boris"], hidden: [C.id] };
   const feedback = [
     like(F.id), { concert_id: F.id, kind: "unlike" }, // undone
     { concert_id: D.id, kind: "dislike" }, like(D.id), // changed mind: liked
@@ -78,6 +95,13 @@ test("labels: state evidence, latest feedback wins, aliases, unknown concerts", 
   assert.deepEqual(Object.fromEntries(got.labels), { [D.id]: "liked", [C.id]: "disliked" });
   assert.equal(got.pastEvents, 1);
   assert.equal(got.unliked, 1);
+  assert.equal(got.stale, 0);
+});
+
+test("stale feedback: a like the state no longer shows, a dislike no longer hidden", () => {
+  const got = T.buildLabels(T.pageState({}, [A, D]), [like(A.id), { concert_id: D.id, kind: "dislike" }], [A, D]);
+  assert.equal(got.labels.size, 0);
+  assert.equal(got.stale, 2);
 });
 
 test("a hidden concert whose artist is no longer disliked is not a dislike label", () => {
@@ -88,7 +112,11 @@ test("a hidden concert whose artist is no longer disliked is not a dislike label
 test("tiers, precision and pairwise accuracy (ties count 0.5)", () => {
   // seed Earth gives: A (earth) 1 -> sure; C (boris, related to Earth) 0.8 -> inferred;
   // F (sunn, style "drone") 0.6 -> inferred; D (popstar) 0 -> none; E (no artist) 0 -> none.
-  const state = { seeds: [{ name: "Earth", tags: ["drone"] }], disliked: ["popstar", "sunn"], hidden: [D.id, F.id] };
+  const state = {
+    seeds: [{ name: "Earth", tags: ["drone"] }],
+    liked: ["earth", "boris"], likedConcerts: [E.id], likedNames: ["mysteryband"],
+    disliked: ["popstar", "sunn"], hidden: [D.id, F.id],
+  };
   const feedback = [like(A.id), like(C.id), like(E.id), { concert_id: D.id, kind: "dislike" }, { concert_id: F.id, kind: "dislike" }];
   const out = run({ state, feedback, concerts: [A, C, D, E, F], artists });
   assert.deepEqual(out.tiers.sure, { n: 1, liked: 1, disliked: 0, precision: 1, wilson95: T.wilson(1, 1) });
@@ -132,4 +160,85 @@ test("CLI: JSON in, JSON out; invalid input is not echoed", () => {
   const bad = spawnSync("node", [RUNNER], { input: "not json: secret-artist" });
   assert.equal(bad.status, 2);
   assert.ok(!String(bad.stderr).includes("secret-artist"));
+});
+
+// ---- replay: state and history built by clicking with S.rate(), as the page does.
+// Ground truth for a label = the score of that concert after replaying every click except
+// the ones on it. "reset" is « Tout effacer » (empty state; the feedback rows stay).
+const G = concert("ggggggggggg1", ["earth"], ["Earth"]);
+const G2 = concert("ggggggggggg2", ["earth"], ["Earth"]);
+const KX = concert("kkkkkkkkkkk2", [], ["Xan"]);
+const X = concert("xxxxxxxxxxx1", ["xan"], ["Xan"]);
+const N = concert("nnnnnnnnnnn1", ["boris"], ["Boris"]);
+const P = concert("ppppppppppp1", ["popstar"]);
+const P2 = concert("ppppppppppp2", ["popstar"]);
+const M = concert("mmmmmmmmmmm1", [], ["Mystery Band"]);
+const ALL = [G, G2, KX, X, N, P, P2, M];
+const RA = { ...artists, xan: { key: "xan", name: "Xan", fans: 100, related: [], tags: ["drone"], confident: true } };
+const SEEDS = [{ name: "Sunn", tags: ["drone"] }];
+
+function replay(clicks, skip) {
+  let st = { ...S.defaultState(), seeds: SEEDS };
+  const feedback = [];
+  for (const click of clicks) {
+    if (click === "reset") {
+      st = S.defaultState();
+      continue;
+    }
+    const [kind, c] = click;
+    if (c.id === skip) continue;
+    const r = S.rate(st, c, kind, ALL);
+    st = { ...st, ...r.state };
+    feedback.push({ concert_id: c.id, kind: r.send.kind });
+  }
+  return { state: st, feedback };
+}
+
+function checkReplay(clicks) {
+  const { state, feedback } = replay(clicks);
+  const got = T.scoreLabels({ state, feedback, concerts: ALL, artists: RA });
+  for (const { id, score } of got.scored) {
+    const c = ALL.find((x) => x.id === id);
+    const truth = S.scoreConcert(c, RA, S.buildProfile(T.pageState(replay(clicks, id).state, ALL), RA)).score;
+    assert.equal(score, truth, `leave-one-out vs replay for ${id}`);
+  }
+  return got;
+}
+
+const labelsOf = (got) => Object.fromEntries(got.scored.map((x) => [x.id, x.label]));
+
+test("replay: concerts with and without artists", () => {
+  const got = checkReplay([["like", KX], ["like", X], ["like", N], ["dislike", P], ["dislike", M], ["like", G]]);
+  assert.deepEqual(labelsOf(got), { [KX.id]: "liked", [X.id]: "liked", [N.id]: "liked", [P.id]: "disliked", [M.id]: "disliked", [G.id]: "liked" });
+});
+
+test("replay: unlike through a sibling concert", () => {
+  // G2 shows "J'aime" lit through "earth": clicking it sends an unlike and drops "earth"
+  const got = checkReplay([["like", G], ["like", G2], ["like", N]]);
+  assert.deepEqual(labelsOf(got), { [N.id]: "liked" });
+  assert.equal(got.stale, 1);
+});
+
+test("replay: dislike through a sibling concert", () => {
+  // G2's dislike undid G's like: leaving G2 out, the replay gets "earth" liked back (0.9),
+  // which the reduced state cannot know (a reset would give 0): G2 is excluded, counted.
+  const got = checkReplay([["like", G], ["dislike", G2], ["like", N], ["dislike", P]]);
+  assert.deepEqual(labelsOf(got), { [N.id]: "liked", [P.id]: "disliked" });
+  assert.deepEqual([got.stale, got.ambiguous], [1, 1]);
+});
+
+test("replay: a dislike after a reset that shares the artist of a stale like is excluded too", () => {
+  const got = checkReplay([["like", G], "reset", ["dislike", G2], ["dislike", P]]);
+  assert.deepEqual(labelsOf(got), { [P.id]: "disliked" });
+  assert.deepEqual([got.stale, got.ambiguous], [1, 1]);
+});
+
+test("replay: « Tout effacer » makes earlier ratings stale", () => {
+  const got = checkReplay([["like", G], ["dislike", P], "reset", ["like", N], ["dislike", M]]);
+  assert.deepEqual(labelsOf(got), { [N.id]: "liked", [M.id]: "disliked" });
+  assert.equal(got.stale, 2);
+});
+
+test("replay: two dislikes of the same artist, then a like of a third concert", () => {
+  checkReplay([["dislike", P], ["dislike", P2], ["like", KX], ["like", X]]);
 });
