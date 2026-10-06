@@ -77,19 +77,28 @@ Scaleway, region fr-par:
 - Implementation notes (WIP-46, profile sync): migration `002_profile.sql` adds `profile`
   (one row `id='me'`, `data` JSONB, `updated_at`, `version`) and `profile_writes` (timestamps
   for the rate limit). The same function serves `GET /profile` (200 `{data, version,
-  updated_at}` or 404) and `PUT /profile` `{data, base_version}`: written only if
+  updated_at}`, or 200 `{data: null, version: 0}` when there is none, so that a gateway 404
+  is never read as "no profile") and `PUT /profile` `{data, base_version}`: written only if
   `base_version` equals the stored version (0 = no row yet), else 409 with the current
   `{data, version}`; same token, CORS (preflight allows GET and PUT), 64 KB body, strict
   schema (seeds ≤ 200 with name ≤ 60 chars and ≤ 12 tags; lists ≤ 2000 keys or concert ids,
   no other field), 60 PUTs per minute (429). The page reads the profile on load (the server
   copy wins unless this browser holds unsent changes, which are merged as a union), then PUTs
   it 1.5 s after each change; on 409 it merges (union of lists, server seeds then new local
-  ones) and retries once. « Tout effacer » overwrites the server copy (no merge). The profile
+  ones; a key liked on one side and disliked on the other keeps this browser's choice) and
+  retries once. « Tout effacer » overwrites the server copy (no merge), including when it is
+  pressed while a PUT is in flight (the page compares a snapshot taken before sending).
+  Known limitation of the union: a removal (un-like, un-hide, a seed deleted) made on one
+  device comes back when it meets a concurrent change from another device; « Tout effacer »
+  is the way to start over. The profile
   holds the listener's choices only, never the Spotify token (ADR-0003). Data scope grows from
   ratings to seed artist names and style tags: still the listener's own data, same provider.
   Route detection reads the event's `path` (documented by Scaleway:
   https://www.scaleway.com/en/docs/serverless-functions/reference-content/code-examples/)
-  or `rawPath`; whether `path` carries a leading slash is unverified, both are accepted.
+  or `rawPath` (unverified: the Scaleway event fields; `httpMethod` is measured — the
+  2026-10-06 deploy answered the preflight with 204 and a wrong-token POST with 401). The
+  deploy smoke test now also requires, with a wrong token, `GET /profile` → 401 and
+  `GET /` → 405, which proves sub-paths reach the function; the deploy fails otherwise.
 - Follow-up WIP-45: the function connects with the pipeline's API key for now; a dedicated IAM
   application with Serverless SQL rights only will replace it.
 

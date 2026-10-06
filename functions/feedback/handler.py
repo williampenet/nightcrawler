@@ -147,7 +147,8 @@ def _profile(method: str, body: bytes, profile, allowed: str) -> dict:
     try:
         if method == "GET":
             row = profile.get()
-            return _response(200, allowed, row) if row else _response(404, allowed, {})
+            # no profile yet: 200 with version 0, so a gateway 404 is never read as "none"
+            return _response(200, allowed, row or {"data": None, "version": 0})
         if method != "PUT":
             return _response(405, allowed, {"error": "method not allowed"})
         try:
@@ -268,18 +269,23 @@ class PgProfile:
                 )
             done = cur.fetchone()
             if not done:
-                conn.rollback()
-                return False, self.get()
+                conn.rollback()  # the concurrent first upload is committed: read it back
+                cur.execute("SELECT data, version FROM profile WHERE id = 'me'")
+                row = cur.fetchone()
+                return False, {"data": row[0], "version": row[1]} if row else None
             cur.execute("INSERT INTO profile_writes DEFAULT VALUES")
         return True, {"version": done[0]}
 
 
 def handle(event, context):
-    """Scaleway entry point (handler: handler.handle). Scaleway documents the event fields
-    `path`, `method`, `headers`, `body`, `isBase64Encoded`
-    (https://www.scaleway.com/en/docs/serverless-functions/reference-content/code-examples/);
-    the deployed POST was written against `httpMethod`, so both spellings are read, and
-    `rawPath` too. Unverified: whether `path` is "/profile" or "profile" (both are routed)."""
+    """Scaleway entry point (handler: handler.handle).
+
+    `httpMethod`: measured on the 2026-10-06 deploy ("Feedback function" workflow run on
+    commit 066fe2e: preflight HTTP 204, wrong-token POST HTTP 401; without `httpMethod` both
+    would be 405). Unverified: Scaleway's docs list `path` and `method`
+    (https://www.scaleway.com/en/docs/serverless-functions/reference-content/code-examples/),
+    so `method`, `path` and `rawPath` are read too, and "/profile" and "profile" are both
+    routed; the deploy smoke test (GET /profile -> 401, GET / -> 405) checks the routing."""
     body = event.get("body") or ""
     try:  # a truncated oversize body still decodes to more than the size limits
         cut = body[: MAX_PROFILE_BODY * 2]

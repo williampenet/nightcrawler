@@ -59,3 +59,13 @@ a single exact-name artist on Deezer and exactly one on MusicBrainz, a name of �
 and ≥ 1,000 Deezer fans (artists with ≥ 50,000 fans may have a short name, and keep their
 related artists without tags when MusicBrainz lists homonyms). Other artists keep their identity for exact matches with the listener's own artists.
 Trade-off: less recall on small local acts, in exchange for precision (William's feedback).
+
+## Amendment (2026-10-06, WIP-46): optional cross-device profile
+William asked that his choices follow him on every device (2026-10-06). When a feedback key
+is set on the page (ADR-0005), the taste profile — seed artist names and their style tags,
+ratings, hidden concerts — is also stored in the EU event store (Scaleway, fr-par) through
+the feedback function, and read back on other devices with the same key. Without a key,
+nothing leaves the browser, as decided above. The Spotify token is never stored (ADR-0003).
+The page says where the taste is kept ("dans ce navigateur" or "dans ce navigateur et sur ton
+espace Nightcrawler (Scaleway, UE)"). Scoring still runs in the browser. Details:
+ADR-0005, implementation notes WIP-46.

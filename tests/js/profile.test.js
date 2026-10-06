@@ -33,12 +33,64 @@ test("merge is a union, server seeds first", () => {
 
 const reply = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
-test("pull reads the profile, 404 and failures", async () => {
+test("merge: a key is never both liked and disliked, this browser's choice wins", () => {
+  const server = { liked: ["asna"], disliked: ["boris"], likedNames: ["x"] };
+  const local = { liked: ["boris"], disliked: ["asna"], dislikedNames: ["x"] };
+  const m = P.merge(server, local);
+  assert.deepEqual([m.liked, m.disliked, m.likedNames, m.dislikedNames], [["boris"], ["asna"], [], ["x"]]);
+});
+
+test("droppedSeeds counts seeds over the caps", () => {
+  assert.equal(P.droppedSeeds({ seeds: [{ name: "a".repeat(61) }, { name: "ok" }] }), 1);
+  assert.equal(P.droppedSeeds({ seeds: Array.from({ length: 205 }, (_, i) => ({ name: `n${i}` })) }), 5);
+});
+
+const SYNC = { version: 3, dirty: false, force: false };
+const SERVER = { ...EMPTY, liked: ["asna"] };
+
+test("afterPull: server wins, unsent changes merge, a pending reset wins", () => {
+  const local = { ...EMPTY, liked: ["boris"] };
+  const found = { status: "found", data: SERVER, version: 4 };
+  assert.deepEqual(P.afterPull(SYNC, found, local, false), { sync: { ...SYNC, version: 4 }, synced: JSON.stringify(SERVER), apply: SERVER });
+  const merged = P.afterPull({ ...SYNC, dirty: true }, found, local, false);
+  assert.deepEqual([merged.sync.dirty, merged.apply.liked], [true, ["asna", "boris"]]);
+  assert.deepEqual(P.afterPull(SYNC, found, local, true).apply.liked, ["asna", "boris"]); // changed during the read
+  const reset = P.afterPull({ version: 1, dirty: true, force: true }, found, EMPTY, false);
+  assert.deepEqual(reset, { sync: { version: 4, dirty: true, force: true }, synced: null, apply: null });
+  assert.deepEqual(P.afterPull(SYNC, { status: "none" }, local, false).sync.version, 0);
+  assert.deepEqual(P.afterPull(SYNC, { status: "error" }, local, false), { sync: SYNC, synced: null, apply: null });
+});
+
+test("afterPush: clean push clears the flags and applies a merge", () => {
+  const local = { ...EMPTY, liked: ["boris"] };
+  const snap = P.snapshot(SYNC, local);
+  const merged = { ...EMPTY, liked: ["asna", "boris"] };
+  const r = P.afterPush(SYNC, snap, { status: "ok", data: merged, version: 5, merged: true }, local);
+  assert.deepEqual(r, { sync: { version: 5, dirty: false, force: false }, synced: JSON.stringify(merged), apply: merged, again: false });
+  const plain = P.afterPush(SYNC, snap, { status: "ok", data: snap.data, version: 4, merged: false }, local);
+  assert.deepEqual([plain.apply, plain.again], [null, false]);
+});
+
+test("afterPush: a reset during the push is not reverted and is sent again", () => {
+  const before = { ...EMPTY, liked: ["boris"] };
+  const snap = P.snapshot(SYNC, before);
+  // "Tout effacer" while the PUT is in flight; the server answered with a merge
+  const now = { version: 3, dirty: true, force: true };
+  const r = P.afterPush(now, snap, { status: "ok", data: { ...EMPTY, liked: ["asna", "boris"] }, version: 5, merged: true }, EMPTY);
+  assert.deepEqual(r.sync, { version: 5, dirty: true, force: true });
+  assert.deepEqual([r.apply, r.again], [null, true]);
+  // a click during the push: kept, merged with the server copy, sent again
+  const click = P.afterPush(SYNC, snap, { status: "ok", data: SERVER, version: 5, merged: true }, { ...EMPTY, liked: ["boris", "earth"] });
+  assert.deepEqual([click.apply.liked, click.again, click.sync.dirty], [["asna", "boris", "earth"], true, true]);
+});
+
+test("pull reads the profile, no profile and failures", async () => {
   const calls = [];
   const fetch = async (u, o) => (calls.push([u, o.method, o.headers.Authorization]), reply(200, { data: { liked: ["asna"] }, version: 3 }));
   assert.deepEqual(await P.pull("https://f/profile", "k", fetch), { status: "found", data: { ...EMPTY, liked: ["asna"] }, version: 3 });
   assert.deepEqual(calls, [["https://f/profile", "GET", "Bearer k"]]);
-  assert.deepEqual(await P.pull("u", "k", async () => reply(404, {})), { status: "none" });
+  assert.deepEqual(await P.pull("u", "k", async () => reply(200, { data: null, version: 0 })), { status: "none" });
+  assert.deepEqual(await P.pull("u", "k", async () => reply(404, {})), { status: "error" }); // gateway, not "none"
   assert.deepEqual(await P.pull("u", "k", async () => reply(401, {})), { status: "unauthorized" });
   assert.deepEqual(await P.pull("u", "k", async () => { throw new Error("offline"); }), { status: "error" });
 });

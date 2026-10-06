@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import threading
 import zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -207,7 +208,7 @@ def pcall(method, body=None, path="/profile", profile=None, token="s3cret"):
 
 def test_profile_get_put_and_conflict():
     fake = FakeProfile()
-    assert pcall("GET", profile=fake) == (404, {})
+    assert pcall("GET", profile=fake) == (200, {"data": None, "version": 0})
     assert pcall("PUT", {"data": PROFILE, "base_version": 1}, profile=fake) == (
         409,
         {"data": None, "version": 0},
@@ -299,6 +300,18 @@ def test_pg_profile_on_real_postgres(monkeypatch):
     assert pg.put(PROFILE, 0) == (True, {"version": 1})
     assert pg.put({"liked": []}, 0) == (False, {"data": PROFILE, "version": 1})
     assert pg.put({"liked": []}, 1) == (True, {"version": 2})
+    # a concurrent first upload: the other transaction commits while this INSERT waits on it
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("DELETE FROM profile")
+    other = psycopg.connect(url)
+    other.execute("INSERT INTO profile (data, version) VALUES ('{}', 7)")
+    timer = threading.Timer(0.5, other.commit)
+    timer.start()
+    assert pg.put({"liked": []}, 0) == (False, {"data": {}, "version": 7})
+    timer.join()
+    other.close()
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("UPDATE profile SET data = %s, version = 2", (json.dumps({"liked": []}),))
     row = pg.get()
     assert row["data"] == {"liked": []} and row["version"] == 2 and row["updated_at"]
     with psycopg.connect(url, autocommit=True) as conn:
@@ -403,7 +416,13 @@ def test_smoke_test(monkeypatch):
         side_effect=[httpx.ConnectError("cold"), httpx.Response(204)]
     )
     post = respx.post("https://d.fn").respond(401)
-    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401)
+    profile = respx.get("https://d.fn/profile").respond(401)
+    respx.get("https://d.fn/").respond(405)
+    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401, 401, 405)
+    assert (
+        profile.calls[0].request.headers["Authorization"]
+        == post.calls[0].request.headers["Authorization"]
+    )
     assert route.calls[1].request.headers["Origin"] == ORIGIN
     sent = post.calls[0].request.headers["Authorization"]
     assert sent.startswith("Bearer ") and len(sent) > 20
@@ -430,7 +449,7 @@ def test_cli_deploys_with_hashed_token_and_masked_url(monkeypatch, capsys):
         return {"status": "ready", "domain_name": "d.fn", "runtime": "python312"}
 
     monkeypatch.setattr(dfn, "deploy", fake_deploy)
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401))
+    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401, 401, 405))
     assert cli.main(["deploy-feedback"]) == 0
     out = capsys.readouterr().out
     assert "::add-mask::postgresql://u:pw@h/db" in out and "https://d.fn" in out
@@ -447,9 +466,10 @@ def test_cli_fails_when_wrong_token_is_accepted(monkeypatch, capsys):
     monkeypatch.setattr(provision, "ensure", lambda creds: ({}, "postgresql://u:pw@h/db"))
     monkeypatch.setattr(dfn, "build_zip", lambda dest: dest)
     monkeypatch.setattr(dfn, "deploy", lambda c, s, a: {"domain_name": "d.fn"})
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 202))
-    assert cli.main(["deploy-feedback"]) == 1
-    assert "::error::" in capsys.readouterr().out
+    for statuses in ((204, 202, 401, 405), (204, 401, 404, 405), (204, 401, 401, 401)):
+        monkeypatch.setattr(dfn, "smoke_test", lambda url, origin, s=statuses: s)
+        assert cli.main(["deploy-feedback"]) == 1  # wrong token accepted, or sub-path not routed
+        assert "::error::" in capsys.readouterr().out
 
 
 def test_cli_http_error_reports_type_only(monkeypatch, capsys):
