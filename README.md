@@ -58,6 +58,8 @@ Optional secret: `TICKETMASTER_API_KEY` (GitHub Actions secret) adds Ticketmaste
 
 Event store (ADR-0005): `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID` (GitHub Actions secrets). The **Event store** workflow creates the Scaleway Serverless SQL Database (fr-par, 0–1 vCPU) once and applies `src/nightcrawler/store/sql/*.sql`; later steps get `DATABASE_URL` (masked), built at run time from the database endpoint, the API key owner's IAM id (or the optional `SCW_DB_USER` secret) and the secret key, so no URL secret is stored. The key's owner needs IAM read access to its own API key and Serverless SQL Database read/write rights.
 
+Feedback function (ADR-0005): add the GitHub secret `FEEDBACK_TOKEN` (a long random string, e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`). The **Feedback function** workflow packages `functions/feedback/handler.py` with psycopg vendored in `package/` (Scaleway's Python convention), deploys it on Scaleway Serverless Functions (namespace `nightcrawler`, function `feedback`, python312, 0–1 instance, 128 MB) with `DATABASE_URL` and the token's SHA-256 as secret environment variables, and prints the function URL in a notice; without `FEEDBACK_TOKEN` it is skipped. Put that URL in `config/app.yaml` (`feedback_url`). On the page, open « Mes goûts » and paste the same token into « Clé d'envoi des avis »: it stays in that browser only. Ratings are queued in the browser and sent when the function answers; « Clé refusée » means the key does not match. Known limitation: the function connects with the same API key as the pipeline (follow-up: a dedicated IAM application with Serverless SQL rights only).
+
 ## Monthly cost
 
 €0/month for the POC (see ADR-0001). Target ≤ €20/month.

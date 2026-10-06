@@ -69,6 +69,13 @@ Scaleway, region fr-par:
   is down.
 - Migration: one PR for the store + pipeline (no behaviour change), one for the function and
   the page.
+- Implementation notes (WIP-44, function and page): the function accepts a batch (≤ 50 items,
+  ≤ 4 KB) rather than a single row, so the page can flush its queue in one request; one row is
+  stored per (item, artist key). The token hash and the database URL are secret environment
+  variables of the function (the URL is built at deploy time, as in the pipeline). Per-token rate
+  limiting is not implemented: max scale 1 and the single personal token bound the load; to be
+  revisited if the page is opened to friends. The function uses the pipeline's API key for now
+  (follow-up: dedicated IAM application with Serverless SQL rights only).
 
 ## Cost impact
 ≈ €1–2/month excl. VAT, inside the ~€20 budget (current total: €0 + this).

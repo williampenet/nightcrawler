@@ -5,6 +5,7 @@
 
 const S = window.NCScoring;
 const SP = window.NCSpotify;
+const FB = window.NCFeedback;
 const PKCE_KEY = "nightcrawler.pkce"; // sessionStorage: verifier + state during the redirect only
 let APP_CONFIG = {};
 const STORE_KEY = "nightcrawler.v1";
@@ -279,7 +280,9 @@ function feedback(concert, kind, li) {
     const on = !keys.every((k) => state.liked.includes(k)); // second click undoes
     state.liked = toggle(state.liked, keys, on);
     state.disliked = toggle(state.disliked, keys, false);
+    sendFeedback(on ? "like" : "unlike", concert.id, keys);
   } else {
+    sendFeedback("dislike", concert.id, keys);
     state.disliked = toggle(state.disliked, keys, true);
     state.liked = toggle(state.liked, keys, false);
     state.hidden = toggle(state.hidden, [concert.id], true);
@@ -287,6 +290,45 @@ function feedback(concert, kind, li) {
   saveState();
   render();
   refocus(kind === "like" ? concert.id : next);
+}
+
+// Server-side copy of the ratings (ADR-0005): queued here, sent when a URL and a key are set.
+const fbStore = (fn, fallback) => {
+  try {
+    return fn();
+  } catch {
+    return fallback; // storage blocked: nothing is queued
+  }
+};
+const fbLoad = () => fbStore(() => FB.parseQueue(localStorage.getItem(FB.QUEUE_KEY)), []);
+const fbSave = (q) => fbStore(() => localStorage.setItem(FB.QUEUE_KEY, JSON.stringify(q)));
+const fbToken = () => fbStore(() => localStorage.getItem(FB.TOKEN_KEY) || "", "");
+let fbBusy = false; // one flush at a time; it also sends items queued while it runs
+
+function feedbackUrl() {
+  try {
+    const u = new URL(APP_CONFIG.feedback_url || "");
+    return u.protocol === "https:" ? u.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function sendFeedback(kind, concertId, keys) {
+  fbSave(FB.enqueue(fbLoad(), FB.makeItem(kind, concertId, keys)));
+  flushFeedback();
+}
+
+async function flushFeedback() {
+  if (fbBusy) return;
+  fbBusy = true;
+  const result = await FB.flush(feedbackUrl(), fbToken(), { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
+  fbBusy = false;
+  const line = document.getElementById("feedback-status");
+  const pending = fbLoad().length;
+  if (result === "unauthorized") line.textContent = "Clé refusée";
+  else if (result === "sent") line.textContent = "Avis envoyés au service";
+  else line.textContent = pending ? `${pending} avis en attente` : "";
 }
 
 // keep keyboard users where they were: the wanted row, else the first button of the list
@@ -401,6 +443,7 @@ function concertRow(c, match, showDate) {
         const next = li.nextElementSibling && li.nextElementSibling.dataset.id;
         if (!state.wrong.includes(match.artist)) state.wrong.push(match.artist);
         saveState();
+        sendFeedback("wrong", c.id, [match.artist]);
         render();
         // the row may leave the "Pour moi" list: same row if still there, else the next one
         const still = [...document.querySelectorAll("#concerts li")].some((r) => r.dataset.id === c.id);
@@ -573,6 +616,15 @@ function setupControls() {
     document.getElementById("spotify-row").hidden = false;
     document.getElementById("spotify-connect").addEventListener("click", connectSpotify);
   }
+  if (feedbackUrl()) {
+    document.getElementById("feedback-row").hidden = false;
+    const key = document.getElementById("feedback-key");
+    key.value = fbToken();
+    key.addEventListener("change", () => {
+      fbStore(() => localStorage.setItem(FB.TOKEN_KEY, key.value.trim()));
+      flushFeedback();
+    });
+  }
   document.getElementById("lb-import").addEventListener("click", () =>
     importListenBrainz(document.getElementById("lb-user").value),
   );
@@ -623,6 +675,7 @@ async function main() {
     renderAgendaCredits(report);
     focusDeepLink();
     finishSpotify();
+    flushFeedback(); // ratings left over from a previous visit
   } catch {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
   }
