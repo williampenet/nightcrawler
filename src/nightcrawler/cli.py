@@ -29,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--cache", default=".cache/http")
     r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
     r.add_argument("--app-config", default="config/app.yaml")
+    r.add_argument(
+        "--store", action="store_true", help="use the event store when SCW_* secrets are set"
+    )
     sub.add_parser("store", help="create the Scaleway event store if needed and migrate it")
     sub.add_parser("deploy-feedback", help="package and deploy the feedback function (Scaleway)")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
@@ -61,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             # Deezer allows ~50 requests / 5 s; everyone else gets 1 request / s
             Fetcher(cache_dir=args.cache, host_intervals={"api.deezer.com": 0.2}),
             osm_extract=Path(args.osm_extract),
-            database_url=os.environ.get("DATABASE_URL") or None,  # set by `nightcrawler store`
+            database_url=store_url() if args.store else os.environ.get("DATABASE_URL") or None,
         )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets
@@ -79,27 +82,60 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+STORE_SECRETS = ("SCW_ACCESS_KEY", "SCW_SECRET_KEY", "SCW_DEFAULT_PROJECT_ID")
+
+
+def prepare_store() -> tuple[dict, str, list[int], int]:
+    """Ensure the database exists and is migrated: (database, url, migrations, tables)."""
+    import psycopg
+
+    from .store.migrate import migrate
+    from .store.provision import ensure
+
+    db, url = ensure()
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::add-mask::{url}", flush=True)
+    with psycopg.connect(url, connect_timeout=60, autocommit=True) as conn:
+        applied = migrate(conn)
+        tables = conn.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+        ).fetchone()[0]
+    return db, url, applied, tables
+
+
+def store_url() -> str | None:
+    """`run --store`: the database URL, kept inside this process (never exported), or None
+    when the secrets are missing or the store fails; the run then goes on without it."""
+    if os.environ.get("DATABASE_URL"):
+        return os.environ["DATABASE_URL"]
+    if not all(os.environ.get(n) for n in STORE_SECRETS):
+        annotate("notice", "Event store: skipped: SCW_* secrets not set")
+        return None
+    try:
+        return prepare_store()[1]
+    except Exception as exc:  # libpq messages name the host and user: type only
+        annotate("warning", f"Event store unavailable ({type(exc).__name__}); run without it")
+        return None
+
+
 def store_command() -> int:
     """CI only: ensure the database exists, migrate it, export DATABASE_URL to later steps."""
     import psycopg
 
-    from .store.migrate import migrate
-    from .store.provision import ProvisionError, ensure
+    from .store.provision import ProvisionError
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if not all(os.environ.get(n) for n in STORE_SECRETS):
+        annotate("notice", "Event store: skipped: SCW_* secrets not set")
+        return 0
     try:
-        db, url = ensure()
-        with psycopg.connect(url, connect_timeout=60, autocommit=True) as conn:
-            applied = migrate(conn)
-            tables = conn.execute(
-                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
-            ).fetchone()[0]
+        db, url, applied, tables = prepare_store()
     except (ProvisionError, psycopg.Error) as exc:
-        annotate("error", f"Event store: {type(exc).__name__}: {str(exc)[:300]}")
+        # libpq and API messages may name the host or user: the type only, publicly
+        annotate("error", f"Event store: {type(exc).__name__}")
         return 1
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        print(f"::add-mask::{url}", flush=True)
         if "\n" in url or "\r" in url:  # would inject extra variables into GITHUB_ENV
             annotate("error", "Event store: unexpected newline in the connection URL")
             return 1

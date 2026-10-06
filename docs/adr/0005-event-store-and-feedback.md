@@ -100,21 +100,31 @@ Scaleway, region fr-par:
   deploy smoke test now also requires, with a wrong token, `GET /profile` → 401 and
   `GET /` → 405, which proves sub-paths reach the function; the deploy fails otherwise.
 - Implementation notes (WIP-46, pipeline ↔ store): `store/sync.py`, called by the pipeline
-  only when `DATABASE_URL` is set (the Pipeline workflow runs `nightcrawler store` first,
-  `continue-on-error`). One connection (60 s connect timeout for a waking database), one
-  transaction, before artist enrichment: raw events upserted (`source_key` = URL, else
-  title, + start: sources expose no id yet); stored concerts of the window matched first by
-  id or alias, then by `dedup.same_concert()` (the within-run rule without series words),
-  used only when the candidate is unique on both sides so a festival name cannot steal an
-  id; `concert_sources.rule` = `new` | `id` | `dedup`, the rule that first attached that raw
-  event. `not_concert` overrides (payload `{concert_id}`, id or alias) drop concerts from the
-  output; `merge`/`split` are not applied yet (TODO in the code, no ticket yet). Artist keys
-  with a `wrong` feedback are published with no related artists or tags and
-  `doubt: "reported"`. Any store error keeps this run's own result (tested with a refused
-  connection) and is reported as `store.status = "error: <type>"`. Tested on a local
-  PostgreSQL 16 (`tests/test_store_sync.py`: two runs keep the id, a renamed title within
-  the rules keeps it, an override drops, a wrong feedback is returned); not yet run against
-  the Scaleway database (unverified until the first Pipeline run).
+  when a database URL is available. In CI, `nightcrawler run --store` builds the URL and
+  migrates inside the run step itself, so the URL is never exported to later steps (missing
+  secrets: notice; store failure: warning with the error type only). One connection (60 s
+  connect timeout for a waking database, libpq TCP keepalives), client encoding forced to
+  UTF-8 (a local SQL_ASCII server returned bytes before this: measured), one transaction
+  with `SET LOCAL statement_timeout = '60s'`, before artist enrichment. Raw events are
+  upserted (`source_key` = URL + title + start: sources expose no id yet). Stored concerts
+  of the window are matched by exact id, then by id or alias, then by
+  `dedup.same_concert_across_runs()`: same slot and place, and a shared performer when both
+  sides name performers, else equal cleaned titles. Word overlap alone never matches across
+  runs, because series words cannot be computed from two listings: the review of PR #40
+  showed "Nuits Sonores: Boris" / "Nuits Sonores: Earth" and three similar pairs matching
+  with the within-run rule (tests in `tests/test_store_sync.py`). A rule match is also used
+  only when it is unique on both sides. `concert_sources.rule` = `new` | `id` | `dedup`, the
+  rule that first attached that raw event. `not_concert` overrides (payload `{concert_id}`,
+  id or alias) drop concerts from the output; `merge`/`split` are WIP-50. Artist keys with a
+  `wrong` feedback are published with no related artists or tags and `doubt: "reported"`.
+  Privacy: `artists.json` is public, so it shows which artist keys the listener reported as
+  wrong matches (no date, no concert, no person; the listener's own data, as for the profile
+  above). Any store error (refused connection, statement timeout, unexpected encoding: all
+  tested) keeps this run's own result and is reported as `store.status = "error: <type>"`.
+  Tested on a local PostgreSQL 16 (two runs keep the id, a renamed title with the same
+  performer keeps it, an override drops, a wrong feedback is returned), on UTF-8 and
+  SQL_ASCII databases; not yet run against the Scaleway database (unverified until the
+  first Pipeline run).
 - Follow-up WIP-45: the function connects with the pipeline's API key for now; a dedicated IAM
   application with Serverless SQL rights only will replace it.
 
