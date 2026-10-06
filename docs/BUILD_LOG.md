@@ -107,6 +107,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | diagnose | WIP-56 per-venue reader plan (WebFetch): Ville Morte drops venues stored at lat/lon 0,0 (Grrrnd Zero ~10 events lost); Transbordeur has a public WP JSON API; others need per-site-type HTML readers (needs an ADR) | [WIP-56](https://linear.app/wip-coding/issue/WIP-56) |
 | 2026-10-06 | agent:dev | build | WIP-58: Gancio places at (0,0) or non-finite treated as unknown and geocoded (Grrrnd Zero events on Ville Morte were dropped) | PR #46 |
 | 2026-10-06 | agent:reviewer | review WIP-58 | APPROVE + 3 non-blocking (NaN test, bool coords, checklist); applied | PR #46 |
+| 2026-10-06 | agent:dev | build | WIP-59: saved concert ids (hidden, likedConcerts) no longer pruned when absent from a day's data; aliases resolved for display; 500 cap | PR #47 |
+| 2026-10-06 | agent:reviewer | review WIP-59 | APPROVE + 7 non-blocking (ADR note, server cap, isEmpty, reset test, merge-at-cap test, alias recency, log); applied | PR #47 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

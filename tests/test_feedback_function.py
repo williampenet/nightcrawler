@@ -244,10 +244,24 @@ def test_profile_get_put_and_conflict():
         ({"data": {"liked": ["Bad Key"]}, "base_version": 0}, "bad liked item"),
         ({"data": {"hidden": ["asna"]}, "base_version": 0}, "bad hidden item"),
         ({"data": {"wrong": ["a"] * 2001}, "base_version": 0}, "wrong: at most 2000"),
+        ({"data": {"hidden": ["0" * 12] * 501}, "base_version": 0}, "hidden: at most 500"),
+        (
+            {"data": {"likedConcerts": ["0" * 12] * 501}, "base_version": 0},
+            "likedConcerts: at most 500",
+        ),
     ],
 )
 def test_profile_rejects_bad_bodies(body, reason):
     assert pcall("PUT", body) == (400, {"error": reason})
+
+
+def test_profile_accepts_500_concert_ids_per_list():
+    # WIP-59: the page keeps the 500 most recent ids; the function accepts exactly that
+    ids = [f"{i:012x}" for i in range(handler.MAX_IDS)]
+    data, _ = handler.validate_profile(
+        json.dumps({"data": {"hidden": ids, "likedConcerts": ids}, "base_version": 0}).encode()
+    )
+    assert data["hidden"] == ids and data["likedConcerts"] == ids
 
 
 def test_profile_store_errors():

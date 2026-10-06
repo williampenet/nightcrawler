@@ -99,6 +99,13 @@ Scaleway, region fr-par:
   2026-10-06 deploy answered the preflight with 204 and a wrong-token POST with 401). The
   deploy smoke test now also requires, with a wrong token, `GET /profile` → 401 and
   `GET /` → 405, which proves sub-paths reach the function; the deploy fails otherwise.
+- Implementation note (WIP-59, saved concert ids): `hidden` and `likedConcerts` are never
+  pruned because an id is absent from a day's data (source failure, id change, past concert);
+  only the display resolves current ids, and a saved alias stays next to its current id. The
+  page keeps the newest 500 ids per list (oldest dropped first). The function's limit for
+  these two lists goes from 2000 (the WIP-46 limit, still used for key lists) to the same
+  500; measured, 500 ids are 7,613 bytes of JSON, so both lists use under a quarter of the
+  64 KB body (tests in `tests/js/keep.test.js`, `tests/test_feedback_function.py`).
 - Implementation notes (WIP-46, pipeline ↔ store): `store/sync.py`, called by the pipeline
   when a database URL is available. In CI, `nightcrawler run --store` builds the URL and
   migrates inside the run step itself, so the URL is never exported to later steps (missing

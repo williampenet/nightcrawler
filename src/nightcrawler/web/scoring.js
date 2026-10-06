@@ -124,7 +124,8 @@
       s.dislikedNames = toggle(s.dislikedNames, names, false);
     } else {
       s.liked = toggle(s.liked, keys, false);
-      s.likedConcerts = toggle(s.likedConcerts, [concert.id], false);
+      // its saved aliases too, or the next load would add the current id back (WIP-59)
+      s.likedConcerts = toggle(s.likedConcerts, [concert.id, ...(Array.isArray(concert.aliases) ? concert.aliases : [])], false);
       // names still used by another liked concert stay liked
       const kept = new Set();
       if (kind === "like") {
@@ -171,8 +172,12 @@
     return { seedNames, liked, disliked, noInfer, likedConcerts, likedNames, tagWeights, tagNorm: Math.sqrt(norm2) };
   }
 
-  function isEmpty(profile) {
-    return !profile.seedNames.size && !profile.liked.size && !(profile.likedConcerts && profile.likedConcerts.size) && !(profile.likedNames && profile.likedNames.size);
+  // concerts: today's list. Saved concert ids are kept when absent (WIP-59), so a liked id
+  // counts only if its concert is in today's data: old ids alone do not switch on the tiers.
+  function isEmpty(profile, concerts) {
+    const ids = profile.likedConcerts || new Set();
+    const likedToday = concerts ? concerts.some((c) => ids.has(c.id)) : ids.size > 0;
+    return !profile.seedNames.size && !profile.liked.size && !likedToday && !(profile.likedNames && profile.likedNames.size);
   }
 
   function styleSimilarity(tags, profile) {
@@ -285,7 +290,8 @@
 
   // Saved concert ids -> current ids. A merged concert answers to its id and its
   // `aliases` (the ids its listings had alone), so hidden concerts and shared links
-  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped.
+  // survive a source appearing or disappearing (WIP-42). Unknown ids are dropped: for
+  // display only, never to rewrite the saved lists (see keepIds, WIP-59).
   function currentIds(concerts, saved) {
     const byId = new Map(concerts.map((c) => [c.id, c.id])); // a current id wins over an alias
     for (const c of concerts) {
@@ -296,7 +302,22 @@
     return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // Saved concert ids (hidden, likedConcerts) as they are kept and synced (WIP-59). Never
+  // pruned because an id is absent from today's data: a concert can be missing for a day
+  // (source failure, id change, past). A saved alias stays and its current id is added, so
+  // the plain `c.id` checks see it. Only the oldest ids beyond MAX_IDS are dropped (the
+  // lists are in insertion order). Display resolves current ids with currentIds.
+  const MAX_IDS = 500;
+  function keepIds(concerts, saved) {
+    const kept = [...new Set(saved)];
+    // Alias recency: the added current id goes to the end, so the cap treats it as the
+    // newest entry while the saved alias keeps its older place and is dropped first. The
+    // rating then survives as long as possible under its current id.
+    for (const id of currentIds(concerts, kept)) if (!kept.includes(id)) kept.push(id);
+    return kept.slice(-MAX_IDS);
+  }
+
+  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
