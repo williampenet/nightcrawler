@@ -56,6 +56,8 @@ Spotify login (optional, personal use): create an app on the Spotify for Develop
 
 Optional secret: `TICKETMASTER_API_KEY` (GitHub Actions secret) adds Ticketmaster events.
 
+Event store (ADR-0005): `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID` (GitHub Actions secrets). The **Event store** workflow creates the Scaleway Serverless SQL Database (fr-par, 0–1 vCPU) once and applies `src/nightcrawler/store/sql/*.sql`; later steps get `DATABASE_URL` (masked).
+
 ## Monthly cost
 
 €0/month for the POC (see ADR-0001). Target ≤ €20/month.
