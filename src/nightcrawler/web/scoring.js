@@ -229,15 +229,17 @@
   }
 
   // Splits scored concerts ([{c, m}], m from scoreConcert) into the default view's tiers
-  // (WIP-53): sure = direct matches (score >= SURE_MIN), by date; discover = the best
-  // inferred matches (0 < score < SURE_MIN), by score then date, at most DISCOVER_MAX;
-  // rest = everything else, in input order. Pure: the input array is not changed.
+  // (WIP-53): sure = direct matches (score >= SURE_MIN and not inferred), by date;
+  // discover = the best other matches (score > 0: "Proche de", "Style"), by score then
+  // date, at most DISCOVER_MAX; rest = everything else, in input order.
+  // Pure: the input array is not changed.
   function tiers(scored) {
     const byDate = (a, b) => String(a.c.start).localeCompare(String(b.c.start));
     const list = Array.isArray(scored) ? scored : [];
-    const sure = list.filter((x) => x.m.score >= SURE_MIN).sort(byDate);
+    const isSure = (x) => x.m.score >= SURE_MIN && !x.m.inferred; // a guess is never "sûr"
+    const sure = list.filter(isSure).sort(byDate);
     const discover = list
-      .filter((x) => x.m.score > 0 && x.m.score < SURE_MIN)
+      .filter((x) => x.m.score > 0 && !isSure(x))
       .sort((a, b) => b.m.score - a.m.score || byDate(a, b))
       .slice(0, DISCOVER_MAX);
     const picked = new Set([...sure, ...discover]);

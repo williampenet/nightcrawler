@@ -34,6 +34,9 @@ h2, .tier-rest h3 {
 }
 /* "Tout voir" (WIP-53): the day headings inside it read as one level below */
 .tier-rest h3 { margin-top: 20px; font-weight: 600; }
+/* the "Tout voir" label is fixed (disclosure pattern): an arrow shows the state */
+#tier-toggle::after { content: " ▸"; }
+#tier-toggle[aria-expanded="true"]::after { content: " ▾"; }
 ul.concerts { list-style: none; margin: 0; padding: 0; }
 ul.concerts li { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .time { flex: 0 0 3.2rem; color: var(--muted); font-variant-numeric: tabular-nums; }

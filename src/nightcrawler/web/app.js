@@ -345,7 +345,8 @@ function feedback(concert, kind, li) {
   sendFeedback(send.kind, concert.id, send.keys);
   saveState();
   render();
-  refocus(kind === "like" ? concert.id : next);
+  // an un-liked row may move into a collapsed "Tout voir" (WIP-53): then the next row
+  refocus(...(kind === "like" ? [concert.id, next] : [next]));
 }
 
 // Server-side copy of the ratings (ADR-0005): queued here, sent when a URL and a key are set.
@@ -512,9 +513,11 @@ window.addEventListener("online", () => {
 // rows the listener can see: not inside a collapsed "Tout voir" (WIP-53)
 const visibleRows = () => [...document.querySelectorAll("#concerts li")].filter((r) => !r.closest("[hidden]"));
 
-// keep keyboard users where they were: the wanted row, else the first button of the list
-function refocus(wanted) {
-  const row = visibleRows().find((r) => r.dataset.id === wanted);
+// keep keyboard users where they were: the first wanted row still visible (in the order
+// given), else the first button of the list
+function refocus(...wanted) {
+  const rows = visibleRows();
+  const row = wanted.map((id) => rows.find((r) => r.dataset.id === id)).find(Boolean);
   const target = (row && row.querySelector("button")) || document.querySelector("#concerts button");
   if (target) target.focus();
 }
@@ -627,8 +630,7 @@ function concertRow(c, match, showDate) {
         sendFeedback("wrong", c.id, [match.artist]);
         render();
         // the row may leave the "Pour moi" list: same row if still there, else the next one
-        const still = visibleRows().some((r) => r.dataset.id === c.id);
-        refocus(still ? c.id : next);
+        refocus(c.id, next);
         setStatus("Noté : ce rapprochement ne sera plus utilisé.");
       });
       why.append(wrong);
@@ -693,29 +695,31 @@ function tierSection(root, id, title, items, empty) {
 // the cap first) then date. Filters and hidden concerts apply to all three sections.
 function renderTiers(root, list) {
   const { sure, discover, rest } = S.tiers(list);
-  tierSection(root, "tier-sure", "Sûrs", sure, "Aucun concert d'un artiste que tu écoutes ou as aimé pour ces filtres.");
-  tierSection(root, "tier-discover", "À découvrir", discover, "Aucun rapprochement pour ces filtres.");
+  const filtering = state.when !== "all" || !!state.style || !!state.venue;
+  const suffix = filtering ? " pour ces filtres." : ".";
+  tierSection(root, "tier-sure", "Sûrs", sure, "Aucun concert d'un artiste que tu écoutes, ni d'un artiste ou d'un concert que tu as aimé" + suffix);
+  tierSection(root, "tier-discover", "À découvrir", discover, "Aucun rapprochement" + suffix);
   if (!rest.length) return;
   if (revealDeepLink && deepLinkId && rest.some((x) => x.c.id === deepLinkId)) showAll = true;
   revealDeepLink = false;
+  // nothing above: "Tout voir" opens by itself, else the page would look empty while
+  // the header counts N concerts. The listener can still close it until the next render.
+  let open = showAll || (!sure.length && !discover.length);
   const box = el("div", null, "tier-rest");
   box.id = "tier-rest";
-  box.hidden = !showAll;
+  box.hidden = !open;
   // disclosure button inside the heading (WAI-ARIA APG, Disclosure pattern:
-  // https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/); toggling does not re-render,
-  // so focus stays on the button
-  const toggle = button("", "ghost", () => {
-    showAll = !showAll;
-    box.hidden = !showAll;
-    label();
+  // https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/): fixed label, the state is
+  // carried by aria-expanded. Toggling does not re-render, so focus stays on the button.
+  const toggle = button(`Tout voir (${rest.length})`, "ghost", () => {
+    open = !open;
+    showAll = open;
+    box.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
   });
-  const label = () => {
-    toggle.textContent = showAll ? `Replier (${rest.length})` : `Tout voir (${rest.length})`;
-    toggle.setAttribute("aria-expanded", String(showAll));
-  };
   toggle.id = "tier-toggle";
   toggle.setAttribute("aria-controls", box.id);
-  label();
+  toggle.setAttribute("aria-expanded", String(open));
   const h = el("h2");
   h.append(toggle);
   root.append(h);
@@ -758,9 +762,8 @@ function render() {
   // an empty profile keeps the views below unchanged
   if (!S.isEmpty(profile)) return renderTiers(root, list);
   if (state.sort === "me") {
-    if (S.isEmpty(profile)) {
-      root.append(el("p", "Ajoute quelques artistes dans « Mes goûts » pour trier les concerts pour toi.", "hint"));
-    }
+    // the profile is empty here (tiers above otherwise): invite to fill it
+    root.append(el("p", "Ajoute quelques artistes dans « Mes goûts » pour trier les concerts pour toi.", "hint"));
     const matched = list.filter((x) => x.m.score > 0).sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start));
     const rest = list.filter((x) => x.m.score === 0);
     if (matched.length) {
