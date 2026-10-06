@@ -94,6 +94,13 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-53 | APPROVE + 8 non-blocking (inferred never "sure", empty sections auto-open Tout voir, focus, disclosure label, tests); applied | PR #42 |
 | 2026-10-06 | agent:dev | build | WIP-52: leave-one-out taste eval of scoring.js on William's labels, aggregated output only, "Taste eval" workflow | PR #43 |
 | 2026-10-06 | agent:reviewer | review WIP-52 | REQUEST_CHANGES: 3 blocking (own-label leak via names, stale labels, no replay tests) + 6 non-blocking; fixed; re-review APPROVE + 2 non-blocking (ambiguous-dislike over-exclusion, bias note added) | PR #43 |
+| 2026-10-06 | human:william | scope | Finds picks off-target; shares his former Claude concert watch (instructions + concerts-vus.md, 76 events) as reference | |
+| 2026-10-06 | agent:dev | measure | Nightcrawler has 11 of the 40 watch events in its window (27.5 %); 5 of 11 without identified artist; Opéra Underground, Subsistances, Trinité, Grrrnd Zero, Auditorium ≈ 0 (live data 20:42, checked by hand) | PR #44 |
+| 2026-10-06 | human:william | decision | App stays the deliverable (no weekly report); his venues first, stay open to others; study models (QuelLLM.fr) incl. EU/CN, Claude as baseline, fine-tuning allowed | |
+| 2026-10-06 | agent:dev | docs | PRD v3: two circles of sources, written taste profile judged by a model (judge_taste), reference set from the former watch (FR-11) | PR #44 |
+| 2026-10-06 | human:william | validation | PRD v3 validated; reuse his in-app "Pas pour moi" as negatives and label more; profile stored in the event store, not in the repo | PR #44 |
+| 2026-10-06 | agent:reviewer | review WIP-54 | REQUEST_CHANGES: broken table, v2 digest statements not marked superseded, baseline vs personal data, missing log; fixed | PR #44 |
+| 2026-10-06 | agent:reviewer | re-review WIP-54 | APPROVE + 2 non-blocking (reproduction wording, alert ticket later) | PR #44 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
