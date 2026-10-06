@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
@@ -27,6 +29,10 @@ from ..structured import _text
 log = logging.getLogger(__name__)
 
 MAX_DETAILS = 60  # per instance and per run (responses are cached 20 h by the fetcher)
+MAX_GEOCODE = 60  # places without coordinates, per run
+# French national address API (IGN Géoplateforme, BAN data): free, no key, public service
+GEOCODER_URL = "https://data.geopf.fr/geocodage/search"
+MIN_GEOCODE_SCORE = 0.6
 
 
 def _host(url: str) -> str:
@@ -41,9 +47,17 @@ def _coord(value) -> float | None:
 
 
 def parse(
-    items: list, base_url: str, zone: Zone, now: datetime, tz: ZoneInfo
+    items: list,
+    base_url: str,
+    zone: Zone,
+    now: datetime,
+    tz: ZoneInfo,
+    geocode: Callable[[str], tuple[float, float] | None] | None = None,
 ) -> tuple[list[Venue], list[RawEvent]]:
-    """Gancio events in the zone and the time window, with their places as venues."""
+    """Gancio events in the zone and the time window, with their places as venues.
+
+    Many instances store places without coordinates: `geocode(address)` fills them in.
+    """
     base = base_url.rstrip("/")
     host = _host(base)
     venues: dict[str, Venue] = {}
@@ -61,8 +75,9 @@ def parse(
         if not isinstance(place, dict):
             continue
         lat, lon = _coord(place.get("latitude")), _coord(place.get("longitude"))
+        address = _text(place.get("address"))
         if lat is not None and lon is not None and not zone.contains(lat, lon):
-            continue
+            continue  # the instance itself places it outside the zone
         name = _text(place.get("name"))
         tags = item.get("tags") if isinstance(item.get("tags"), list) else []
         ev = RawEvent(
@@ -76,6 +91,12 @@ def parse(
         )
         if not in_window(ev, now, zone.window_days):
             continue
+        if (lat is None or lon is None) and name and address and geocode:
+            found = geocode(address)
+            # a guessed point outside the zone is more likely a wrong match than a far-away
+            # event: keep the event, without a venue
+            if found and zone.contains(*found):
+                lat, lon = found
         if name and lat is not None and lon is not None and ev.venue_id not in venues:
             venues[ev.venue_id] = Venue(
                 id=ev.venue_id,
@@ -83,7 +104,7 @@ def parse(
                 latitude=lat,
                 longitude=lon,
                 category="events_venue",
-                address=_text(place.get("address")),
+                address=address,
                 sources=[f"gancio:{host}"],
             )
         events.append(ev)
@@ -132,6 +153,42 @@ def window_params(zone: Zone, now: datetime) -> dict[str, str]:
     return {"start": str(int(today.timestamp())), "end": str(int(end.timestamp()))}
 
 
+class Geocoder:
+    """Address -> (lat, lon) with the national address API; capped, memoised per run."""
+
+    def __init__(
+        self, fetcher: Fetcher, limit: int = MAX_GEOCODE, near: tuple[float, float] | None = None
+    ):
+        self.fetcher, self.limit, self.near = fetcher, limit, near
+        self.memo: dict[str, tuple[float, float] | None] = {}
+        self.calls = self.found = 0
+
+    def __call__(self, address: str) -> tuple[float, float] | None:
+        key = re.sub(r"\s+", " ", address).strip()
+        if key in self.memo:
+            return self.memo[key]
+        if self.calls >= self.limit:
+            return None
+        self.calls += 1
+        result = None
+        try:
+            params = {"q": key[:200], "limit": "1"}
+            if self.near:  # ranks results near the zone first
+                params.update(lat=str(self.near[0]), lon=str(self.near[1]))
+            resp = self.fetcher.get(GEOCODER_URL, params=params)
+            feats = json.loads(resp.text).get("features") if resp.status == 200 else None
+            best = feats[0] if feats else None
+            if best and float(best["properties"].get("score", 0)) >= MIN_GEOCODE_SCORE:
+                lon, lat = (float(x) for x in best["geometry"]["coordinates"][:2])
+                if math.isfinite(lat) and math.isfinite(lon):
+                    result = (lat, lon)
+        except (httpx.HTTPError, RobotsBlocked, ValueError, KeyError, TypeError, AttributeError):
+            log.info("geocoding failed for a Gancio place")
+        self.found += result is not None
+        self.memo[key] = result
+        return result
+
+
 def collect(
     zone: Zone, fetcher: Fetcher, now: datetime, tz: ZoneInfo
 ) -> tuple[list[Venue], list[RawEvent], str]:
@@ -141,6 +198,7 @@ def collect(
     venues: list[Venue] = []
     events: list[RawEvent] = []
     errors: list[str] = []
+    geocode = Geocoder(fetcher, near=(zone.latitude, zone.longitude))
     for inst in zone.gancio_instances:
         base = str(inst["url"]).rstrip("/")
         name = inst.get("name") or _host(base)
@@ -148,7 +206,7 @@ def collect(
             resp = fetcher.get(f"{base}/api/events", params=window_params(zone, now))
             if resp.status != 200:
                 raise ValueError(f"HTTP {resp.status}")
-            v, e = parse(json.loads(resp.text), base, zone, now, tz)
+            v, e = parse(json.loads(resp.text), base, zone, now, tz, geocode)
         except (httpx.HTTPError, RobotsBlocked, ValueError) as exc:
             # optional source: one broken instance never stops the run
             reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
@@ -159,4 +217,5 @@ def collect(
         log.info("Gancio %s: %d places, %d events, %d details", name, len(v), len(e), details)
         venues.extend(v)
         events.extend(e)
+    log.info("Gancio geocoding: %d/%d addresses found", geocode.found, geocode.calls)
     return venues, events, ("error: " + "; ".join(errors)) if errors else "ok"

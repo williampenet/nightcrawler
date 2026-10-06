@@ -44,6 +44,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-05 | agent:reviewer | review WIP-36 | REQUEST_CHANGES: 2 blocking (malformed place crashed or collapsed Gancio venues; clash with WIP-35) + 7 non-blocking; fixed, rebased on WIP-35 | PR #22 |
 | 2026-10-05 | agent:dev | eval | WIP-33 runs 1-2 on CPU: best Ministral 3 3B F1 ≈ 0.6 (bar 0.85), Qwen3 1.7B leaks injected events; LLM extraction not enabled (ADR-0004) | [MODEL_EVAL](MODEL_EVAL.md) |
 | 2026-10-05 | agent:dev | infra | GitHub hosted runners repeatedly not acquired while the 40-min eval ran; eval moved off pull requests | |
+| 2026-10-06 | agent:dev | fix | WIP-39 Gancio places without coordinates geocoded with the national address API (IGN Géoplateforme, BAN), capped and memoised | PR #23 |
+| 2026-10-06 | agent:reviewer | review WIP-39 | REQUEST_CHANGES: 2 blocking (mis-geocode outside the zone silently dropped events; BAN/Etalab attribution missing) + 6 non-blocking; fixed | PR #23 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
