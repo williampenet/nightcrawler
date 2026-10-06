@@ -82,3 +82,15 @@ ul.concerts li.target {
   margin: 0 -10px; padding: 10px; border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 12%, transparent); outline: none;
 }
+
+/* "Mauvais rapprochement": a quiet text button next to the reason (WIP-41) */
+button.linkish {
+  background: none;
+  border: 0;
+  padding: 0 0 0 0.5em;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--muted, #666);
+  text-decoration: underline;
+  cursor: pointer;
+}

@@ -58,6 +58,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | scope | Wants feedback sent to the service (no export), duplicates fixed, asks for a central store with de-dup rules; asks for Scaleway pricing | |
 | 2026-10-06 | agent:dev | adr | ADR-0005 proposed: Scaleway Serverless SQL (PostgreSQL, min 0 vCPU) + one function for feedback, ≈ €1–2/month | [ADR](adr/0005-event-store-and-feedback.md) |
 | 2026-10-06 | human:william | validation | ADR-0005 accepted; William creates the Scaleway account | [ADR](adr/0005-event-store-and-feedback.md) |
+| 2026-10-06 | agent:dev | build | WIP-41 (part 1) buttons "J'aime" / "Pas pour moi", "Mauvais rapprochement" link under guessed reasons (stops related/style guesses for that artist, stored locally until ADR-0005's store) | PR #29 |
+| 2026-10-06 | agent:reviewer | review WIP-41 | REQUEST_CHANGES: keyboard focus lost after "Mauvais rapprochement" + 5 non-blocking; fixed | PR #29 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

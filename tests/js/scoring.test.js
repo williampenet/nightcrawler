@@ -94,3 +94,19 @@ test("no discovery badge for an artist we are not sure about (homonyms, WIP-40)"
   const p = S.buildProfile({ seeds: [{ name: "Acid Arab", tags: [] }] }, unsure);
   assert.equal(S.scoreConcert(c("1", ["asna"]), unsure, p).discovery, false);
 });
+
+test("a reported wrong match stops related and style guesses for that artist (WIP-41)", () => {
+  const state = { seeds: [{ name: "Sunn O)))", tags: ["drone"] }] };
+  const before = S.scoreConcert(c("1", ["earth"]), artists, S.buildProfile(state, artists));
+  assert.equal(before.inferred, true);
+  assert.equal(before.artist, "earth");
+  const after = S.scoreConcert(c("1", ["earth"]), artists, S.buildProfile({ ...state, wrong: ["earth"] }, artists));
+  assert.equal(after.score, 0);
+  const seeded = S.buildProfile({ seeds: [{ name: "Earth", tags: [] }], wrong: ["earth"] }, artists);
+  assert.equal(S.scoreConcert(c("1", ["earth"]), artists, seeded).score, 1); // own artists still match
+});
+
+test("a liked artist still counts after a wrong-match report", () => {
+  const p = S.buildProfile({ seeds: [], liked: ["boris"], wrong: ["boris"] }, artists);
+  assert.equal(S.scoreConcert(c("1", ["boris"]), artists, p).score, 0.9);
+});

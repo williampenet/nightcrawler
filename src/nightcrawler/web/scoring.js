@@ -60,7 +60,9 @@
     let norm2 = 0;
     for (const w of tagWeights.values()) if (w > 0) norm2 += w * w;
     const disliked = new Set(state.disliked || []);
-    return { seedNames, liked, disliked, tagWeights, tagNorm: Math.sqrt(norm2) };
+    // artists whose "Proche de" / "Style" match the listener reported as wrong (WIP-41)
+    const noInfer = new Set(state.wrong || []);
+    return { seedNames, liked, disliked, noInfer, tagWeights, tagNorm: Math.sqrt(norm2) };
   }
 
   function isEmpty(profile) {
@@ -81,13 +83,19 @@
 
   // Best match among the concert's artists: { score, reason, discovery }
   function scoreConcert(concert, artists, profile) {
-    let best = { score: 0, reason: null, discovery: false };
-    const consider = (score, reason, artist) => {
+    let best = { score: 0, reason: null, discovery: false, artist: null, inferred: false };
+    const consider = (score, reason, artist, inferred = false) => {
       if (score > best.score) {
         // a discovery = a little-known artist reached through a related or style match
         // only for confidently identified artists: a homonym's fan count says nothing (WIP-40)
         const known = artist.confident === true && Number.isInteger(artist.fans);
-        best = { score, reason, discovery: known && artist.fans < DISCOVERY_FANS && score <= 0.8 };
+        best = {
+          score,
+          reason,
+          discovery: known && artist.fans < DISCOVERY_FANS && score <= 0.8,
+          artist: artist.key,
+          inferred,
+        };
       }
     };
     for (const key of concert.artists || []) {
@@ -95,13 +103,14 @@
       if (!a || (profile.disliked && profile.disliked.has(key))) continue; // "pas pour moi" wins
       if (profile.seedNames.has(key)) consider(1, `Tu écoutes ${a.name}`, a);
       if (profile.liked.has(key)) consider(0.9, `Tu as aimé ${a.name}`, a);
+      if (profile.noInfer && profile.noInfer.has(key)) continue; // reported as a wrong match
       for (const rel of a.related || []) {
         const rk = norm(rel);
-        if (profile.seedNames.has(rk)) consider(0.8, `Proche de ${profile.seedNames.get(rk)}`, a);
-        else if (profile.liked.has(rk)) consider(0.7, `Proche de ${rel}`, a);
+        if (profile.seedNames.has(rk)) consider(0.8, `Proche de ${profile.seedNames.get(rk)}`, a, true);
+        else if (profile.liked.has(rk)) consider(0.7, `Proche de ${rel}`, a, true);
       }
       const { sim, shared } = styleSimilarity(a.tags, profile);
-      if (sim >= MIN_STYLE) consider(0.6 * Math.min(1, sim), `Style : ${shared.slice(0, 3).join(", ")}`, a);
+      if (sim >= MIN_STYLE) consider(0.6 * Math.min(1, sim), `Style : ${shared.slice(0, 3).join(", ")}`, a, true);
     }
     return best;
   }
