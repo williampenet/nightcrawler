@@ -68,7 +68,7 @@ function store(initial) {
 
 test("callback: ok path consumes the saved entry", () => {
   const s = store({ k: JSON.stringify({ verifier: "V", state: "S" }) });
-  assert.deepEqual(SP.consumeCallback("?code=C&state=S", s, "k"), { status: "ok", code: "C", verifier: "V" });
+  assert.deepEqual(SP.consumeCallback("?code=C&state=S", s, "k"), { status: "ok", code: "C", verifier: "V", probe: false });
   assert.equal(s.m.size, 0);
 });
 
@@ -104,4 +104,35 @@ test("token exchange sends exactly the PKCE fields, no secret", async () => {
 test("redirect URI ignores query, hash and index.html", () => {
   assert.equal(SP.redirectUriFor({ origin: "https://w.github.io", pathname: "/nightcrawler/index.html" }), "https://w.github.io/nightcrawler/");
   assert.equal(SP.redirectUriFor({ origin: "https://w.github.io", pathname: "/nightcrawler/" }), "https://w.github.io/nightcrawler/");
+});
+
+test("probe reports statuses and field presence only (WIP-48)", async () => {
+  const answers = {
+    "/me/top/artists": { status: 200, body: { items: [{ id: "a1", name: "Secret Name", genres: ["noise"] }] } },
+    "/me/top/tracks": { status: 200, body: { items: [{ id: "t1", name: "Song" }] } },
+    "/artists/a1/related-artists": { status: 404, body: {} },
+    "/recommendations": { status: 404, body: {} },
+    "/audio-features": { status: 403, body: {} },
+  };
+  const calls = [];
+  const fake = async (url, opts) => {
+    calls.push(opts.headers.Authorization);
+    const path = new URL(url).pathname.replace("/v1", "");
+    const a = answers[path] || { status: 200, body: {} };
+    return { ok: a.status < 300, status: a.status, json: async () => a.body };
+  };
+  const rows = await SP.probe("tok", fake);
+  const by = Object.fromEntries(rows.map((r) => [r.label, r]));
+  assert.match(by["Top artistes"].detail, /genres: 1, popularity: non, followers: non/);
+  assert.equal(by["Artistes proches"].status, 404);
+  assert.equal(by["Caractéristiques audio"].status, 403);
+  assert.ok(calls.every((h) => h === "Bearer tok"));
+  const text = SP.probeText(rows, "2026-10-06T15:00");
+  assert.ok(!text.includes("Secret Name") && !text.includes("a1") && !text.includes("tok"));
+});
+
+test("probe scopes are only used when asked", () => {
+  const u = (scope) => new URL(SP.authorizeUrl({ clientId: "c", redirectUri: "https://x/", challenge: "h", state: "s", scope }));
+  assert.equal(u(undefined).searchParams.get("scope"), "user-top-read user-follow-read");
+  assert.match(u(SP.PROBE_SCOPES).searchParams.get("scope"), /user-read-recently-played/);
 });

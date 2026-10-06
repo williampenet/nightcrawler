@@ -73,6 +73,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | deploy | Feedback function ready on Scaleway (python312, preflight 204, wrong token 401); URL published in config/app.yaml | |
 | 2026-10-06 | agent:dev | fix | WIP-47: "J'aime" / "Pas pour moi" on every concert (concerts without an identified artist rated by id and performer names, sent with empty artist keys); dismissible error banner for page errors and Spotify connection news | PR #35 |
 | 2026-10-06 | agent:reviewer | review WIP-47 | REQUEST_CHANGES: 2 blocking (liked concert overrides a disliked artist; like stuck after identification) + 8 non-blocking; fixed | PR #35 |
+| 2026-10-06 | human:william | rule | Every claim and conclusion must be sourced (doc, measurement or real test); asks a real test of what Spotify still returns (PRD said "to confirm") | |
+| 2026-10-06 | agent:dev | build | WIP-48 "Tester l'API Spotify": one-off OAuth with read-only scopes, calls 14 endpoints, shows statuses and field presence only (nothing stored); sourcing rule added to CLAUDE.md | PR #36 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

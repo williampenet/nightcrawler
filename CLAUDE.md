@@ -13,6 +13,7 @@
 - **Agents** (`.claude/agents/`): `dev`, `qa`, `reviewer`. Each works on exactly one ticket at a time.
 
 ## Working rules
+0. **Source every claim.** Every statement and every conclusion (in chat, ADRs, PRs, comments, reports) cites its source: official documentation, a measurement, or a real test, with the link. Nothing is invented; anything unverified is labelled "unverified" and confirmed by a real test as soon as possible (William, 2026-10-06).
 1. **One ticket = one branch = one PR.** Branch name: `wip-<number>-short-slug` (e.g. `wip-12-login-form`). PR title starts with the ticket ID: `WIP-12: Add login form`. This links the PR to Linear automatically.
 2. **Green CI is mandatory** before merge. Never disable or skip a test to make CI pass.
 3. **Small PRs:** aim for < 400 changed lines. Split the ticket otherwise.

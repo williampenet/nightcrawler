@@ -33,6 +33,16 @@
         <div class="row" id="spotify-row" hidden>
           <button type="button" id="spotify-connect" class="primary">Connecter Spotify</button>
           <span class="muted">Importe tes artistes les plus écoutés et suivis. Seuls leurs noms sont gardés, dans ce navigateur.</span>
+          <button type="button" id="spotify-probe-run" class="ghost">Tester l'API Spotify</button>
+        </div>
+        <div id="spotify-probe" hidden>
+          <p class="muted">Ce que l'API Spotify répond vraiment à cette app (rien n'est enregistré). Copie le texte ci-dessous pour le partager.</p>
+          <table>
+            <thead><tr><th>Donnée</th><th>Appel</th><th>Statut</th><th>Détail</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <label for="spotify-probe-text" class="visually-hidden">Résultat du test à copier</label>
+          <textarea id="spotify-probe-text" rows="6" readonly></textarea>
         </div>
         <label for="seeds" class="visually-hidden">Artistes que tu aimes</label>
         <textarea id="seeds" rows="6" placeholder="Sunn O)))&#10;Moondog&#10;Brigitte Fontaine"></textarea>
