@@ -41,9 +41,22 @@ def _host(url: str) -> str:
 
 def _coord(value) -> float | None:
     try:
-        return float(value)
+        x = float(value)
     except (TypeError, ValueError):
         return None
+    return x if math.isfinite(x) else None
+
+
+def _point(place: dict) -> tuple[float | None, float | None]:
+    """The place's (lat, lon), or (None, None) when unknown.
+
+    Some instances store unknown places at (0, 0) ("null island", e.g. Grrrnd Zero on
+    agenda.villemorte.fr): that is a missing value, not a point outside the zone.
+    """
+    lat, lon = _coord(place.get("latitude")), _coord(place.get("longitude"))
+    if lat is None or lon is None or (lat == 0 and lon == 0):
+        return None, None
+    return lat, lon
 
 
 def parse(
@@ -74,7 +87,7 @@ def parse(
             place = {}
         if not isinstance(place, dict):
             continue
-        lat, lon = _coord(place.get("latitude")), _coord(place.get("longitude"))
+        lat, lon = _point(place)
         address = _text(place.get("address"))
         if lat is not None and lon is not None and not zone.contains(lat, lon):
             continue  # the instance itself places it outside the zone
