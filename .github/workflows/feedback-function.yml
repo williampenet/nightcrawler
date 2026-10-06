@@ -1,6 +1,7 @@
 name: Feedback function
 
 # Packages and deploys functions/feedback on Scaleway Serverless Functions (ADR-0005).
+# A failed build is replaced by the next run (upload + deploy again).
 on:
   push:
     branches: [main]

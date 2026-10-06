@@ -56,14 +56,16 @@ def _pip_install(target: Path) -> None:
     )  # fmt: skip
 
 
-def _wait(client: httpx.Client, path: str, what: str, wait_s: float, ok=("ready",)) -> dict:
+def _wait(
+    client: httpx.Client, path: str, what: str, wait_s: float, ok=("ready",), fail=("error",)
+) -> dict:
     deadline = time.monotonic() + wait_s
     while True:
         obj = _check(client.get(path), what)
         status = obj.get("status")
         if status in ok:
             return obj
-        if status == "error" or time.monotonic() > deadline:
+        if status in fail or time.monotonic() > deadline:
             msg = obj.get("error_message") or obj.get("build_message") or ""
             raise ProvisionError(f"{what} status: {status} {msg[:200]}".rstrip())
         time.sleep(5)
@@ -140,7 +142,9 @@ def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 60
         else:
             fn = _check(client.patch(f"{BASE}/functions/{fn['id']}", json=settings), "update")
         path = f"{BASE}/functions/{fn['id']}"
-        _wait(client, path, "function", wait_s, ok=("ready", "created"))
+        # settle first (a PATCH may trigger a redeploy); a previous failed build ("error") can
+        # be replaced by a new upload + deploy
+        _wait(client, path, "function", wait_s, ok=("ready", "created", "error"), fail=())
         data = archive.read_bytes()
         up = _check(
             client.get(f"{path}/upload-url", params={"content_length": len(data)}), "upload url"
