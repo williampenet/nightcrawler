@@ -53,3 +53,31 @@ def test_ticketmaster_failure_does_not_stop(zone, tz, monkeypatch):
         [],
         "error: ConnectError",
     )
+
+
+def test_merge_identical_name_up_to_1500m():
+    # coordinates measured on the 2026-10-06 run: same hall, 580 m apart (WIP-51)
+    osm_v = Venue("osm:way/85000536", "Le Transbordeur", 45.78397, 4.86088, "music_venue")
+    tm_v = Venue("tm:rZ6SnyZ6A6", "LE TRANSBORDEUR", 45.778753, 4.859536, "music_venue")
+    merged, alias = merge([[osm_v], [tm_v]])
+    assert [v.id for v in merged] == ["osm:way/85000536"]
+    assert alias["tm:rZ6SnyZ6A6"] == "osm:way/85000536"
+
+
+def test_merge_far_or_partial_or_generic_names_stay_apart():
+    a = Venue("osm:1", "Le Transbordeur", 45.78397, 4.86088, "music_venue")
+    far = Venue("tm:1", "Le Transbordeur", 45.80, 4.86088, "music_venue")  # ~1.8 km
+    partial = Venue("tm:2", "Transbordeur Café", 45.7795, 4.8600, "music_venue")  # ~500 m
+    fetes1 = Venue("osm:2", "Salle des fêtes", 45.70, 4.80, "music_venue")
+    fetes2 = Venue("osm:3", "Salle des fêtes", 45.705, 4.80, "music_venue")  # ~560 m
+    merged, _ = merge([[a, fetes1], [far, partial, fetes2]])
+    assert len(merged) == 5
+
+
+def test_excluded_venue_names():
+    from nightcrawler.venues import is_excluded
+
+    excluded = ("Radiant Bellevue", "Toï Toï le Zinc")
+    assert is_excluded(Venue("tm:x", "RADIANT-BELLEVUE", 45.8, 4.8, "music_venue"), excluded)
+    assert is_excluded(Venue("g:x", "Toi Toi Le Zinc", 45.8, 4.8, "music_venue"), excluded)
+    assert not is_excluded(Venue("o:x", "Le Transbordeur", 45.8, 4.8, "music_venue"), excluded)

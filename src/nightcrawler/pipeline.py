@@ -18,7 +18,7 @@ from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
 from .sources import gancio, osm, ticketmaster
 from .store import sync
-from .venues import merge
+from .venues import is_excluded, merge
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +47,11 @@ def run(
     venues, alias = merge([osm_venues, tm_venues, ga_venues])
     for ev in tm_events + ga_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
+    # venues the user asked to drop (config/zone.yaml): removed from every source
+    dropped = {v.id for v in venues if is_excluded(v, zone.excluded_venues)}
+    venues = [v for v in venues if v.id not in dropped]
+    tm_events = [ev for ev in tm_events if ev.venue_id not in dropped]
+    ga_events = [ev for ev in ga_events if ev.venue_id not in dropped]
     by_id = {v.id: v for v in venues}
 
     # 2. probe venue websites in parallel (the fetcher rate-limits per host)
@@ -91,6 +96,7 @@ def run(
         "generated_at": now.isoformat(),
         "zone": zone.__dict__,
         "venues": len(venues),
+        "venues_excluded": len(dropped),
         "venues_with_website": sum(1 for v in venues if v.website),
         "probe_status": dict(Counter(p.status for p in probes.values())),
         "probe_method": dict(Counter(p.method for p in probes.values() if p.method)),
