@@ -103,7 +103,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - AC: ≥ 90 % precision above the confidence threshold, measured on concerts where the venue itself links the artist; below the threshold, the artist is shown as "to confirm".
 
 **FR-4 Taste profile (US-01)** — v2
-- Spotify login in the browser (OAuth Authorization Code + PKCE, no server, no secret): top artists (short, medium, long term) and followed artists become the seeds; only artist names are kept, the token is never stored.
+- Spotify login in the browser (OAuth Authorization Code + PKCE, no server, no secret): top artists (short, medium, long term) and followed artists become the seeds, then the artists of liked tracks (up to 500) and recently played tracks, most frequent first (WIP-49; endpoints verified by the 2026-10-06 test below); only artist names are kept (≤ 150), the token is never stored.
 - Seeds can be edited by hand; a public ListenBrainz account can also be imported.
 - AC: one click on "Connecter Spotify" fills "Mes goûts"; the "Pour moi" sort works right after.
 

@@ -6,11 +6,14 @@
   const AUTHORIZE = "https://accounts.spotify.com/authorize";
   const TOKEN = "https://accounts.spotify.com/api/token";
   const API = "https://api.spotify.com/v1";
-  const SCOPES = "user-top-read user-follow-read";
-  // read-only scopes requested only by the one-off API test (WIP-48), never by the import
-  const PROBE_SCOPES = SCOPES + " user-read-recently-played user-library-read playlist-read-private";
+  // top, followed (abonnements), liked tracks and recently played: all answered 200 in
+  // William's real test of 2026-10-06 (docs/adr/0003-spotify-login-pkce.md, Evidence)
+  const SCOPES = "user-top-read user-follow-read user-library-read user-read-recently-played";
+  // extra read-only scope requested only by the one-off API test (WIP-48)
+  const PROBE_SCOPES = SCOPES + " playlist-read-private";
+  const MAX_SAVED_PAGES = 10; // liked tracks read: up to 500 (order as returned by Spotify)
   const CLIENT_ID_RE = /^[0-9a-f]{32}$/;
-  const MAX_IMPORT = 100; // cap: each new seed costs one MusicBrainz call (1 per second)
+  const MAX_IMPORT = 150; // cap: each new seed costs one MusicBrainz call (1 per second)
 
   function base64url(bytes) {
     let s = "";
@@ -95,8 +98,9 @@
       .filter((n) => typeof n === "string" && n.trim());
   }
 
-  // Top artists (3 periods) + followed artists; only names leave this function.
-  // Returns { names (≤ MAX_IMPORT, most listened first), failed (calls that did not answer) }.
+  // Top artists (3 periods) and followed artists first, then the artists of liked tracks and
+  // recently played tracks, most frequent first. Only names leave this function.
+  // Returns { names (≤ MAX_IMPORT), failed (calls that did not answer) }.
   async function artistNames(token, fetchImpl = fetch) {
     let failed = 0;
     const get = async (path) => {
@@ -122,6 +126,26 @@
       after = block && block.cursors && block.cursors.after;
       if (!after) break;
     }
+    // artists of liked and recently played tracks, ranked by how often they appear
+    const counts = new Map();
+    const countTracks = (items) => {
+      for (const it of Array.isArray(items) ? items : []) {
+        for (const n of namesFrom(it && it.track && it.track.artists)) {
+          const k = n.toLowerCase(); // "Low" and "LOW" are one artist
+          const c = counts.get(k) || { name: n, count: 0 };
+          c.count++;
+          counts.set(k, c);
+        }
+      }
+    };
+    for (let page = 0; page < MAX_SAVED_PAGES; page++) {
+      const data = await get(`/me/tracks?limit=50&offset=${page * 50}`);
+      countTracks(data && data.items);
+      if (!data || !data.next) break;
+    }
+    const recent = await get("/me/player/recently-played?limit=50");
+    countTracks(recent && recent.items);
+    names.push(...[...counts.values()].sort((a, b) => b.count - a.count).map((c) => c.name));
     const seen = new Set();
     const unique = names.filter((n) => {
       const k = n.toLowerCase();

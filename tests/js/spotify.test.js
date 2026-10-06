@@ -25,7 +25,7 @@ test("authorize URL", () => {
   assert.equal(u.origin + u.pathname, "https://accounts.spotify.com/authorize");
   assert.equal(u.searchParams.get("code_challenge_method"), "S256");
   assert.equal(u.searchParams.get("redirect_uri"), "https://w.github.io/n/");
-  assert.equal(u.searchParams.get("scope"), "user-top-read user-follow-read");
+  assert.equal(u.searchParams.get("scope"), SP.SCOPES);
   assert.equal(u.searchParams.get("state"), "st");
 });
 
@@ -43,7 +43,29 @@ test("artist names: top + followed, deduped, paginated", async () => {
   const { names, failed } = await SP.artistNames("tok", fake);
   assert.deepEqual(names, ["Earth", "Boris", "Sunn O)))", "Moondog"]);
   assert.equal(failed, 0);
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 7); // 3 top + 2 followed pages + 1 liked page + recently played
+});
+
+test("artist names: liked and recent tracks add artists, most frequent first", async () => {
+  const track = (...names) => ({ track: { artists: names.map((name) => ({ name })) } });
+  const fake = async (url) => {
+    let json = {};
+    if (url.includes("/me/top/artists")) json = { items: [{ name: "Earth" }] };
+    else if (url.includes("/me/following")) json = { artists: { items: [], cursors: {} } };
+    else if (url.includes("/me/tracks?limit=50&offset=0"))
+      json = { items: [track("Low"), track("Moondog", "Low"), track("Earth")], next: "p2" };
+    else if (url.includes("/me/tracks")) json = { items: [track("Moondog")], next: null };
+    else if (url.includes("recently-played")) json = { items: [track("Low"), track("Arca")] };
+    return { ok: true, status: 200, json: async () => json };
+  };
+  const { names } = await SP.artistNames("t", fake);
+  assert.deepEqual(names, ["Earth", "Low", "Moondog", "Arca"]);
+});
+
+test("the import asks for liked tracks and recently played", () => {
+  const u = new URL(SP.authorizeUrl({ clientId: "c", redirectUri: "https://x/", challenge: "h", state: "s" }));
+  assert.equal(u.searchParams.get("scope"),
+    "user-top-read user-follow-read user-library-read user-read-recently-played");
 });
 
 test("403 means the account is not allowed on the app", async () => {
@@ -133,6 +155,26 @@ test("probe reports statuses and field presence only (WIP-48)", async () => {
 
 test("probe scopes are only used when asked", () => {
   const u = (scope) => new URL(SP.authorizeUrl({ clientId: "c", redirectUri: "https://x/", challenge: "h", state: "s", scope }));
-  assert.equal(u(undefined).searchParams.get("scope"), "user-top-read user-follow-read");
-  assert.match(u(SP.PROBE_SCOPES).searchParams.get("scope"), /user-read-recently-played/);
+  assert.equal(u(undefined).searchParams.get("scope"), SP.SCOPES);
+  assert.match(u(SP.PROBE_SCOPES).searchParams.get("scope"), /playlist-read-private/);
+});
+
+test("liked tracks: a failed page stops the loop and is counted; at most 10 pages", async () => {
+  const track = (name) => ({ track: { artists: [{ name }] } });
+  let pages = 0;
+  const fake = (failAt) => async (url) => {
+    if (url.includes("/me/tracks")) {
+      pages++;
+      if (pages === failAt) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ items: [track("LOW"), track("Low")], next: "more" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ items: [], artists: { items: [], cursors: {} } }) };
+  };
+  let r = await SP.artistNames("t", fake(2));
+  assert.equal(pages, 2);
+  assert.equal(r.failed, 1);
+  assert.deepEqual(r.names, ["LOW"]);
+  pages = 0;
+  r = await SP.artistNames("t", fake(0));
+  assert.equal(pages, 10);
 });
