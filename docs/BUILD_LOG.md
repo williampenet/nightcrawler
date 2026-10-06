@@ -61,7 +61,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | build | WIP-41 (part 1) buttons "J'aime" / "Pas pour moi", "Mauvais rapprochement" link under guessed reasons (stops related/style guesses for that artist, stored locally until ADR-0005's store) | PR #29 |
 | 2026-10-06 | agent:reviewer | review WIP-41 | REQUEST_CHANGES: keyboard focus lost after "Mauvais rapprochement" + 5 non-blocking; fixed | PR #29 |
 | 2026-10-06 | human:william | setup | Scaleway account, project, API key and GitHub secrets created | |
-| 2026-10-06 | agent:dev | build | WIP-44 step 1: Event store workflow provisions the Serverless SQL Database (REST API, idempotent) and applies schema migrations; CI gets a throwaway PostgreSQL for store tests | |
+| 2026-10-06 | agent:dev | build | WIP-44 step 1: Event store workflow provisions the Serverless SQL Database (REST API, idempotent) and applies schema migrations; CI gets a throwaway PostgreSQL for store tests | PR #30 |
+| 2026-10-06 | agent:reviewer | review WIP-44 | REQUEST_CHANGES: guard the DROP SCHEMA test against non-local databases + 8 non-blocking (IAM rights, migration lock, GITHUB_ENV guard, naming, paths, index, tests); fixed | PR #30 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

@@ -55,7 +55,7 @@ Scaleway, region fr-par:
   e-mail, no IP stored. EU provider and region. GDPR: personal use by the data subject himself;
   deletion = one SQL statement.
 - **Secrets:** database credentials and the token hash in Scaleway secrets / GitHub Actions
-  secrets (`SCW_DB_URL`, `FEEDBACK_TOKEN_SHA256`); never in the repo or the page.
+  secrets (`SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID`, `FEEDBACK_TOKEN_SHA256`; the database URL is built at run time, not stored); never in the repo or the page.
 - **Untrusted input:** the function validates against a JSON schema and uses parameterised SQL;
   source payloads are stored as data and never executed.
 - **Supply chain:** psycopg pinned; Scaleway's official function runtime.

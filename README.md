@@ -56,7 +56,7 @@ Spotify login (optional, personal use): create an app on the Spotify for Develop
 
 Optional secret: `TICKETMASTER_API_KEY` (GitHub Actions secret) adds Ticketmaster events.
 
-Event store (ADR-0005): `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID` (GitHub Actions secrets). The **Event store** workflow creates the Scaleway Serverless SQL Database (fr-par, 0–1 vCPU) once and applies `src/nightcrawler/store/sql/*.sql`; later steps get `DATABASE_URL` (masked).
+Event store (ADR-0005): `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID` (GitHub Actions secrets). The **Event store** workflow creates the Scaleway Serverless SQL Database (fr-par, 0–1 vCPU) once and applies `src/nightcrawler/store/sql/*.sql`; later steps get `DATABASE_URL` (masked), built at run time from the database endpoint, the API key owner's IAM id (or the optional `SCW_DB_USER` secret) and the secret key, so no URL secret is stored. The key's owner needs IAM read access to its own API key and Serverless SQL Database read/write rights.
 
 ## Monthly cost
 

@@ -54,7 +54,12 @@ def _check(r: httpx.Response, what: str) -> dict:
 
 
 def principal_id(client: httpx.Client, creds: Credentials) -> str:
-    """The IAM user or application that owns the API key: the database user name."""
+    """The IAM user or application that owns the API key: the database user name.
+
+    SCW_DB_USER skips the lookup, for keys without IAM read rights on themselves.
+    """
+    if os.environ.get("SCW_DB_USER"):
+        return os.environ["SCW_DB_USER"]
     key = _check(client.get(f"/iam/v1alpha1/api-keys/{creds.access_key}"), "api key")
     pid = key.get("application_id") or key.get("user_id")
     if not pid:

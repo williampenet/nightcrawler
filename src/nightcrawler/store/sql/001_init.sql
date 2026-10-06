@@ -28,6 +28,8 @@ CREATE TABLE concert_sources (
     PRIMARY KEY (concert_id, raw_id)
 );
 
+CREATE INDEX concert_sources_raw ON concert_sources (raw_id);
+
 -- manual corrections that the de-dup rules must respect
 CREATE TABLE overrides (
     id          BIGSERIAL PRIMARY KEY,
@@ -36,7 +38,8 @@ CREATE TABLE overrides (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- the listener's ratings, sent by the page through the feedback function
+-- the listener's ratings, sent by the page through the feedback function.
+-- No foreign key on concert_id: a rating can arrive before or after the concert is stored.
 CREATE TABLE feedback (
     id          BIGSERIAL PRIMARY KEY,
     concert_id  TEXT,

@@ -93,6 +93,9 @@ def store_command() -> int:
         return 1
     if os.environ.get("GITHUB_ACTIONS") == "true":
         print(f"::add-mask::{url}", flush=True)
+        if "\n" in url or "\r" in url:  # would inject extra variables into GITHUB_ENV
+            annotate("error", "Event store: unexpected newline in the connection URL")
+            return 1
         if path := os.environ.get("GITHUB_ENV"):
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(f"DATABASE_URL={url}\n")

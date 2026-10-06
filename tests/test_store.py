@@ -52,6 +52,38 @@ def test_ensure_fails_clearly():
         provision.ensure(CREDS)
 
 
+@respx.mock
+def test_existing_database_is_reused():
+    respx.get(f"{provision.API}/iam/v1alpha1/api-keys/SCWACCESS").respond(json={"user_id": "u"})
+    listing = respx.get(DBS).respond(
+        json={
+            "databases": [
+                {
+                    "id": "x",
+                    "name": "nightcrawler-old",
+                    "status": "ready",
+                    "endpoint": "postgres://o/db",
+                },
+                {
+                    "id": "db1",
+                    "name": "nightcrawler",
+                    "status": "ready",
+                    "endpoint": "postgres://h/db",
+                },
+            ]
+        }
+    )
+    create = respx.post(DBS).respond(500)
+    db, url = provision.ensure(CREDS)
+    assert db["id"] == "db1" and not create.called and url.endswith("@h/db?sslmode=require")
+    assert listing.calls[0].request.url.params["project_id"] == "proj-1"
+
+
+def test_db_user_override_skips_iam(monkeypatch):
+    monkeypatch.setenv("SCW_DB_USER", "app-1")
+    assert provision.principal_id(None, CREDS) == "app-1"
+
+
 def test_missing_secrets(monkeypatch):
     for n in ("SCW_ACCESS_KEY", "SCW_SECRET_KEY", "SCW_DEFAULT_PROJECT_ID"):
         monkeypatch.delenv(n, raising=False)
@@ -63,7 +95,15 @@ def test_migration_files_are_numbered():
     assert [v for v, _ in migrations()] == [1]
 
 
-@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL")
+def _local_test_db() -> bool:
+    # the test drops the public schema: never run it against anything but a local server
+    from urllib.parse import urlsplit
+
+    url = os.environ.get("TEST_DATABASE_URL", "")
+    return bool(url) and urlsplit(url).hostname in ("localhost", "127.0.0.1")
+
+
+@pytest.mark.skipif(not _local_test_db(), reason="needs a local TEST_DATABASE_URL")
 def test_migrate_on_real_postgres():
     import psycopg
 
