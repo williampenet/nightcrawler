@@ -82,6 +82,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | scope | Asks to use followed artists (already imported) and liked tracks from Spotify | |
 | 2026-10-06 | agent:dev | build | WIP-49 Spotify import adds artists of liked tracks and recently played, by frequency; ADR-0003 amended | PR #39 |
 | 2026-10-06 | agent:reviewer | review WIP-49 | APPROVE + 4 non-blocking (case-insensitive counts, unsourced "newest first" removed, tests, log link); applied | PR #39 |
+| 2026-10-06 | agent:dev | build | WIP-46 part B: pipeline syncs with the event store when DATABASE_URL is set (raw events, stable concert ids, not_concert overrides, reported artists); runs without it on any error | branch wip-46-pipeline-store |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

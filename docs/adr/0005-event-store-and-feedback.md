@@ -99,6 +99,22 @@ Scaleway, region fr-par:
   2026-10-06 deploy answered the preflight with 204 and a wrong-token POST with 401). The
   deploy smoke test now also requires, with a wrong token, `GET /profile` → 401 and
   `GET /` → 405, which proves sub-paths reach the function; the deploy fails otherwise.
+- Implementation notes (WIP-46, pipeline ↔ store): `store/sync.py`, called by the pipeline
+  only when `DATABASE_URL` is set (the Pipeline workflow runs `nightcrawler store` first,
+  `continue-on-error`). One connection (60 s connect timeout for a waking database), one
+  transaction, before artist enrichment: raw events upserted (`source_key` = URL, else
+  title, + start: sources expose no id yet); stored concerts of the window matched first by
+  id or alias, then by `dedup.same_concert()` (the within-run rule without series words),
+  used only when the candidate is unique on both sides so a festival name cannot steal an
+  id; `concert_sources.rule` = `new` | `id` | `dedup`, the rule that first attached that raw
+  event. `not_concert` overrides (payload `{concert_id}`, id or alias) drop concerts from the
+  output; `merge`/`split` are not applied yet (TODO in the code, no ticket yet). Artist keys
+  with a `wrong` feedback are published with no related artists or tags and
+  `doubt: "reported"`. Any store error keeps this run's own result (tested with a refused
+  connection) and is reported as `store.status = "error: <type>"`. Tested on a local
+  PostgreSQL 16 (`tests/test_store_sync.py`: two runs keep the id, a renamed title within
+  the rules keeps it, an override drops, a wrong feedback is returned); not yet run against
+  the Scaleway database (unverified until the first Pipeline run).
 - Follow-up WIP-45: the function connects with the pipeline's API key for now; a dedicated IAM
   application with Serverless SQL rights only will replace it.
 

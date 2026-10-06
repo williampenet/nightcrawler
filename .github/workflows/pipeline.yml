@@ -61,6 +61,21 @@ jobs:
           key: http-${{ github.run_id }}
           restore-keys: http-
 
+      # Event store (ADR-0005, WIP-46): exports DATABASE_URL (masked) for the run step.
+      # If it fails, the run proceeds stateless, as before the store existed.
+      - name: Connect the event store
+        id: store
+        continue-on-error: true
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          SCW_DB_USER: ${{ secrets.SCW_DB_USER }}  # optional
+        run: python -m nightcrawler store
+      - name: Note the missing event store
+        if: steps.store.outcome == 'failure'
+        run: echo "::warning::Event store unavailable; the pipeline runs without it"
+
       - name: Run the pipeline
         env:
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}

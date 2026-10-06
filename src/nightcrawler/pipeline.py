@@ -17,6 +17,7 @@ from .http import Fetcher
 from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
 from .sources import gancio, osm, ticketmaster
+from .store import sync
 from .venues import merge
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ def run(
     fetcher: Fetcher,
     now: datetime | None = None,
     osm_extract: Path | None = None,
+    database_url: str | None = None,
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
@@ -73,8 +75,16 @@ def run(
     # 3. concerts
     dedup: dict = {}
     concerts = build_concerts(raw, by_id, now=now, window_days=zone.window_days, tz=tz, stats=dedup)
+    store: dict = {"status": "off"}  # no DATABASE_URL: stateless run (ADR-0001)
+    reported: set[str] = set()
+    if database_url:  # stable ids, overrides, feedback (ADR-0005, WIP-46)
+        concerts, store, reported = sync.sync(
+            database_url, raw, concerts, by_id, now, zone.window_days, tz
+        )
     per_venue = Counter(c.venue_id for c in concerts)
     artists, artist_stats = enrich(concerts, fetcher)
+    if store["status"] == "ok":
+        store["reported_artists"] = sync.mark_reported(artists, reported)
 
     # 4. outputs
     report = {
@@ -106,6 +116,9 @@ def run(
         "dedup": dedup,  # {merged, conflicts, merge_examples, conflict_examples} (WIP-42)
         "venues_with_concerts": len(per_venue),
         "artists": artist_stats,
+        # {status, raw_upserted, concerts_reused, concerts_new, overrides_applied,
+        #  reported_artists} when the store answered
+        "store": store,
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):

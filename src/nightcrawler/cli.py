@@ -61,12 +61,15 @@ def main(argv: list[str] | None = None) -> int:
             # Deezer allows ~50 requests / 5 s; everyone else gets 1 request / s
             Fetcher(cache_dir=args.cache, host_intervals={"api.deezer.com": 0.2}),
             osm_extract=Path(args.osm_extract),
+            database_url=os.environ.get("DATABASE_URL") or None,  # set by `nightcrawler store`
         )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets
         annotate("error", f"Pipeline failed: {type(exc).__name__}: {str(exc)[:500]}")
         raise
 
+    if report["store"]["status"].startswith("error"):
+        annotate("warning", f"Event store: {report['store']['status']}; published without it")
     annotate("notice", one_line(report))
     summary = summary_markdown(report)
     print(summary)
@@ -182,6 +185,10 @@ def one_line(report: dict) -> str:
     ga = src.get("gancio", {})
     art = report.get("artists", {})
     dd = report.get("dedup", {})
+    st = report.get("store", {})
+    store = st.get("status", "off")
+    if store == "ok":
+        store += "(" + " ".join(f"{k}={v}" for k, v in st.items() if k != "status") + ")"
     platforms = ",".join(
         f"{name}(" + " ".join(f"{k}={v}" for k, v in p.items()) + ")"
         for name, p in src.get("platforms", {}).items()
@@ -194,7 +201,7 @@ def one_line(report: dict) -> str:
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
         f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} "
-        f"dedup={dd.get('merged')}/{dd.get('conflicts')} | "
+        f"dedup={dd.get('merged')}/{dd.get('conflicts')} store={store} | "
         f"artists: {art.get('identified')}/{art.get('candidates')} identified "
         f"({art.get('confident')} confident; doubts: ambiguous={art.get('doubt_ambiguous')} "
         f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "

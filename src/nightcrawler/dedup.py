@@ -161,6 +161,18 @@ def near(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
     return va is not None and vb is not None and distance_m(va, vb) <= MAX_DISTANCE_M
 
 
+def same_concert(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
+    """dedupe()'s pairwise rule, used across runs by the event store (WIP-46).
+
+    Series words are not removed here (they need the whole day's listings), so a festival
+    name can make two acts look alike: the store only reuses a match that is unique.
+    """
+    if not (same_slot(a, b) and near(a, b, venues)):
+        return False
+    ca, cb = clean_title(a.title, a.performers), clean_title(b.title, b.performers)
+    return bool(_acts(a) & _acts(b)) or similar_titles(ca, cb, _tokens(ca), _tokens(cb))
+
+
 def concert_id(c: Concert) -> str:
     key = clean_title(c.title, c.performers).replace(" ", "") or _key(c.title)
     raw = f"{c.venue_id}|{_start(c).date().isoformat()}|{key}"
