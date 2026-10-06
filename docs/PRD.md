@@ -10,7 +10,7 @@
 > language model, instead of artist similarity from Spotify), and **evaluation** (the old watch's
 > picks become the reference set). Changes are marked "v3" below.
 
-> **v2 change (2026-10-05):** Nightcrawler is now a personal app for William only, with easy sharing to friends. Multi-user requirements move to "Later". Spotify login becomes the taste source (Development Mode allows the owner plus up to 4 test users).
+> **v2 change (2026-10-05):** Nightcrawler is now a personal app for William only, with easy sharing to friends. Multi-user requirements move to "Later". Spotify login becomes the taste source (superseded by v3, see FR-4; Development Mode allows the owner plus up to 4 test users).
 
 | | |
 |---|---|
@@ -35,7 +35,7 @@ taste profile, with a memory of what it had already reported (`concerts-vus.md`,
 2026-07-26 to 2026-12-17). The PM rates its picks as good and Nightcrawler's as mostly off-target.
 Measurement on the published data of 2026-10-06 20:42: 40 of those events fall in Nightcrawler's
 window (≤ 2026-12-05); 11 are present (artist name searched in title and performers, same date,
-checked by hand). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
+checked by hand; reproduced in CI by the FR-11 coverage measure, ticket WIP-55). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
 Subsistances and Chapelle de la Trinité (no agenda detected), Grrrnd Zero (platform pages only,
 0 concerts), Auditorium (2 concerts); L'Épicerie Moderne gives 4.
 The gap has two causes: coverage (agendas published only as HTML are not read, ADR-0001 /
@@ -58,9 +58,9 @@ Targets come from the experiment plan (validation phase, days 46–90).
 
 | Goal | Metric | Target |
 |---|---|---|
-| The tool comes to me | Weekly digests opened | ≥ 60 % |
-| Recommendations are relevant | Share of "relevant" feedback in the digest after 4 weeks | ≥ 50 % |
-| I discover new artists | Unknown artists rated relevant per digest | ≥ 1 |
+| The tool comes to me | Weekly digests opened (v2; v3: app visits per week, target to set with the PM) | ≥ 60 % |
+| Recommendations are relevant | Share of "relevant" feedback in the digest after 4 weeks (v3: in the app's "À ne pas rater" and "Pour toi") | ≥ 50 % |
+| I discover new artists | Unknown artists rated relevant per digest (v3: per week, "Découvertes") | ≥ 1 |
 | I actually go out more | Concerts attended thanks to the tool | ≥ 1 per month |
 | It beats what I already use | Relevant concerts surfaced only by the tool (vs Shotgun, Bandsintown, newsletters) | ≥ 30 % |
 | Urgent alerts are worth it | Useful alerts / ignored alerts | ≥ 1 useful per month, ≤ 2 ignored per week |
@@ -97,7 +97,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 | ID | As a… | I want… | So that… | Priority |
 |---|---|---|---|---|
 | US-01 | user | to connect my Spotify account once | my tastes are known without typing them | Must |
-| US-02 | user | a weekly digest of the best upcoming concerts for me | I don't have to search | Must |
+| US-02 | user | ~~a weekly digest~~ (v3) a home page that opens on the best upcoming concerts for me | I don't have to search | Must |
 | US-03 | user | an immediate alert when an artist I love announces a date or when a matching concert is selling out | I don't miss tickets | Should |
 | US-04 | user | to see why a concert is recommended | I trust the pick and decide faster | Must |
 | US-05 | user | to listen to an extract on the concert page | I can judge an unknown artist in seconds | Must |
@@ -116,7 +116,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - AC (v3, gate): ≥ 80 % of the reference events (FR-11) in the window are present, measured in CI on each run; each venue of "Mes salles" reports its status (read / broken) in the app.
 - **"Ailleurs"**: the existing automatic discovery below stays, for openness; its concerts reach the home sections only through the taste judgement.
 - Venues are found automatically from three layers: event aggregators (Ticketmaster Discovery API, OpenAgenda, DATAtourisme), map data (OpenStreetMap venue categories), and a probe of each venue website that detects structured data (schema.org Event, iCal, RSS, ticketing widgets), with an LLM extraction fallback.
-- AC: on the PM's reference list of venues (including small independent ones), ≥ 80 % are found and connected with no manual step.
+- AC (v2, superseded by the v3 gate above for "Mes salles"; still applies to "Ailleurs"): on the PM's reference list of venues (including small independent ones), ≥ 80 % are found and connected with no manual step.
 - AC: adding a venue by URL connects its agenda automatically, or reports clearly why it could not.
 
 **FR-2 Event collection**
@@ -128,7 +128,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 - AC: ≥ 90 % precision above the confidence threshold, measured on concerts where the venue itself links the artist; below the threshold, the artist is shown as "to confirm".
 
 **FR-4 Taste profile (US-01)** — v3
-- **The written profile is the main taste source**: favoured families with reference artists, what to set aside ("ce qui est formaté grand public… l'évident, le consensuel, le déjà-entendu"; notoriety is not the criterion), and conditions ("jazz only when it crosses something else"). It starts from the PM's watch instructions, is editable in the app and is stored in the event store, not in the public repo.
+- **The written profile is the main taste source**: favoured families with reference artists, what to set aside (the mainstream and the obvious; notoriety is not the criterion), and conditions ("jazz only when it crosses something else"). It starts from the PM's watch instructions, is editable in the app and is stored in the event store, not in the public repo.
 - Spotify and ratings stay as complements (below).
 
 v2 text, kept as complement:
@@ -150,16 +150,16 @@ v2 text (artist similarity), kept as a complementary signal for concerts with an
 
 **FR-6 Feed and concert page (US-05, US-06, US-07, US-08)** — v3: home = "À ne pas rater" (1–4 per week, verdict `must_see`), "Pour toi", "Découvertes" (artists unknown to the profile, in a relevant venue), then "Tout voir"; a "nouveau" badge on concerts added since the last visit (replaces the watch's memory of reported events).
 - List view sorted by score, calendar view by date, filters by date and venue.
-- Concert page: date, venue, artists, reason, audio preview (Deezer extracts), official ticket link, share button (FR-10).
-- AC: from the digest, reaching a playing preview takes ≤ 2 taps.
+- Concert page: date, venue, artists, reason, audio preview (Deezer extracts, kept in v3), official ticket link, share button (FR-10).
+- AC: from the home page (v3; v2 said "from the digest"), reaching a playing preview takes ≤ 2 taps.
 
 **FR-7 Notifications (US-02, US-03)** — v3: the weekly email digest is dropped (the app is the deliverable); an alert for a new `must_see` concert stays a Should, channel to decide.
-- Weekly email digest (top picks + at least one discovery).
-- Immediate Telegram alert for: a new date by a strongly matched artist, tickets going on sale, a matching concert close to sold out (when the source exposes it).
+- ~~Weekly email digest (top picks + at least one discovery).~~ Dropped in v3.
+- (v2, to revisit with the v3 alert) Immediate Telegram alert for: a new date by a strongly matched artist, tickets going on sale, a matching concert close to sold out (when the source exposes it).
 - AC: alerts sent within 24 h of detection; user can mute alert types.
 
 **FR-8 Feedback (US-09)**
-- "Relevant / not for me" on every concert, in the app and from the digest; implicit signals (preview played, calendar add, ticket click) are logged.
+- "Relevant / not for me" on every concert, in the app (v3; the digest is dropped); implicit signals (preview played, calendar add, ticket click) are logged.
 - AC: feedback is stored per user, feeds the evaluation set and changes the ranking of later picks.
 
 **FR-9 "Missed concerts" retro (US-12)**
@@ -180,7 +180,7 @@ v2 text (artist similarity), kept as a complementary signal for concerts with an
 
 - **Cost**: ≤ 20 € per month in total, free tiers first.
 - **Privacy (GDPR)**: listening history and feedback are personal data, stored and processed in the EU; no personal data sent to a non-EU provider; provider retention and training disabled; data deletion on request.
-- **LLM usage** (v3): two tasks, `extract_events` (agenda pages) and `judge_taste` (concert vs profile), each with its own model-selection ADR; candidates studied from the QuelLLM.fr catalogue and verified on model cards; smallest adequate model, local / CPU first, then EU-hosted API; outputs validated against a schema; web content treated as untrusted data (prompt injection). The taste profile is personal data: it goes only to a local model or an EU provider with retention and training off; the proprietary baseline is used only in the offline evaluation, on public events and a profile text with no identity.
+- **LLM usage** (v3): two tasks, `extract_events` (agenda pages) and `judge_taste` (concert vs profile), each with its own model-selection ADR; candidates studied from the QuelLLM.fr catalogue and verified on model cards; smallest adequate model, local / CPU first, then EU-hosted API; outputs validated against a schema; web content treated as untrusted data (prompt injection). The taste profile and in-app ratings are personal data: they go only to a local model or an EU provider with retention and training off. The proprietary baseline (Claude) is **not called** unless the PM explicitly approves it in the model-selection ADR (removing the name does not make a profile anonymous, GDPR Recital 26); until then, the reference for the baseline is the former watch's own picks, which were produced by Claude.
 - **Sourcing etiquette and licences**: respect robots.txt and rate limits, cache responses; attribute ODbL sources (OpenAgenda, OpenStreetMap); check share-alike and non-commercial clauses before any public or commercial use.
 - **Transparency (AI Act)**: the UI says recommendations are automated and shows why.
 - **Freshness**: daily collection; alerts within 24 h.
@@ -204,16 +204,15 @@ v2 text (artist similarity), kept as a complementary signal for concerts with an
 | Brief said | Engineer pushed back | Resolution |
 |---|---|---|
 | Use Spotify for tastes, similar artists and previews | Spotify API closed these to new apps (2024–2026) | Spotify only as a history source; ListenBrainz, Deezer, MusicBrainz instead |
-| Notify on WhatsApp | WhatsApp Business API is paid and heavy | Email digest + Telegram alerts; WhatsApp only as a share link |
+| Notify on WhatsApp | WhatsApp Business API is paid and heavy | Email digest + Telegram alerts (v3: digest dropped, alert channel to decide); WhatsApp only as a share link |
 | Mobile or desktop | Native apps cost two codebases and a store | Mobile-first PWA |
 | Match concerts by music style | Style is coarse and missing for small artists | Combined score: co-listening, audio, venue text, co-billing |
-| Let an LLM estimate taste proximity | Research finds LLM similarity judgements unreliable (never measured on this task) | LLM limited to text extraction — **reversed in v3**: the PM's LLM watch gave better picks; the judgement is against a written profile and is measured on FR-11 before use |
+| Let an LLM estimate taste proximity | LLM similarity judgements claimed unreliable (unverified: no source recorded, never measured on this task) | LLM limited to text extraction — **reversed in v3**: the PM's LLM watch gave better picks; the judgement is against a written profile and is measured on FR-11 before use |
 | Provide my list of venues | Manual and user-specific | Automatic discovery; the PM's list becomes the test set — **v3**: the list was never collected; it becomes the first circle of sources, discovery stays for the rest |
 | Manual labelling to evaluate | Does not scale to other users | Backtest on listening history + in-app feedback |
 | Keep a 4-week diary of missed concerts | Manual effort | Automated 2-minute "missed concerts" retro |
-| One weekly notification | Some concerts need fast reaction | Two rhythms: weekly digest + immediate alerts |
+| One weekly notification | Some concerts need fast reaction | Two rhythms: weekly digest + immediate alerts (v3: the app + an alert for "À ne pas rater") |
 | "No manual setup, works for anyone" (v1) | Spotify login caps at 5 users and needs Premium; a generic app cannot use it | PM pivot (v2): personal app, Spotify login for William, sharing to friends instead of multi-user |
-
 | (v3) Deliver a weekly report like the old watch | — | PM: the app is the deliverable; the watch's memory becomes a "nouveau" badge |
 | (v3) Keep Claude as the judge | Project policy: study open-weight models first | PM: study the catalogue (QuelLLM.fr), compare with Claude, adapt weights if needed; keep Claude only if the ADR shows it is needed |
 
