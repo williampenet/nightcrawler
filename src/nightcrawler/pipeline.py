@@ -15,7 +15,7 @@ from .config import Zone
 from .events import build_concerts
 from .http import Fetcher
 from .models import Probe, RawEvent, Venue
-from .probe import probe_venue
+from .probe import PlatformBudget, probe_venue
 from .sources import gancio, osm, ticketmaster
 from .venues import merge
 
@@ -50,10 +50,11 @@ def run(
     # 2. probe venue websites in parallel (the fetcher rate-limits per host)
     probes: dict[str, Probe] = {}
     raw: list[RawEvent] = list(tm_events)
+    budget = PlatformBudget()  # run-wide cap on ticketing platform pages
 
     def task(v: Venue) -> tuple[Probe, list[RawEvent]]:
         try:
-            return probe_venue(v, fetcher, tz)
+            return probe_venue(v, fetcher, tz, budget)
         except Exception as exc:  # one broken site must not stop the run
             log.warning("probe failed for %s: %s", v.id, type(exc).__name__)
             return Probe(v.id, "fetch_error", detail=type(exc).__name__), []
@@ -97,6 +98,7 @@ def run(
                 "instances": [dict(i) for i in zone.gancio_instances],
             },
             "website_events": len(raw) - len(tm_events) - len(ga_events),
+            "platforms": platform_stats(probes.values()),
         },
         "raw_events": len(raw),
         "concerts": len(concerts),
@@ -116,6 +118,28 @@ def run(
     _dump(data_dir / "artists.json", {k: a.to_dict() for k, a in sorted(artists.items())})
     _dump(data_dir / "report.json", report)
     return report
+
+
+def platform_stats(probes) -> dict[str, dict[str, int]]:
+    """Per platform: pages requested, pages with events, events, pages blocked by robots.txt.
+
+    Pages skipped because the run-wide budget was spent are not counted (see venues.json).
+    """
+    stats: dict[str, dict[str, int]] = {}
+    for probe in probes:
+        for page in probe.platform_pages:
+            if page["status"] == "skipped_budget":
+                continue
+            s = stats.setdefault(
+                page["platform"], {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 0}
+            )
+            if page["status"] == "robots_blocked":
+                s["robots_blocked"] += 1
+            else:
+                s["pages"] += 1
+                s["with_events"] += page["events"] > 0
+                s["events"] += page["events"]
+    return dict(sorted(stats.items()))
 
 
 def _dump(path: Path, data) -> None:

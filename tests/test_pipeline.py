@@ -106,3 +106,49 @@ def test_end_to_end_with_gancio(tmp_path, zone, tz, fixture_text, monkeypatch):
     assert drone["sources"] == ["json-ld", "gancio:agenda.example"]
     assert concerts[-1]["venue_name"] == "Lieu tenu secret"
     assert "gancio=ok (venues=5 events=8)" in one_line(report)
+    assert "platforms=- |" in one_line(report)
+
+
+@respx.mock
+def test_end_to_end_platform_pages(tmp_path, zone, tz, fixture_text, monkeypatch):
+    from nightcrawler.cli import one_line
+
+    monkeypatch.delenv("TICKETMASTER_API_KEY", raising=False)
+    respx.post(OVERPASS_URL).respond(200, text=fixture_text("overpass.json"))
+    respx.get("https://bulbe.example/robots.txt").respond(404)
+    respx.get(host="bulbe.example", path="/").respond(200, html=fixture_text("home.html"))
+    respx.get("https://bulbe.example/programmation/").respond(200, html=fixture_text("agenda.html"))
+    # the theatre's site has no agenda, only links to ticketing platforms
+    respx.get("https://ombres.example/robots.txt").respond(404)
+    respx.get(host="ombres.example", path="/").respond(
+        200, html=fixture_text("platform_venue.html")
+    )
+    respx.get("https://shotgun.live/robots.txt").respond(404)
+    respx.get("https://shotgun.live/fr/venues/theatre-des-ombres").respond(
+        200, html=fixture_text("shotgun_venue.html")
+    )
+    respx.get("https://dice.fm/robots.txt").respond(
+        200, text="User-agent: *\nDisallow: /venue/\n", headers={"content-type": "text/plain"}
+    )
+    respx.get(host="api.deezer.com").respond(json={"data": []})
+    respx.get(host="musicbrainz.org").respond(json={"artists": []})
+
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now)
+
+    assert report["probe_status"] == {"structured": 2, "no_website": 1}
+    assert report["probe_method"] == {"json-ld": 1, "platform:shotgun": 1}
+    assert report["sources"]["platforms"] == {
+        "dice": {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 1},
+        "shotgun": {"pages": 1, "with_events": 1, "events": 2, "robots_blocked": 0},
+    }
+    assert (
+        "platforms=dice(pages=0 with_events=0 events=0 robots_blocked=1),"
+        "shotgun(pages=1 with_events=1 events=2 robots_blocked=0)"
+    ) in one_line(report)
+    concerts = json.loads((tmp_path / "data/concerts.json").read_text())
+    by_title = {c["title"]: c for c in concerts}
+    assert by_title["Kraut Tuesday"]["venue_name"] == "Théâtre des Ombres"
+    assert by_title["Kraut Tuesday"]["sources"] == ["platform:shotgun"]
+    # the event's location names another known venue: attribution (WIP-35) moves it
+    assert by_title["Bulbe Session"]["venue_name"] == "Le Petit Bulbe"
