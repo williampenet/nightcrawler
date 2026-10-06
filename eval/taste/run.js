@@ -62,9 +62,15 @@ function buildLabels(state, feedback, concerts) {
   const byId = new Map(concerts.map((c) => [c.id, c]));
   const last = new Map();
   let pastEvents = 0;
+  // "Pas pour moi" accounting (WIP-55): one row per artist key of a click, so concerts count
+  const dislikes = { rows: 0, unpublished: new Set(), published: new Set(), ambiguous: new Set() };
   for (const ev of Array.isArray(feedback) ? feedback : []) {
     if (!ev || !RATINGS.has(ev.kind)) continue;
     const id = ids.get(ev.concert_id);
+    if (ev.kind === "dislike") {
+      dislikes.rows += 1;
+      (id ? dislikes.published : dislikes.unpublished).add(id || ev.concert_id);
+    }
     if (!id) {
       pastEvents += 1; // concert no longer published (past, or dropped)
       continue;
@@ -97,9 +103,52 @@ function buildLabels(state, feedback, concerts) {
       out.delete(id);
       source.delete(id);
       ambiguous += 1;
+      dislikes.ambiguous.add(id);
     }
   }
-  return { labels: out, source, pastEvents, unliked, stale, ambiguous };
+  return { labels: out, source, pastEvents, unliked, stale, ambiguous, last, hidden, dislikes };
+}
+
+// Why each concert with a "Pas pour moi" in the history did or did not become a label.
+// Counts only, one per concert: published ids are already resolved through the site's
+// aliases; unpublished ones are resolved through the store (input.stored_concerts:
+// {id or alias: {id, date: "YYYY-MM-DD"}}), then split by date against input.today.
+function dislikeReport(built, input, savedHidden) {
+  const { dislikes: d, labels, last, hidden } = built;
+  const raw = input.stored_concerts;
+  const stored = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const resolve = (id) => (stored[id] && typeof stored[id].id === "string" ? stored[id].id : id);
+  const unpublished = new Map(); // resolved id -> date or null
+  for (const id of d.unpublished) {
+    const day = stored[id] && typeof stored[id].date === "string" ? stored[id].date : null;
+    unpublished.set(resolve(id), day || unpublished.get(resolve(id)) || null);
+  }
+  const out = {
+    rows: d.rows,
+    concerts: d.published.size + unpublished.size,
+    labelled: 0,
+    rated_again: 0, // the latest rating of that concert is a like or an unlike
+    not_hidden: 0, // latest is the dislike, but the profile's `hidden` no longer holds it
+    ambiguous: 0, // shares an artist or name with a stale like (see buildLabels)
+    unpublished_past: 0,
+    unpublished_upcoming: 0, // stored with a date from today on, but not in the site data
+    unpublished_unknown: 0, // id not in the store (or no store dates given)
+    hidden_in_profile: savedHidden,
+    hidden_published: hidden.size,
+  };
+  for (const id of d.published) {
+    if (labels.get(id) === "disliked") out.labelled += 1;
+    else if (last.get(id) !== "dislike") out.rated_again += 1;
+    else if (!hidden.has(id)) out.not_hidden += 1;
+    else if (d.ambiguous.has(id)) out.ambiguous += 1;
+  }
+  const today = typeof input.today === "string" ? input.today : null;
+  for (const day of unpublished.values()) {
+    if (!day || !today) out.unpublished_unknown += 1;
+    else if (day < today) out.unpublished_past += 1;
+    else out.unpublished_upcoming += 1;
+  }
+  return out;
 }
 
 // What rate() writes for this rating, per list: what counts as "produced by" a concert.
@@ -177,11 +226,12 @@ function scoreLabels(input) {
     const reduced = withoutOwnLabel(state, c, label, counts);
     return { id: c.id, label, score: S.scoreConcert(c, artists, S.buildProfile(reduced, artists)).score };
   });
-  return { concerts: concerts.length, scored, ...built };
+  const dislikes = dislikeReport(built, inp, new Set(S.sanitizeState(inp.state).hidden).size);
+  return { concerts: concerts.length, scored, ...built, dislikes };
 }
 
 function evaluate(input) {
-  const { concerts, scored, source, pastEvents, unliked, stale, ambiguous } = scoreLabels(input);
+  const { concerts, scored, source, pastEvents, unliked, stale, ambiguous, dislikes } = scoreLabels(input);
   const tiers = Object.fromEntries(["sure", "inferred", "none"].map((t) => [t, { n: 0, liked: 0, disliked: 0 }]));
   const scores = { liked: [], disliked: [] };
   for (const { label, score } of scored) {
@@ -214,10 +264,11 @@ function evaluate(input) {
     },
     tiers,
     pairwise: { pairs, accuracy: pairs ? round(wins / pairs) : null },
+    dislikes,
   };
 }
 
-module.exports = { buildLabels, produced, removal, producers, scoreLabels, withoutOwnLabel, pageState, wilson, tierOf, evaluate };
+module.exports = { buildLabels, dislikeReport, produced, removal, producers, scoreLabels, withoutOwnLabel, pageState, wilson, tierOf, evaluate };
 
 if (require.main === module) {
   const chunks = [];

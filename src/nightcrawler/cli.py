@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--cache", default=".cache/http")
     r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
     r.add_argument("--app-config", default="config/app.yaml")
+    r.add_argument("--reference", default="eval/reference/watch_events.csv")
     r.add_argument(
         "--store", action="store_true", help="use the event store when SCW_* secrets are set"
     )
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             Fetcher(cache_dir=args.cache, host_intervals={"api.deezer.com": 0.2}),
             osm_extract=Path(args.osm_extract),
             database_url=store_url() if args.store else os.environ.get("DATABASE_URL") or None,
+            reference=Path(args.reference),
         )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets
@@ -223,6 +225,16 @@ def one_line(report: dict) -> str:
     dd = report.get("dedup", {})
     st = report.get("store", {})
     store = st.get("status", "off")
+    cov = report.get("coverage")  # numbers only: no event or venue name in the annotation
+    if not cov:
+        cover = "-"
+    elif "status" in cov:
+        cover = cov["status"]
+    else:
+        cover = (
+            f"{cov['found']}/{cov['in_window']} rate={cov['rate']} "
+            f"date_venue_only={cov['date_venue_only']}"
+        )
     if store == "ok":
         store += "(" + " ".join(f"{k}={v}" for k, v in st.items() if k != "status") + ")"
     platforms = ",".join(
@@ -242,7 +254,8 @@ def one_line(report: dict) -> str:
         f"({art.get('confident')} confident; doubts: ambiguous={art.get('doubt_ambiguous')} "
         f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "
         f"short={art.get('doubt_short_name')}), "
-        f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered"
+        f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered | "
+        f"reference coverage: {cover}"
     )
 
 

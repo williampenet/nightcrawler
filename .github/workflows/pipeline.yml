@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   push:  # continuous deployment of main
     branches: [main]
-    paths: ["src/**", "config/**", "pyproject.toml", ".github/workflows/pipeline.yml"]
+    paths: ["src/**", "config/**", "eval/reference/**", "pyproject.toml", ".github/workflows/pipeline.yml"]
 
 permissions:
   contents: read

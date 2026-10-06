@@ -29,8 +29,11 @@ def test_end_to_end(tmp_path, zone, tz, fixture_text, monkeypatch):
     respx.get(host="ombres.example", path="/").respond(200, html=fixture_text("microdata.html"))
 
     now = datetime(2026, 10, 5, 12, tzinfo=tz)
-    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now)
+    ref = tmp_path / "ref.csv"  # reference coverage wiring (WIP-55)
+    ref.write_text("date,artists,venue\n2026-10-10,Nobody,Le Petit Bulbe\n", encoding="utf-8")
+    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now, reference=ref)
 
+    assert (report["coverage"]["in_window"], report["coverage"]["found"]) == (1, 0)
     assert report["venues"] == 3
     assert report["probe_status"] == {"structured": 2, "no_website": 1}
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
@@ -70,8 +73,12 @@ def test_end_to_end_excluded_venue(tmp_path, zone, tz, fixture_text, monkeypatch
 
     now = datetime(2026, 10, 5, 12, tzinfo=tz)
     zone = replace(zone, excluded_venues=("Petit Bulbe",))
-    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now)
+    ref = tmp_path / "ref.csv"  # no venue column: the coverage measure fails, the run does not
+    ref.write_text("date,artists\n2026-10-10,Nobody\n", encoding="utf-8")
+    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now, reference=ref)
 
+    assert report["coverage"] == {"status": "error: KeyError"}
+    assert "| Reference events found (FR-11) | error: KeyError |" in summary_markdown(report)
     assert report["venues"] == 2 and report["venues_excluded"] == 1
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
     assert concerts == []  # "Drone Night" was at Le Petit Bulbe

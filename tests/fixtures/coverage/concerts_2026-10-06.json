@@ -1,0 +1,19 @@
+[
+ {"id": "hit01", "title": "Louis Sclavis Shunkan Trio", "start": "2026-10-07T20:30:00+02:00", "venue_name": "Le Périscope"},
+ {"id": "hit02", "title": "THE LEMON TWIGS", "start": "2026-10-08T20:00:00+02:00", "venue_name": "L'Épicerie Moderne"},
+ {"id": "hit03", "title": "Punk night", "performers": ["Frustration", "Gwendoline"], "start": "2026-10-10T19:30:00+02:00", "venue_name": "L'épicerie moderne Place René Lescot, Feyzin"},
+ {"id": "hit04", "title": "DJ Krush (live)", "start": "2026-10-13T20:00:00+02:00", "venue_name": "Transbordeur"},
+ {"id": "hit05", "title": "Temples", "start": "2026-10-19T20:00:00+02:00", "venue_name": "L'Épicerie Moderne"},
+ {"id": "hit06", "title": "Teenage Fanclub + guest", "start": "2026-10-19T20:00:00+02:00", "venue_name": "Le Marché Gare"},
+ {"id": "hit07", "title": "Philippe Katerine - Aux anges", "start": "2026-10-30T20:00:00+01:00", "venue_name": "Auditorium de Lyon"},
+ {"id": "hit08", "title": "Alela Diane", "start": "2026-11-07T23:30:00+00:00", "venue_name": "L'Épicerie Moderne"},
+ {"id": "hit09", "title": "Coldwave night", "performers": ["Boy Harsher"], "start": "2026-11-14T20:00:00+01:00", "venue_name": "Le Transbordeur"},
+ {"id": "hit10", "title": "Tigran Hamasyan", "start": "2026-11-23T20:00:00+01:00", "venue_name": "Auditorium de Lyon"},
+ {"id": "hit11", "title": "Ladaniva", "start": "2026-11-26T20:30:00+01:00", "venue_name": "CCO Villeurbanne / La Rayonne"},
+ {"id": "venueonly", "title": "Autre groupe", "start": "2026-10-20T20:30:00+02:00", "venue_name": "Le Périscope"},
+ {"id": "nowholeword", "title": "Frangesque Orchestra", "start": "2026-10-20T21:00:00+02:00", "venue_name": "Le Périscope"},
+ {"id": "othervenue", "title": "Ibeyi", "start": "2026-11-20T20:00:00+01:00", "venue_name": "Le Sucre"},
+ {"id": "otherdate", "title": "Gurriers", "start": "2026-11-11T20:00:00+01:00", "venue_name": "L'Épicerie Moderne"},
+ {"id": "lateutc", "title": "Gurriers", "start": "2026-11-10T23:30:00+00:00", "venue_name": "L'Épicerie Moderne"},
+ {"id": "outofwindow", "title": "Requin Chagrin", "start": "2026-12-10T20:00:00+01:00", "venue_name": "L'Épicerie Moderne"}
+]

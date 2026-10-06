@@ -31,11 +31,13 @@ Discovery has also become harder to build: since November 2024 Spotify no longer
 
 **Evidence added 2026-10-06 (v3).** Before Nightcrawler, the PM ran a weekly concert watch: a
 Claude task reading 11 venue sites and 2 agendas (Ville Morte, Petit Bulletin) against a written
-taste profile, with a memory of what it had already reported (`concerts-vus.md`, 76 events from
+taste profile, with a memory of what it had already reported (`concerts-vus.md`, 69 events from
 2026-07-26 to 2026-12-17). The PM rates its picks as good and Nightcrawler's as mostly off-target.
 Measurement on the published data of 2026-10-06 20:42: 40 of those events fall in Nightcrawler's
 window (≤ 2026-12-05); 11 are present (artist name searched in title and performers, same date,
-checked by hand; to be reproduced in CI by the FR-11 coverage measure, WIP-55). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
+checked by hand; to be reproduced in CI by the FR-11 coverage measure, WIP-55). The CI
+measure leaves out the run's partly covered last day, so it counts 39 events in that window
+(the 2026-12-05 row drops; `tests/test_coverage.py`). Missing venues: Opéra Underground (no website linked, 0 concerts), Les
 Subsistances and Chapelle de la Trinité (no agenda detected), Grrrnd Zero (platform pages only,
 0 concerts), Auditorium (2 concerts); L'Épicerie Moderne gives 4.
 The gap has two causes: coverage (agendas published only as HTML are not read, ADR-0001 /
@@ -172,7 +174,7 @@ v2 text (artist similarity), kept as a complementary signal for concerts with an
 - AC: sharing takes ≤ 2 taps on a phone; a friend opening the link sees the concert without any account.
 
 **FR-11 Reference set and evaluation (v3)**
-- Positives: the events of the PM's former watch (`concerts-vus.md`, 76 events, 2026-07-26 → 2026-12-17) plus "J'aime" ratings. Negatives: the "Pas pour moi" ratings already given in the app (read from the event store at eval time, never committed), plus a sample of concerts at the same venues that the watch did not report, **labelled by the PM** (a watch omission is not a "no" until he says so).
+- Positives: the events of the PM's former watch (`concerts-vus.md`, 69 events, 2026-07-26 → 2026-12-17) plus "J'aime" ratings. Negatives: the "Pas pour moi" ratings already given in the app (read from the event store at eval time, never committed), plus a sample of concerts at the same venues that the watch did not report, **labelled by the PM** (a watch omission is not a "no" until he says so).
 - Used for two measures, re-run in CI: source coverage (FR-1 gate) and judgement quality (FR-5, MODEL_EVAL).
 - AC: the positives file is versioned (public events only); in-app ratings and the profile text stay in the event store (PM, 2026-10-06) and are read by CI at eval time, which publishes aggregates only; coverage and judgement scores appear on each run.
 
