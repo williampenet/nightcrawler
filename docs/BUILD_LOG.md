@@ -101,6 +101,10 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | validation | PRD v3 validated; reuse his in-app "Pas pour moi" as negatives and label more; profile stored in the event store, not in the repo | PR #44 |
 | 2026-10-06 | agent:reviewer | review WIP-54 | REQUEST_CHANGES: broken table, v2 digest statements not marked superseded, baseline vs personal data, missing log; fixed | PR #44 |
 | 2026-10-06 | agent:reviewer | re-review WIP-54 | APPROVE + 2 non-blocking (reproduction wording, alert ticket later) | PR #44 |
+| 2026-10-06 | agent:dev | build | WIP-55: reference set from the former watch (68 public rows; 69 shared, 1 private place removed), deterministic coverage measure in the Pipeline report, dropped-dislike diagnostics in the taste eval | PR #45 |
+| 2026-10-06 | agent:reviewer | review WIP-55 | REQUEST_CHANGES: 3 blocking (last-day window bias, bare-name false negatives, misquoted PRD figure in synthetic test) + 8 non-blocking; fixed | PR #45 |
+| 2026-10-06 | agent:reviewer | re-review WIP-55 | APPROVE at 0a5349c (39 in window, matching.yaml trims, synthetic test labelled unverified) + 3 non-blocking notes | PR #45 |
+| 2026-10-06 | agent:dev | diagnose | WIP-56 per-venue reader plan (WebFetch): Ville Morte drops venues stored at lat/lon 0,0 (Grrrnd Zero ~10 events lost); Transbordeur has a public WP JSON API; others need per-site-type HTML readers (needs an ADR) | [WIP-56](https://linear.app/wip-coding/issue/WIP-56) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
