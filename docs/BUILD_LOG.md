@@ -69,6 +69,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-44 fix | APPROVE (root cause unconfirmed until the next deploy) + 4 non-blocking, 3 applied | PR #32 |
 | 2026-10-06 | agent:dev | fix | WIP-44 upload fixed (duplicated content-type confirmed); Scaleway build then failed in its preparation phase; redeploy over a failed build | PR #33 |
 | 2026-10-06 | agent:reviewer | review WIP-44 redeploy | APPROVE + 2 non-blocking | PR #33 |
+| 2026-10-06 | human:william | setup | FEEDBACK_TOKEN secret created | |
+| 2026-10-06 | agent:dev | deploy | Feedback function ready on Scaleway (python312, preflight 204, wrong token 401); URL published in config/app.yaml | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
