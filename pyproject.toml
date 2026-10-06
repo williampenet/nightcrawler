@@ -14,6 +14,7 @@ dependencies = [
     "icalendar>=6,<8",
     "python-dateutil>=2.9,<3",
     "pyyaml>=6,<7",
+    "psycopg[binary]>=3.2,<3.4",  # event store (ADR-0005)
 ]
 
 [project.optional-dependencies]
@@ -26,7 +27,7 @@ nightcrawler = "nightcrawler.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-nightcrawler = ["web/*"]
+nightcrawler = ["web/*", "store/sql/*.sql"]
 
 [tool.ruff]
 line-length = 100

@@ -28,9 +28,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--cache", default=".cache/http")
     r.add_argument("--osm-extract", default=".cache/osm/venues.geojsonseq")
     r.add_argument("--app-config", default="config/app.yaml")
+    sub.add_parser("store", help="create the Scaleway event store if needed and migrate it")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
     o.add_argument("--zone", default="config/zone.yaml")
     args = ap.parse_args(argv)
+
+    if args.cmd == "store":
+        return store_command()
 
     if args.cmd == "osm-extract-plan":
         zone = load_zone(args.zone)
@@ -65,6 +69,42 @@ def main(argv: list[str] | None = None) -> int:
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(summary)
+    return 0
+
+
+def store_command() -> int:
+    """CI only: ensure the database exists, migrate it, export DATABASE_URL to later steps."""
+    import psycopg
+
+    from .store.migrate import migrate
+    from .store.provision import ProvisionError, ensure
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    try:
+        db, url = ensure()
+        with psycopg.connect(url, connect_timeout=60, autocommit=True) as conn:
+            applied = migrate(conn)
+            tables = conn.execute(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+            ).fetchone()[0]
+    except (ProvisionError, psycopg.Error) as exc:
+        annotate("error", f"Event store: {type(exc).__name__}: {str(exc)[:300]}")
+        return 1
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::add-mask::{url}", flush=True)
+        if "\n" in url or "\r" in url:  # would inject extra variables into GITHUB_ENV
+            annotate("error", "Event store: unexpected newline in the connection URL")
+            return 1
+        if path := os.environ.get("GITHUB_ENV"):
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(f"DATABASE_URL={url}\n")
+    annotate(
+        "notice",
+        f"Event store: {db.get('name')} {db.get('status')} in {db.get('region', 'fr-par')} "
+        f"(cpu {db.get('cpu_min')}-{db.get('cpu_max')}), migrations applied: {applied or 'none'}, "
+        f"tables: {tables}",
+    )
     return 0
 
 
