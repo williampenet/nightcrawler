@@ -6,6 +6,7 @@
 const S = window.NCScoring;
 const SP = window.NCSpotify;
 const FB = window.NCFeedback;
+const P = window.NCProfile;
 const PKCE_KEY = "nightcrawler.pkce"; // sessionStorage: verifier + state during the redirect only
 let APP_CONFIG = {};
 const STORE_KEY = "nightcrawler.v1";
@@ -98,6 +99,7 @@ function saveState() {
   } catch {
     /* private mode: keep the in-memory state */
   }
+  profileChanged();
 }
 
 // ---------------------------------------------------------------- helpers
@@ -186,7 +188,7 @@ async function setSeeds(names, lead = "") {
         lead +
           (failed
             ? `Goûts enregistrés ; styles indisponibles pour ${failed} artiste(s), réessaie plus tard.`
-            : "Goûts enregistrés dans ce navigateur."),
+            : `Goûts enregistrés ${whereText()}.`),
       );
       render();
     }
@@ -385,12 +387,127 @@ async function flushFeedback() {
   } finally {
     fbBusy = false;
   }
-  const line = document.getElementById("feedback-status");
   const pending = fbLoad().length;
-  if (result === "unauthorized") line.textContent = "Clé refusée";
-  else if (result === "sent") line.textContent = "Avis envoyés au service";
-  else line.textContent = pending ? `${pending} avis en attente` : "";
+  if (result === "unauthorized") fbText = "Clé refusée";
+  else if (result === "sent") fbText = "Avis envoyés au service";
+  else fbText = pending ? `${pending} avis en attente` : "";
+  showSyncStatus();
 }
+
+let fbText = "";
+let syncText = "";
+function showSyncStatus() {
+  // the same message from both (e.g. "Clé refusée") is shown once
+  document.getElementById("feedback-status").textContent = [...new Set([fbText, syncText].filter(Boolean))].join(" · ");
+}
+
+// ---------------------------------------------------------------- profile sync (WIP-46)
+// The profile (seeds, ratings, hidden concerts) is kept on the function so it follows the
+// listener on every device with the key (ADR-0002 amendment, ADR-0005). localStorage stays
+// the working copy. The decisions are pure functions in profile.js (afterPull, afterPush).
+const loadSync = () => fbStore(() => P.parseSync(localStorage.getItem(P.SYNC_KEY)), P.parseSync(""));
+let sync = loadSync(); // {version: server version this copy is based on, dirty, force}
+const saveSync = () => fbStore(() => localStorage.setItem(P.SYNC_KEY, JSON.stringify(sync)));
+let syncReady = false; // the server copy was read (or could not be): changes are pushed
+let syncedJson = null; // the profile as last read from or written to the server
+let syncTimer = null;
+let syncBusy = false;
+let syncAgain = false;
+const profileOn = () => Boolean(P && feedbackUrl() && fbToken());
+const nowJson = () => JSON.stringify(P.extract(state));
+const setSync = (text) => {
+  syncText = text;
+  showSyncStatus();
+};
+// where the taste is kept, for the page texts
+const whereText = () => (profileOn() ? "dans ce navigateur et sur ton espace Nightcrawler (Scaleway, UE)" : "dans ce navigateur");
+function showWhere() {
+  for (const node of document.querySelectorAll("[data-where]")) node.textContent = whereText();
+}
+
+function profileChanged() {
+  if (!syncReady || !P) return;
+  if (nowJson() === syncedJson) {
+    if (sync.dirty || sync.force) {
+      Object.assign(sync, { dirty: false, force: false });
+      saveSync();
+    }
+    return;
+  }
+  sync.dirty = true;
+  saveSync();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushProfile, 1500); // debounced: a burst of clicks is one request
+}
+
+function applyProfile(data) {
+  Object.assign(state, data);
+  // a saved id may be an alias since sources were merged (WIP-42)
+  state.hidden = S.currentIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.currentIds(DATA.concerts, state.likedConcerts);
+  const box = document.getElementById("seeds");
+  if (document.activeElement !== box) box.value = state.seeds.map((x) => x.name).join("\n"); // never under the cursor
+  if (state.seeds.some((x) => x.tags === null)) {
+    // styles not read yet (on another device, or interrupted): restart the tag loop
+    setSeeds(state.seeds.map((x) => x.name)).catch(() => {});
+  } else {
+    saveState();
+    render();
+  }
+}
+
+// On load (and when the key changes or the browser comes back online): the server copy wins,
+// unless this browser has changes it could not send yet (merged) or a pending "Tout effacer".
+async function startSync() {
+  if (!profileOn()) return;
+  const before = nowJson();
+  const got = await P.pull(P.profileUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  syncReady = true;
+  if (got.status === "unauthorized" || got.status === "error") {
+    return setSync(got.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé");
+  }
+  const next = P.afterPull(sync, got, P.extract(state), nowJson() !== before);
+  sync = next.sync;
+  syncedJson = next.synced;
+  saveSync();
+  if (next.apply) applyProfile(next.apply);
+  profileChanged(); // first upload, or local changes to send
+  if (!sync.dirty) setSync("Profil synchronisé");
+}
+
+async function pushProfile() {
+  if (syncBusy) return void (syncAgain = true);
+  syncBusy = true;
+  const snap = P.snapshot(sync, state); // a reset or a click during the request is seen after it
+  const r = await P.push(P.profileUrl(feedbackUrl()), fbToken(), snap.data, snap.base, (u, o) => fetch(u, o), snap.force);
+  syncBusy = false;
+  if (r.status === "ok") {
+    const next = P.afterPush(sync, snap, r, state);
+    sync = next.sync;
+    syncedJson = next.synced;
+    saveSync();
+    if (next.apply) applyProfile(next.apply);
+    const dropped = P.droppedSeeds(state);
+    if (!sync.dirty) {
+      setSync(dropped ? `Profil synchronisé, sauf ${dropped} artiste(s) (200 au plus, noms de 60 caractères au plus)` : "Profil synchronisé");
+    }
+    profileChanged(); // sends again what changed meanwhile
+  } else {
+    setSync(r.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé"); // retried on next change, load or reconnection
+  }
+  syncAgain = false;
+}
+
+window.addEventListener("online", () => {
+  flushFeedback();
+  if (!profileOn()) return;
+  if (syncedJson === null) startSync();
+  else if (sync.dirty) {
+    clearTimeout(syncTimer);
+    pushProfile();
+  }
+});
+
 
 // keep keyboard users where they were: the wanted row, else the first button of the list
 function refocus(wanted) {
@@ -688,19 +805,27 @@ function setupControls() {
     key.addEventListener("change", () => {
       fbStore(() => localStorage.setItem(FB.TOKEN_KEY, key.value.trim()));
       flushFeedback();
+      showWhere();
+      startSync();
     });
   }
+  showWhere();
   document.getElementById("lb-import").addEventListener("click", () =>
     importListenBrainz(document.getElementById("lb-user").value),
   );
   document.getElementById("reset").addEventListener("click", () => {
     tagRun++; // stop a running tag loop
+    if (profileOn()) {
+      // the server profile is emptied too, even if another device changed it meanwhile
+      Object.assign(sync, { dirty: true, force: true });
+      saveSync();
+    }
     state = Object.assign(loadState(), {
       seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
     });
     saveState();
     box.value = "";
-    setStatus("Goûts et avis effacés de ce navigateur.");
+    setStatus(`Goûts et avis effacés ${whereText()}.`);
     render();
   });
 
@@ -741,6 +866,7 @@ async function main() {
     renderSources(venues, report);
     renderAgendaCredits(report);
     focusDeepLink();
+    startSync(); // before the Spotify import, so an import is merged rather than overwritten
     finishSpotify().catch((err) => notify(`Import Spotify impossible : ${shortMessage(err)}`));
     flushFeedback(); // ratings left over from a previous visit
   } catch (err) {

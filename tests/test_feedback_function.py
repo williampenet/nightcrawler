@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import threading
 import zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -175,6 +176,154 @@ def test_rate_limited_is_429():
     assert resp["statusCode"] == 429
 
 
+# ---------------------------------------------------------------- profile (WIP-46)
+
+PROFILE = {
+    "seeds": [{"name": "Asna", "tags": ["drone"]}, {"name": "Boris", "tags": None}],
+    "liked": ["asna"],
+    "hidden": [CID],
+}
+
+
+class FakeProfile:
+    def __init__(self, row=None):
+        self.row = row
+
+    def get(self):
+        return self.row
+
+    def put(self, data, base):
+        if (self.row["version"] if self.row else 0) != base:
+            return False, self.row
+        self.row = {"data": data, "version": base + 1, "updated_at": "t"}
+        return True, {"version": base + 1}
+
+
+def pcall(method, body=None, path="/profile", profile=None, token="s3cret"):
+    headers = {"Origin": ORIGIN, "Authorization": f"Bearer {token}"}
+    raw = body if isinstance(body, bytes) else json.dumps(body or {}).encode()
+    resp = handler.process(method, headers, raw, None, path, profile or FakeProfile())
+    return resp["statusCode"], json.loads(resp["body"] or "{}")
+
+
+def test_profile_get_put_and_conflict():
+    fake = FakeProfile()
+    assert pcall("GET", profile=fake) == (200, {"data": None, "version": 0})
+    assert pcall("PUT", {"data": PROFILE, "base_version": 1}, profile=fake) == (
+        409,
+        {"data": None, "version": 0},
+    )
+    assert pcall("PUT", {"data": PROFILE, "base_version": 0}, profile=fake) == (200, {"version": 1})
+    status, got = pcall("GET", path="profile", profile=fake)  # with or without the slash
+    assert status == 200 and got["version"] == 1 and got["data"]["liked"] == ["asna"]
+    assert got["data"]["dislikedNames"] == [] and got["data"]["seeds"][1]["tags"] is None
+    status, got = pcall("PUT", {"data": {}, "base_version": 0}, profile=fake)  # stale base
+    assert status == 409 and got["version"] == 1 and got["data"]["hidden"] == [CID]
+    assert pcall("PUT", {"data": {}, "base_version": 1}, profile=fake) == (200, {"version": 2})
+    assert pcall("POST", {"data": {}, "base_version": 2}, profile=fake)[0] == 405
+    assert pcall("GET", token="wrong", profile=fake)[0] == 401
+    preflight = handler.process("OPTIONS", {"Origin": ORIGIN}, b"", None, "/profile")
+    assert "PUT" in preflight["headers"]["Access-Control-Allow-Methods"]
+
+
+@pytest.mark.parametrize(
+    "body,reason",
+    [
+        (b"x" * 70000, "body too large"),
+        ({"data": {}}, "expected {data, base_version}"),
+        ({"data": {}, "base_version": -1}, "bad base_version"),
+        ({"data": {}, "base_version": True}, "bad base_version"),
+        ({"data": {"sort": "me"}, "base_version": 0}, "unexpected profile field"),
+        ({"data": {"seeds": [{"name": "a"}] * 201}, "base_version": 0}, "seeds: at most 200"),
+        ({"data": {"seeds": [{"name": "a" * 61}]}, "base_version": 0}, "bad seed name"),
+        ({"data": {"seeds": [{"name": "a", "x": 1}]}, "base_version": 0}, "bad seed"),
+        (
+            {"data": {"seeds": [{"name": "a", "tags": ["t"] * 13}]}, "base_version": 0},
+            "bad seed tags",
+        ),
+        ({"data": {"liked": ["Bad Key"]}, "base_version": 0}, "bad liked item"),
+        ({"data": {"hidden": ["asna"]}, "base_version": 0}, "bad hidden item"),
+        ({"data": {"wrong": ["a"] * 2001}, "base_version": 0}, "wrong: at most 2000"),
+    ],
+)
+def test_profile_rejects_bad_bodies(body, reason):
+    assert pcall("PUT", body) == (400, {"error": reason})
+
+
+def test_profile_store_errors():
+    class Down:
+        def get(self):
+            raise RuntimeError("password=hunter2")
+
+        put = get
+
+    class Busy(FakeProfile):
+        def put(self, data, base):
+            raise handler.RateLimited
+
+    status, got = pcall("GET", profile=Down())
+    assert status == 503 and "hunter2" not in json.dumps(got)
+    assert pcall("PUT", {"data": {}, "base_version": 0}, profile=Busy())[0] == 429
+
+
+def test_handle_routes_by_path(monkeypatch):
+    seen = {}
+
+    def fake_process(method, headers, raw, store, path):
+        seen.update(method=method, path=path)
+        return {}
+
+    monkeypatch.setattr(handler, "process", fake_process)
+    handler.handle({"method": "GET", "rawPath": "/profile", "headers": {}}, None)
+    assert seen == {"method": "GET", "path": "/profile"}
+    handler.handle({"httpMethod": "PUT", "path": "/profile", "body": "{}"}, None)
+    assert seen == {"method": "PUT", "path": "/profile"}
+
+
+@pytest.mark.skipif(
+    urlsplit(os.environ.get("TEST_DATABASE_URL", "")).hostname not in ("localhost", "127.0.0.1"),
+    reason="needs a local TEST_DATABASE_URL (the test empties the profile tables)",
+)
+def test_pg_profile_on_real_postgres(monkeypatch):
+    import psycopg
+
+    from nightcrawler.store.migrate import migrate
+
+    url = os.environ["TEST_DATABASE_URL"]
+    with psycopg.connect(url, autocommit=True) as conn:
+        migrate(conn)
+        conn.execute("DELETE FROM profile; DELETE FROM profile_writes")
+    monkeypatch.setenv("DATABASE_URL", url)
+    pg = handler.PgProfile()
+    assert pg.get() is None
+    assert pg.put(PROFILE, 1) == (False, None)
+    assert pg.put(PROFILE, 0) == (True, {"version": 1})
+    assert pg.put({"liked": []}, 0) == (False, {"data": PROFILE, "version": 1})
+    assert pg.put({"liked": []}, 1) == (True, {"version": 2})
+    # a concurrent first upload: the other transaction commits while this INSERT waits on it
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("DELETE FROM profile")
+    other = psycopg.connect(url)
+    other.execute("INSERT INTO profile (data, version) VALUES ('{}', 7)")
+    timer = threading.Timer(0.5, other.commit)
+    timer.start()
+    assert pg.put({"liked": []}, 0) == (False, {"data": {}, "version": 7})
+    timer.join()
+    other.close()
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("UPDATE profile SET data = %s, version = 2", (json.dumps({"liked": []}),))
+    row = pg.get()
+    assert row["data"] == {"liked": []} and row["version"] == 2 and row["updated_at"]
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO profile_writes SELECT now() FROM generate_series(1, %s)",
+            (handler.PROFILE_RATE_LIMIT,),
+        )
+    with pytest.raises(handler.RateLimited):
+        pg.put({}, 2)
+    assert pg.get()["version"] == 2
+
+
 # ---------------------------------------------------------------- packaging and deploy
 
 CREDS = provision.Credentials("SCWACCESS", "secret/key", "proj-1")
@@ -267,7 +416,13 @@ def test_smoke_test(monkeypatch):
         side_effect=[httpx.ConnectError("cold"), httpx.Response(204)]
     )
     post = respx.post("https://d.fn").respond(401)
-    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401)
+    profile = respx.get("https://d.fn/profile").respond(401)
+    respx.get("https://d.fn/").respond(405)
+    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401, 401, 405)
+    assert (
+        profile.calls[0].request.headers["Authorization"]
+        == post.calls[0].request.headers["Authorization"]
+    )
     assert route.calls[1].request.headers["Origin"] == ORIGIN
     sent = post.calls[0].request.headers["Authorization"]
     assert sent.startswith("Bearer ") and len(sent) > 20
@@ -294,7 +449,7 @@ def test_cli_deploys_with_hashed_token_and_masked_url(monkeypatch, capsys):
         return {"status": "ready", "domain_name": "d.fn", "runtime": "python312"}
 
     monkeypatch.setattr(dfn, "deploy", fake_deploy)
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401))
+    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401, 401, 405))
     assert cli.main(["deploy-feedback"]) == 0
     out = capsys.readouterr().out
     assert "::add-mask::postgresql://u:pw@h/db" in out and "https://d.fn" in out
@@ -311,9 +466,10 @@ def test_cli_fails_when_wrong_token_is_accepted(monkeypatch, capsys):
     monkeypatch.setattr(provision, "ensure", lambda creds: ({}, "postgresql://u:pw@h/db"))
     monkeypatch.setattr(dfn, "build_zip", lambda dest: dest)
     monkeypatch.setattr(dfn, "deploy", lambda c, s, a: {"domain_name": "d.fn"})
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 202))
-    assert cli.main(["deploy-feedback"]) == 1
-    assert "::error::" in capsys.readouterr().out
+    for statuses in ((204, 202, 401, 405), (204, 401, 404, 405), (204, 401, 401, 401)):
+        monkeypatch.setattr(dfn, "smoke_test", lambda url, origin, s=statuses: s)
+        assert cli.main(["deploy-feedback"]) == 1  # wrong token accepted, or sub-path not routed
+        assert "::error::" in capsys.readouterr().out
 
 
 def test_cli_http_error_reports_type_only(monkeypatch, capsys):

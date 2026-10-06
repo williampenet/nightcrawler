@@ -76,6 +76,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | human:william | rule | Every claim and conclusion must be sourced (doc, measurement or real test); asks a real test of what Spotify still returns (PRD said "to confirm") | |
 | 2026-10-06 | agent:dev | build | WIP-48 "Tester l'API Spotify": one-off OAuth with read-only scopes, calls 14 endpoints, shows statuses and field presence only (nothing stored); sourcing rule added to CLAUDE.md | PR #36 |
 | 2026-10-06 | agent:reviewer | review WIP-48 | APPROVE + 4 non-blocking (links in comments, skipped rows reported, scope note, rule wording); applied | PR #36 |
+| 2026-10-06 | agent:dev | build | WIP-46 part A: profile sync — `profile` table (migration 002), `GET/PUT /profile` on the feedback function (optimistic concurrency, 409 + merge), page sync (`profile.js`, debounced PUT, « Tout effacer » clears the server copy) | PR #37 |
+| 2026-10-06 | agent:reviewer | review WIP-46 part A | REQUEST_CHANGES: 3 blocking (ADR-0002 not amended / page text; reset reverted by in-flight push; sub-path routing unverified) + 9 non-blocking; fixed | PR #37 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

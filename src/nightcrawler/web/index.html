@@ -26,13 +26,13 @@
       <details id="taste">
         <summary>Mes goûts</summary>
         <p class="muted">
-          Indique des artistes que tu aimes, un par ligne. Ils restent dans ce navigateur.
+          Indique des artistes que tu aimes, un par ligne. Ils restent <span data-where>dans ce navigateur</span>.
           Leurs styles sont lus sur MusicBrainz. Tes avis (J'aime, Pas pour moi, Mauvais
           rapprochement) ne sont envoyés au service Nightcrawler que si tu saisis la clé d'envoi.
         </p>
         <div class="row" id="spotify-row" hidden>
           <button type="button" id="spotify-connect" class="primary">Connecter Spotify</button>
-          <span class="muted">Importe tes artistes les plus écoutés et suivis. Seuls leurs noms sont gardés, dans ce navigateur.</span>
+          <span class="muted">Importe tes artistes les plus écoutés et suivis. Seuls leurs noms sont gardés, <span data-where>dans ce navigateur</span>.</span>
           <button type="button" id="spotify-probe-run" class="ghost">Tester l'API Spotify</button>
         </div>
         <div id="spotify-probe" hidden>
@@ -105,6 +105,7 @@
   <script src="scoring.js"></script>
   <script src="spotify.js"></script>
   <script src="feedback.js"></script>
+  <script src="profile.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
