@@ -35,6 +35,8 @@ def params_for(zone: Zone, api_key: str, now: datetime, page: int) -> dict[str, 
         "size": str(PAGE_SIZE),
         "page": str(page),
         "sort": "date,asc",
+        # the API defaults to locale "en", which hides events published only in French
+        "locale": "*",
     }
 
 

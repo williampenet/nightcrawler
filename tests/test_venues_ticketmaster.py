@@ -40,6 +40,7 @@ def test_ticketmaster_params(zone, tz):
     assert p["latlong"] == "45.7578,4.832" and p["unit"] == "km"
     assert p["startDateTime"] == "2026-10-05T10:00:00Z"
     assert p["classificationName"] == "music"
+    assert p["locale"] == "*"  # default "en" returned 0 events for Lyon (WIP-26)
 
 
 @respx.mock
