@@ -1,0 +1,46 @@
+name: Taste eval
+
+# Ranking quality of scoring.js on the listener's own ratings (WIP-52, docs/TASTE_EVAL.md).
+# Runs after each successful Pipeline run (the published site data is then fresh) and on
+# demand. The repo is public: it publishes aggregated counts and rates only (one notice +
+# the job summary), never a name, title, id, the profile or the connection details, and
+# commits nothing.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Pipeline]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taste-eval
+  cancel-in-progress: true
+
+jobs:
+  taste:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pip install -e .
+      # Same secrets as the Pipeline's --store step: the database URL is built inside this
+      # step (database looked up, never created) and masked; there is no DATABASE_URL secret.
+      - name: Run the taste eval
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          SCW_DB_USER: ${{ secrets.SCW_DB_USER }}  # optional
+          TASTE_SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: python -m eval.taste.load
