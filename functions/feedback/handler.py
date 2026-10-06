@@ -43,6 +43,9 @@ PROFILE_RATE_LIMIT = 60  # PUTs per minute; the page debounces to at most one pe
 MAX_SEEDS, MAX_NAME, MAX_TAGS, MAX_TAG, MAX_LIST = 200, 60, 12, 100, 2000
 KEY_LISTS = ("liked", "disliked", "wrong", "likedNames", "dislikedNames")
 ID_LISTS = ("hidden", "likedConcerts")
+# saved concert ids are kept even when absent from a day's data (WIP-59): the page keeps
+# the 500 most recent per list (scoring.js MAX_IDS) and the function enforces the same cap
+MAX_IDS = 500
 PROFILE_FIELDS = ("seeds", *KEY_LISTS, *ID_LISTS)
 
 
@@ -130,12 +133,12 @@ def validate_profile(raw: bytes) -> tuple[dict, int]:
         ):
             raise Invalid("bad seed tags")
         out["seeds"].append({"name": name, "tags": tags})
-    for field, pattern in [(f, ARTIST_KEY_RE) for f in KEY_LISTS] + [
-        (f, CONCERT_ID_RE) for f in ID_LISTS
+    for field, pattern, cap in [(f, ARTIST_KEY_RE, MAX_LIST) for f in KEY_LISTS] + [
+        (f, CONCERT_ID_RE, MAX_IDS) for f in ID_LISTS
     ]:
         values = data.get(field, [])
-        if not isinstance(values, list) or len(values) > MAX_LIST:
-            raise Invalid(f"{field}: at most {MAX_LIST}")
+        if not isinstance(values, list) or len(values) > cap:
+            raise Invalid(f"{field}: at most {cap}")
         if not all(isinstance(v, str) and pattern.match(v) for v in values):
             raise Invalid(f"bad {field} item")
         out[field] = list(dict.fromkeys(values))

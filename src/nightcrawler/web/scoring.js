@@ -172,8 +172,12 @@
     return { seedNames, liked, disliked, noInfer, likedConcerts, likedNames, tagWeights, tagNorm: Math.sqrt(norm2) };
   }
 
-  function isEmpty(profile) {
-    return !profile.seedNames.size && !profile.liked.size && !(profile.likedConcerts && profile.likedConcerts.size) && !(profile.likedNames && profile.likedNames.size);
+  // concerts: today's list. Saved concert ids are kept when absent (WIP-59), so a liked id
+  // counts only if its concert is in today's data: old ids alone do not switch on the tiers.
+  function isEmpty(profile, concerts) {
+    const ids = profile.likedConcerts || new Set();
+    const likedToday = concerts ? concerts.some((c) => ids.has(c.id)) : ids.size > 0;
+    return !profile.seedNames.size && !profile.liked.size && !likedToday && !(profile.likedNames && profile.likedNames.size);
   }
 
   function styleSimilarity(tags, profile) {
@@ -306,6 +310,9 @@
   const MAX_IDS = 500;
   function keepIds(concerts, saved) {
     const kept = [...new Set(saved)];
+    // Alias recency: the added current id goes to the end, so the cap treats it as the
+    // newest entry while the saved alias keeps its older place and is dropped first. The
+    // rating then survives as long as possible under its current id.
     for (const id of currentIds(concerts, kept)) if (!kept.includes(id)) kept.push(id);
     return kept.slice(-MAX_IDS);
   }

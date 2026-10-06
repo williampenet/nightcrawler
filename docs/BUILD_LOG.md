@@ -105,6 +105,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-55 | REQUEST_CHANGES: 3 blocking (last-day window bias, bare-name false negatives, misquoted PRD figure in synthetic test) + 8 non-blocking; fixed | PR #45 |
 | 2026-10-06 | agent:reviewer | re-review WIP-55 | APPROVE at 0a5349c (39 in window, matching.yaml trims, synthetic test labelled unverified) + 3 non-blocking notes | PR #45 |
 | 2026-10-06 | agent:dev | diagnose | WIP-56 per-venue reader plan (WebFetch): Ville Morte drops venues stored at lat/lon 0,0 (Grrrnd Zero ~10 events lost); Transbordeur has a public WP JSON API; others need per-site-type HTML readers (needs an ADR) | [WIP-56](https://linear.app/wip-coding/issue/WIP-56) |
+| 2026-10-06 | agent:dev | build | WIP-59: saved concert ids (hidden, likedConcerts) no longer pruned when absent from a day's data; aliases resolved for display; 500 cap | PR #47 |
+| 2026-10-06 | agent:reviewer | review WIP-59 | APPROVE + 7 non-blocking (ADR note, server cap, isEmpty, reset test, merge-at-cap test, alias recency, log); applied | PR #47 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

@@ -760,7 +760,7 @@ function render() {
     return;
   }
   // an empty profile keeps the views below unchanged
-  if (!S.isEmpty(profile)) return renderTiers(root, list);
+  if (!S.isEmpty(profile, DATA.concerts)) return renderTiers(root, list);
   if (state.sort === "me") {
     // the profile is empty here (tiers above otherwise): invite to fill it
     root.append(el("p", "Ajoute quelques artistes dans « Mes goûts » pour trier les concerts pour toi.", "hint"));

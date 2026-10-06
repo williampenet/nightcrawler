@@ -63,8 +63,39 @@ test("both capped id lists stay well under the 64 KB profile body (handler.py)",
   assert.ok(body.length < 65536 / 4, `${body.length} bytes`);
 });
 
-test("Tout effacer still clears every id list", () => {
-  const reset = { hidden: [], likedConcerts: [], liked: [], disliked: [], wrong: [], likedNames: [], dislikedNames: [], seeds: [] };
-  assert.deepEqual(S.keepIds([{ id: A, aliases: [B] }], reset.hidden), []);
-  assert.ok(P.isEmpty(P.extract(reset)));
+test("merge at the cap: new ids from both devices are kept, the oldest shared ones go", () => {
+  const shared = Array.from({ length: 480 }, (_, i) => id(i));
+  const serverNew = Array.from({ length: 30 }, (_, i) => id(1000 + i));
+  const localNew = Array.from({ length: 30 }, (_, i) => id(2000 + i));
+  const out = P.merge({ hidden: [...shared, ...serverNew] }, { hidden: [...shared, ...localNew] }).hidden;
+  assert.equal(out.length, S.MAX_IDS);
+  assert.ok([...serverNew, ...localNew].every((x) => out.includes(x)));
+  assert.deepEqual(out.slice(0, 440), shared.slice(40)); // 540 ids: the 40 oldest dropped
+});
+
+test("an old liked id alone does not switch on the tiered view", () => {
+  const p = S.buildProfile({ likedConcerts: [A] }, {});
+  assert.equal(S.isEmpty(p, [{ id: B }]), true); // A absent today
+  assert.equal(S.isEmpty(p, [{ id: A }, { id: B }]), false);
+  assert.equal(S.isEmpty(p), false); // without today's list: unchanged behaviour
+});
+
+test("Tout effacer: a pending reset is not merged back with the server copy", async () => {
+  const server = { hidden: [A], likedConcerts: [B], liked: ["asna"] };
+  const reset = P.extract({}); // the state right after "Tout effacer"
+  const pulled = P.afterPull({ version: 1, dirty: true, force: true }, { status: "found", data: P.extract(server), version: 3 }, reset, false);
+  assert.equal(pulled.apply, null); // nothing from the server copy enters the state
+  assert.equal(pulled.sync.force, true);
+  const snap = P.snapshot(pulled.sync, reset);
+  const sent = [];
+  const fetch = async (url, o) => {
+    sent.push(JSON.parse(o.body));
+    return sent.length === 1
+      ? { status: 409, ok: false, json: async () => ({ data: P.extract(server), version: 4 }) } // another device wrote meanwhile
+      : { status: 200, ok: true, json: async () => ({ version: 5 }) };
+  };
+  const r = await P.push("https://x/profile", "t", snap.data, snap.base, fetch, snap.force);
+  assert.deepEqual([r.status, r.merged], ["ok", false]);
+  assert.ok(P.isEmpty(sent[1].data)); // the overwrite is empty, not the server lists
+  assert.equal(sent[1].base_version, 4);
 });

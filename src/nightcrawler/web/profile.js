@@ -13,9 +13,10 @@
   const MAX_SEEDS = 200;
   const MAX_LIST = 2000;
   // Saved concert ids are no longer pruned when absent from today's data (WIP-59), so they
-  // are capped tighter than the function's 2000 (handler.py MAX_LIST): 500 most recent ids
-  // per list, about 7.5 KB each in JSON, so both lists stay under a quarter of the 64 KB
-  // profile body limit (handler.py MAX_PROFILE_BODY). Oldest ids go first.
+  // are capped at the 500 most recent ids per list (S.MAX_IDS), the limit the function also
+  // enforces (handler.py MAX_IDS; other lists: MAX_LIST 2000). 500 ids are about 7.5 KB of
+  // JSON each, so both lists stay under a quarter of the 64 KB profile body limit
+  // (handler.py MAX_PROFILE_BODY). Oldest ids go first.
   const cap = (k) => (ID_LISTS.includes(k) ? S.MAX_IDS : MAX_LIST);
 
   // The profile part of a state, in the shape and limits the function accepts.
