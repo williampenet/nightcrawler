@@ -32,30 +32,57 @@ const STATUS_LABEL = {
   no_website: "pas de site",
 };
 
+// ---------------------------------------------------------------- visible messages (WIP-47)
+
+// A dismissible banner at the top of the page, for errors and Spotify connection news.
+// Errors use role="alert", information role="status" (MDN, ARIA live regions:
+// https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/alert_role
+// https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role).
+// Registered before anything else runs, so an early failure is shown too.
+function shortMessage(err) {
+  const m = String((err && err.message) || err || "erreur inconnue").replace(/\s+/g, " ").trim();
+  return m.length > 120 ? m.slice(0, 117) + "…" : m;
+}
+
+let bannerReturn = null; // the element that had focus when the banner appeared
+let bannerTimer = 0;
+function showBanner(text, kind = "error") {
+  const box = document.getElementById("banner");
+  if (!box) return;
+  const out = box.querySelector(".banner-text");
+  if (box.hidden) bannerReturn = document.activeElement;
+  box.className = `banner ${kind}`;
+  box.setAttribute("role", kind === "error" ? "alert" : "status");
+  box.hidden = false;
+  // clear then set, so the same message twice is announced twice
+  out.textContent = "";
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => (out.textContent = text), 50);
+}
+
+function notify(text, kind = "error") {
+  setStatus(text);
+  const taste = document.getElementById("taste");
+  if (taste) taste.open = true;
+  showBanner(text, kind);
+}
+
+document.getElementById("banner-close").addEventListener("click", () => {
+  document.getElementById("banner").hidden = true;
+  const back = bannerReturn && bannerReturn !== document.body && document.contains(bannerReturn) ? bannerReturn : null;
+  bannerReturn = null;
+  if (back) back.focus();
+  else refocus(null); // first button of the list
+});
+window.addEventListener("error", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.error || e.message)}`));
+window.addEventListener("unhandledrejection", (e) => showBanner(`Une erreur est survenue : ${shortMessage(e.reason)}`));
+
 // ---------------------------------------------------------------- state (this browser only)
 
 const DATA = { concerts: [], artists: {}, venues: [], report: null };
+const defaultState = S.defaultState;
+const sanitizeState = S.sanitizeState; // saved state is untrusted: see scoring.js
 let state = loadState();
-
-function defaultState() {
-  return { seeds: [], liked: [], disliked: [], hidden: [], wrong: [], sort: "date", when: "all", style: "", venue: "" };
-}
-
-// Saved state is untrusted (old versions, manual edits): keep only well-typed fields.
-function sanitizeState(raw) {
-  const s = defaultState();
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return s;
-  const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-  if (Array.isArray(raw.seeds)) {
-    s.seeds = raw.seeds
-      .map((x) => (typeof x === "string" ? { name: x, tags: null } : x))
-      .filter((x) => x && typeof x.name === "string")
-      .map((x) => ({ name: x.name, tags: Array.isArray(x.tags) ? strings(x.tags) : null }));
-  }
-  for (const k of ["liked", "disliked", "hidden", "wrong"]) s[k] = strings(raw[k]);
-  for (const k of ["sort", "when", "style", "venue"]) if (typeof raw[k] === "string") s[k] = raw[k];
-  return s;
-}
 
 function loadState() {
   try {
@@ -131,7 +158,8 @@ async function fetchTags(name) {
 let tagRun = 0; // id of the running tag loop; a new save or a reset makes older loops stop
 let tagLoopBusy = false;
 
-async function setSeeds(names) {
+// lead: a line kept in front of the progress messages (the Spotify import count)
+async function setSeeds(names, lead = "") {
   const known = new Map(state.seeds.map((s) => [S.norm(s.name), s]));
   state.seeds = names.map((n) => known.get(S.norm(n)) || { name: n, tags: null });
   saveState();
@@ -144,18 +172,21 @@ async function setSeeds(names) {
     const todo = state.seeds.filter((s) => s.tags === null);
     let failed = 0;
     for (let i = 0; i < todo.length && run === tagRun; i++) {
-      setStatus(`Récupération des styles : ${i + 1}/${todo.length}…`);
+      setStatus(`${lead}Récupération des styles : ${i + 1}/${todo.length}…`);
       const tags = await fetchTags(todo[i].name);
       if (tags === null) failed++;
       else todo[i].tags = tags;
       saveState();
-      await sleep(1100); // MusicBrainz: at most 1 request per second
+      // MusicBrainz allows 1 request per second on average per client:
+      // https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting
+      await sleep(1100);
     }
     if (run === tagRun) {
       setStatus(
-        failed
-          ? `Goûts enregistrés ; styles indisponibles pour ${failed} artiste(s), réessaie plus tard.`
-          : "Goûts enregistrés dans ce navigateur.",
+        lead +
+          (failed
+            ? `Goûts enregistrés ; styles indisponibles pour ${failed} artiste(s), réessaie plus tard.`
+            : "Goûts enregistrés dans ce navigateur."),
       );
       render();
     }
@@ -206,17 +237,27 @@ const SPOTIFY_CALLBACK = (() => {
 })();
 
 async function connectSpotify() {
-  const verifier = SP.randomString();
-  const st = SP.randomString(16);
   try {
-    sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
-  } catch {
-    return setStatus("Connexion impossible : le stockage de session est bloqué dans ce navigateur.");
+    // crypto.subtle only exists in secure contexts (HTTPS or localhost):
+    // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/subtle
+    if (!window.crypto || !window.crypto.subtle) {
+      return notify("Connexion Spotify impossible : ce navigateur ne permet pas le chiffrement nécessaire (page non sécurisée ?).");
+    }
+    const verifier = SP.randomString();
+    const st = SP.randomString(16);
+    const challenge = await SP.challengeFor(verifier);
+    try {
+      sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state: st }));
+    } catch {
+      return notify("Connexion Spotify impossible : le stockage de session est bloqué dans ce navigateur.");
+    }
+    notify("Redirection vers Spotify…", "info");
+    location.assign(
+      SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
+    );
+  } catch (err) {
+    notify(`Connexion Spotify impossible : ${shortMessage(err)}`);
   }
-  const challenge = await SP.challengeFor(verifier);
-  location.assign(
-    SP.authorizeUrl({ clientId: APP_CONFIG.spotify_client_id, redirectUri: redirectUri(), challenge, state: st }),
-  );
 }
 
 // Back from Spotify: exchange the code, import names, forget the token.
@@ -225,15 +266,16 @@ async function finishSpotify() {
   if (cb.status === "none") return;
   document.getElementById("taste").open = true;
   if (cb.status === "error") {
-    return setStatus(
+    return notify(
       cb.reason === "denied"
         ? "Connexion Spotify annulée."
         : "Connexion Spotify refusée : la réponse ne correspond pas à la demande.",
+      cb.reason === "denied" ? "info" : "error",
     );
   }
-  if (!SP.validClientId(APP_CONFIG.spotify_client_id)) return setStatus("Spotify n'est pas configuré.");
+  if (!SP.validClientId(APP_CONFIG.spotify_client_id)) return notify("Spotify n'est pas configuré.");
   try {
-    setStatus("Import depuis Spotify…");
+    notify("Import depuis Spotify…", "info");
     const token = await SP.exchangeCode({
       clientId: APP_CONFIG.spotify_client_id,
       redirectUri: redirectUri(),
@@ -246,14 +288,16 @@ async function finishSpotify() {
     box.value = merged.join("\n");
     state.sort = "me";
     document.getElementById("sort").value = "me";
-    await setSeeds(merged);
-    setStatus(
+    const done =
       `${names.length} artistes importés depuis Spotify` +
-        (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : "."),
-    );
+      (failed ? ` (import partiel : ${failed} requête(s) sans réponse, réessaie plus tard).` : ".");
+    notify(done, failed ? "error" : "info");
+    // styles are then read from MusicBrainz in the background (about 1 s per artist);
+    // the progress line keeps the import count in front
+    setSeeds(merged, done + " ").catch((err) => showBanner(`Une erreur est survenue : ${shortMessage(err)}`));
   } catch (err) {
     const why = String(err && err.message);
-    setStatus(
+    notify(
       why === "forbidden"
         ? "Ce compte Spotify n'est pas autorisé sur l'app (à ajouter dans le tableau de bord Spotify)."
         : "Import Spotify impossible pour le moment.",
@@ -269,24 +313,11 @@ function setStatus(text) {
 
 function feedback(concert, kind, li) {
   if (concert.id === deepLinkId) deepLinkId = null; // the user acted on it: normal rules apply again
-  const keys = concert.artists || [];
   const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
-  const toggle = (list, values, on) => {
-    const set = new Set(list);
-    for (const v of values) on ? set.add(v) : set.delete(v);
-    return [...set];
-  };
-  if (kind === "like") {
-    const on = !keys.every((k) => state.liked.includes(k)); // second click undoes
-    state.liked = toggle(state.liked, keys, on);
-    state.disliked = toggle(state.disliked, keys, false);
-    sendFeedback(on ? "like" : "unlike", concert.id, keys);
-  } else {
-    sendFeedback("dislike", concert.id, keys);
-    state.disliked = toggle(state.disliked, keys, true);
-    state.liked = toggle(state.liked, keys, false);
-    state.hidden = toggle(state.hidden, [concert.id], true);
-  }
+  // without an identified artist the concert is rated by id and performer names (WIP-47)
+  const { state: rated, send } = S.rate(state, concert, kind, DATA.concerts);
+  Object.assign(state, rated);
+  sendFeedback(send.kind, concert.id, send.keys);
   saveState();
   render();
   refocus(kind === "like" ? concert.id : next);
@@ -464,8 +495,9 @@ function concertRow(c, match, showDate) {
   const actions = el("span", null, "links");
   const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
-  if ((c.artists || []).length) {
-    const liked = c.artists.every((k) => state.liked.includes(k));
+  {
+    // every row can be rated; without an identified artist the concert itself is (WIP-47)
+    const liked = S.isLiked(state, c);
     const like = button("J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
     like.setAttribute("aria-pressed", String(liked));
     actions.append(like);
@@ -610,6 +642,7 @@ function setupControls() {
   // a saved id may be an alias since sources were merged (WIP-42): keep the current id;
   // concerts that are gone are forgotten
   state.hidden = S.currentIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.currentIds(DATA.concerts, state.likedConcerts);
   saveState();
 
   const box = document.getElementById("seeds");
@@ -638,7 +671,9 @@ function setupControls() {
   );
   document.getElementById("reset").addEventListener("click", () => {
     tagRun++; // stop a running tag loop
-    state = Object.assign(loadState(), { seeds: [], liked: [], disliked: [], hidden: [], wrong: [] });
+    state = Object.assign(loadState(), {
+      seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
+    });
     saveState();
     box.value = "";
     setStatus("Goûts et avis effacés de ce navigateur.");
@@ -682,10 +717,13 @@ async function main() {
     renderSources(venues, report);
     renderAgendaCredits(report);
     focusDeepLink();
-    finishSpotify();
+    finishSpotify().catch((err) => notify(`Import Spotify impossible : ${shortMessage(err)}`));
     flushFeedback(); // ratings left over from a previous visit
-  } catch {
+  } catch (err) {
     document.getElementById("concerts").replaceChildren(el("p", "Données indisponibles.", "muted"));
+    // a missing data file rejects with its HTTP status (a number, already said above);
+    // anything else (invalid JSON, a script error) is shown in the banner
+    if (typeof err !== "number") showBanner(`Une erreur est survenue : ${shortMessage(err)}`);
   }
 }
 

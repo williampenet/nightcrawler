@@ -71,6 +71,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-44 redeploy | APPROVE + 2 non-blocking | PR #33 |
 | 2026-10-06 | human:william | setup | FEEDBACK_TOKEN secret created | |
 | 2026-10-06 | agent:dev | deploy | Feedback function ready on Scaleway (python312, preflight 204, wrong token 401); URL published in config/app.yaml | |
+| 2026-10-06 | agent:dev | fix | WIP-47: "J'aime" / "Pas pour moi" on every concert (concerts without an identified artist rated by id and performer names, sent with empty artist keys); dismissible error banner for page errors and Spotify connection news | PR #35 |
+| 2026-10-06 | agent:reviewer | review WIP-47 | REQUEST_CHANGES: 2 blocking (liked concert overrides a disliked artist; like stuck after identification) + 8 non-blocking; fixed | PR #35 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

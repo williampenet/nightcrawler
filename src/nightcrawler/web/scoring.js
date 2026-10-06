@@ -45,6 +45,101 @@
     return out.slice(0, 200);
   }
 
+  // Browser state (ADR-0002). Saved state is untrusted (old versions, manual edits):
+  // keep only well-typed fields.
+  function defaultState() {
+    return {
+      seeds: [], liked: [], disliked: [], hidden: [], wrong: [],
+      // ratings of concerts without an identified artist (WIP-47): concert ids and
+      // normalised performer names
+      likedConcerts: [], likedNames: [], dislikedNames: [],
+      sort: "date", when: "all", style: "", venue: "",
+    };
+  }
+
+  const NAME_KEY_RE = /^[a-z0-9]{1,100}$/;
+
+  function sanitizeState(raw) {
+    const s = defaultState();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return s;
+    const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+    if (Array.isArray(raw.seeds)) {
+      s.seeds = raw.seeds
+        .map((x) => (typeof x === "string" ? { name: x, tags: null } : x))
+        .filter((x) => x && typeof x.name === "string")
+        .map((x) => ({ name: x.name, tags: Array.isArray(x.tags) ? strings(x.tags) : null }));
+    }
+    for (const k of ["liked", "disliked", "hidden", "wrong", "likedConcerts"]) s[k] = strings(raw[k]);
+    for (const k of ["likedNames", "dislikedNames"]) s[k] = [...new Set(strings(raw[k]).filter((x) => NAME_KEY_RE.test(x)))];
+    for (const k of ["sort", "when", "style", "venue"]) if (typeof raw[k] === "string") s[k] = raw[k];
+    return s;
+  }
+
+  // Normalised performer names of a concert (same form as artist keys), for ratings of
+  // concerts without an identified artist (WIP-47).
+  function performerKeys(concert) {
+    const perf = Array.isArray(concert.performers) ? concert.performers : [];
+    return [...new Set(perf.filter((p) => typeof p === "string").map(norm).filter((k) => NAME_KEY_RE.test(k)))].slice(0, 12);
+  }
+
+  // "J'aime" is pressed for a concert whose artists are all liked, or which was liked by
+  // id before its artists were identified (WIP-47).
+  function isLiked(state, concert) {
+    const keys = concert.artists || [];
+    return (keys.length > 0 && keys.every((k) => (state.liked || []).includes(k))) || (state.likedConcerts || []).includes(concert.id);
+  }
+
+  // Applies "like" (a toggle) or "dislike" to the state. Pure: returns the new rating
+  // fields and what the feedback function is sent ({kind, keys}). Concerts without an
+  // identified artist are rated by id and performer names, sent with no artist key.
+  // concerts: the current list, so unliking keeps the names another liked concert uses.
+  function rate(state, concert, kind, concerts) {
+    const keys = concert.artists || [];
+    const names = [...new Set([...performerKeys(concert), ...keys])];
+    const toggle = (list, values, on) => {
+      const set = new Set(list || []);
+      for (const v of values) on ? set.add(v) : set.delete(v);
+      return [...set];
+    };
+    const s = {
+      liked: [...(state.liked || [])],
+      disliked: [...(state.disliked || [])],
+      hidden: [...(state.hidden || [])],
+      likedConcerts: [...(state.likedConcerts || [])],
+      likedNames: [...(state.likedNames || [])],
+      dislikedNames: [...(state.dislikedNames || [])],
+    };
+    const on = kind === "like" && !isLiked(state, concert); // a second click undoes
+    if (on) {
+      if (keys.length) s.liked = toggle(s.liked, keys, true);
+      else {
+        s.likedConcerts = toggle(s.likedConcerts, [concert.id], true);
+        s.likedNames = toggle(s.likedNames, names, true);
+      }
+      s.disliked = toggle(s.disliked, keys, false);
+      s.dislikedNames = toggle(s.dislikedNames, names, false);
+    } else {
+      s.liked = toggle(s.liked, keys, false);
+      s.likedConcerts = toggle(s.likedConcerts, [concert.id], false);
+      // names still used by another liked concert stay liked
+      const kept = new Set();
+      if (kind === "like") {
+        const byId = new Map((concerts || []).map((c) => [c.id, c]));
+        for (const id of s.likedConcerts) {
+          const other = byId.get(id);
+          if (other) for (const k of [...performerKeys(other), ...(other.artists || [])]) kept.add(k);
+        }
+      }
+      s.likedNames = toggle(s.likedNames, names.filter((k) => !kept.has(k)), false);
+      if (kind === "dislike") {
+        if (keys.length) s.disliked = toggle(s.disliked, keys, true);
+        else s.dislikedNames = toggle(s.dislikedNames, names, true);
+        s.hidden = toggle(s.hidden, [concert.id], true);
+      }
+    }
+    return { state: s, send: { kind: kind === "dislike" ? "dislike" : on ? "like" : "unlike", keys } };
+  }
+
   // profile: { seeds: [{name, tags}], liked: [artistKey], disliked: [artistKey] }
   function buildProfile(state, artists) {
     const seedNames = new Map();
@@ -62,11 +157,18 @@
     const disliked = new Set(state.disliked || []);
     // artists whose "Proche de" / "Style" match the listener reported as wrong (WIP-41)
     const noInfer = new Set(state.wrong || []);
-    return { seedNames, liked, disliked, noInfer, tagWeights, tagNorm: Math.sqrt(norm2) };
+    // Names from concerts without an identified artist (WIP-47). A stored name and an
+    // artist key are the same string by construction (both are norm(name): see artists.norm
+    // in the pipeline), so a liked or disliked name also applies to the artist once the
+    // pipeline identifies it, and to any homonym with the same normalised name.
+    const likedConcerts = new Set(state.likedConcerts || []);
+    const likedNames = new Set(state.likedNames || []);
+    for (const k of state.dislikedNames || []) disliked.add(k);
+    return { seedNames, liked, disliked, noInfer, likedConcerts, likedNames, tagWeights, tagNorm: Math.sqrt(norm2) };
   }
 
   function isEmpty(profile) {
-    return !profile.seedNames.size && !profile.liked.size;
+    return !profile.seedNames.size && !profile.liked.size && !(profile.likedConcerts && profile.likedConcerts.size) && !(profile.likedNames && profile.likedNames.size);
   }
 
   function styleSimilarity(tags, profile) {
@@ -93,16 +195,23 @@
           score,
           reason,
           discovery: known && artist.fans < DISCOVERY_FANS && score <= 0.8,
-          artist: artist.key,
+          artist: artist.key || null,
           inferred,
         };
       }
     };
+    // a liked concert counts unless one of its artists, identified on a later run, is disliked
+    const vetoed = (concert.artists || []).some((k) => profile.disliked && profile.disliked.has(k));
+    if (!vetoed && profile.likedConcerts && profile.likedConcerts.has(concert.id)) consider(0.9, "Tu as aimé ce concert", {});
+    for (const p of Array.isArray(concert.performers) ? concert.performers : []) {
+      const k = norm(p);
+      if (profile.likedNames && profile.likedNames.has(k) && !profile.disliked.has(k)) consider(0.9, `Tu as aimé ${p}`, {});
+    }
     for (const key of concert.artists || []) {
       const a = artists[key];
       if (!a || (profile.disliked && profile.disliked.has(key))) continue; // "pas pour moi" wins
       if (profile.seedNames.has(key)) consider(1, `Tu écoutes ${a.name}`, a);
-      if (profile.liked.has(key)) consider(0.9, `Tu as aimé ${a.name}`, a);
+      if (profile.liked.has(key) || (profile.likedNames && profile.likedNames.has(key))) consider(0.9, `Tu as aimé ${a.name}`, a);
       if (profile.noInfer && profile.noInfer.has(key)) continue; // reported as a wrong match
       for (const rel of a.related || []) {
         const rk = norm(rel);
@@ -165,7 +274,7 @@
     return [...new Set(saved.filter((id) => byId.has(id)).map((id) => byId.get(id)))];
   }
 
-  const api = { concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
