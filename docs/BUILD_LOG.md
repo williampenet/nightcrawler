@@ -79,6 +79,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:dev | build | WIP-46 part A: profile sync — `profile` table (migration 002), `GET/PUT /profile` on the feedback function (optimistic concurrency, 409 + merge), page sync (`profile.js`, debounced PUT, « Tout effacer » clears the server copy) | PR #37 |
 | 2026-10-06 | agent:reviewer | review WIP-46 part A | REQUEST_CHANGES: 3 blocking (ADR-0002 not amended / page text; reset reverted by in-flight push; sub-path routing unverified) + 9 non-blocking; fixed | PR #37 |
 | 2026-10-06 | human:william | test | Ran "Tester l'API Spotify": names only (top/followed/recent/saved/playlists 200); no genres/popularity/followers; related, recommendations, audio features, several artists, artist top tracks refused; search capped at 10 | [PRD](PRD.md) |
+| 2026-10-06 | human:william | scope | Asks to use followed artists (already imported) and liked tracks from Spotify | |
+| 2026-10-06 | agent:dev | build | WIP-49 Spotify import adds artists of liked tracks and recently played, by frequency; ADR-0003 amended | |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

@@ -63,3 +63,6 @@ Sources: real test run by William on 2026-10-06 with the page's "Tester l'API Sp
 [February 2026 changelog](https://developer.spotify.com/documentation/web-api/references/changes/february-2026).
 The changelog lists `followers` and `popularity` as removed; the missing `genres` field is
 our measurement (not found in those pages).
+
+## Amendment (2026-10-06, WIP-49)
+The import also requests `user-library-read` and `user-read-recently-played` (both answered 200 in the Evidence test above) and adds the artists of liked tracks (≤ 500, newest first) and of the 50 recently played tracks, ranked by frequency, after top and followed artists. Still names only, ≤ 150, token never stored. Playlists are not read: the playlist items endpoint was not part of the test (unverified).
