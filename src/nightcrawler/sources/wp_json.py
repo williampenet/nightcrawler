@@ -21,13 +21,15 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from ..events import in_window
-from ..http import Fetcher, RobotsBlocked
+from ..http import MAX_BYTES, Fetcher, RobotsBlocked
 from ..models import RawEvent
 from ..structured import _text, _url
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PER_PAGE = 50  # items carry SEO blocks: 100 per page could pass the fetcher's 3 MB cap
+# Items carry SEO blocks (`yoast_head`), so 100 per page might pass the fetcher's 3 MB cap
+# (unverified: item size not measured, WebFetch truncates long bodies; see `truncated` status).
+DEFAULT_PER_PAGE = 50
 DEFAULT_MAX_PAGES = 5
 
 
@@ -99,24 +101,29 @@ def parse(
     return events
 
 
-def fetch_items(reader: dict, fetcher: Fetcher) -> tuple[list, int, bool]:
-    """All items of the endpoint: (items, pages read, stopped by the page cap)."""
+def fetch_items(reader: dict, fetcher: Fetcher) -> tuple[list, int, str]:
+    """All items of the endpoint: (items, pages read, status).
+
+    Status: "ok", "page_cap" (more pages may exist) or "truncated" (a page reached the
+    fetcher's size cap: it is dropped, the items of earlier pages are kept)."""
     per_page = int(reader.get("per_page", DEFAULT_PER_PAGE))
     max_pages = int(reader.get("max_pages", DEFAULT_MAX_PAGES))
     items: list = []
     for page in range(1, max_pages + 1):
         resp = fetcher.get(reader["url"], params={"per_page": per_page, "page": page})
         if resp.status == 400 and page > 1:  # rest_post_invalid_page_number: past the end
-            return items, page - 1, False
+            return items, page - 1, "ok"
         if resp.status != 200:
             raise ValueError(f"HTTP {resp.status}")
+        if len(resp.text.encode("utf-8")) >= MAX_BYTES:  # cut by the fetcher: not valid JSON
+            return items, page - 1, "truncated"
         data = json.loads(resp.text)
         if not isinstance(data, list):
             raise ValueError("not a list")
         items.extend(data)
         if len(data) < per_page:
-            return items, page, False
-    return items, max_pages, True
+            return items, page, "ok"
+    return items, max_pages, "page_cap"
 
 
 def collect(
@@ -137,9 +144,8 @@ def collect(
             rows.append(row | {"status": "unsupported reader", "events": 0, "pages": 0})
             continue
         try:
-            items, pages, capped = fetch_items(reader, fetcher)
+            items, pages, status = fetch_items(reader, fetcher)
             found = parse(items, reader, entry["venue"], now, tz, window_days)
-            status = "page_cap" if capped else "ok"
         except RobotsBlocked:
             found, pages, status = [], 0, "robots_blocked"
         except (httpx.HTTPError, ValueError) as exc:

@@ -84,7 +84,12 @@ def run(
         )
     except Exception as exc:  # optional source: never stop the run
         log.warning("priority venue readers failed: %s", type(exc).__name__)
-        wp_events, wp_rows = [], [{"status": f"error: {type(exc).__name__}"}]
+        wp_events = []
+        wp_rows = [
+            {"name": e["name"], "venue": e["venue"], "reader": e["reader"]["type"]}
+            | {"status": f"error: {type(exc).__name__}", "events": 0, "pages": 0}
+            for e in zone.priority_venues
+        ]
     raw.extend(wp_events)
     raw.extend(ga_events)  # after venue sites: on a duplicate, the venue's own page wins
     # venues covered by the ticketing API or an agenda count as readable even if their site is not

@@ -73,6 +73,15 @@ def _priority_venue(entry: dict) -> dict:
         raise ValueError(
             f"priority venue {entry['name']}: needs fields.title, fields.date, date_format"
         )
+    # WordPress caps per_page at 100:
+    # https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/
+    for key, top in (("per_page", 100), ("max_pages", None)):
+        n = reader.get(key)
+        if n is None:
+            continue
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1 or (top and n > top):
+            limit = f"1..{top}" if top else ">= 1"
+            raise ValueError(f"priority venue {entry['name']}: {key} must be an int in {limit}")
     reader["fields"] = fields
     return {
         "name": str(entry["name"]),

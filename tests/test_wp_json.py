@@ -178,7 +178,7 @@ def test_events_attach_to_the_known_venue_and_dedupe(tz):
 
 def test_zone_config_has_transbordeur_reader():
     zone = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
-    (entry,) = zone.priority_venues
+    entry = next(e for e in zone.priority_venues if e["name"] == "Le Transbordeur")
     assert entry["reader"]["type"] == "wp_json"
     assert entry["reader"]["fields"]["date"] == "acf.date"
 
@@ -191,3 +191,44 @@ def test_zone_config_rejects_incomplete_reader(tmp_path):
     )
     with pytest.raises(ValueError, match="fields.date"):
         load_zone(path)
+
+
+@pytest.mark.parametrize(
+    "extra, ok",
+    [
+        ("per_page: 100, max_pages: 1", True),
+        ("per_page: 101", False),  # WordPress caps per_page at 100
+        ("per_page: 0", False),
+        ("per_page: '50'", False),
+        ("per_page: 2.5", False),
+        ("max_pages: -1", False),
+        ("max_pages: true", False),
+    ],
+)
+def test_zone_config_checks_page_numbers(tmp_path, extra, ok):
+    path = tmp_path / "zone.yaml"
+    path.write_text(
+        "name: T\nlatitude: 45\nlongitude: 4\nradius_km: 1\npriority_venues:\n"
+        "  - name: V\n    reader: {type: wp_json, url: 'https://v.example/', "
+        f"fields: {{title: t, date: d}}, date_format: '%Y', {extra}}}\n"
+    )
+    if ok:
+        assert load_zone(path).priority_venues[0]["reader"]["per_page"] == 100
+    else:
+        with pytest.raises(ValueError, match="must be an int"):
+            load_zone(path)
+
+
+@respx.mock
+def test_truncated_page_keeps_earlier_pages(items, tz, monkeypatch):
+    respx.get("https://venue.example/robots.txt").respond(404)
+    first, second = _pages(items, 4)
+    respx.get(URL).mock(
+        side_effect=[respx.MockResponse(200, json=first), respx.MockResponse(200, json=second)]
+    )
+    # the second page is larger than the cap: the fetcher would have cut it mid-JSON
+    monkeypatch.setattr(wp_json, "MAX_BYTES", len(json.dumps(first)) + 10)
+    entry = ENTRY | {"reader": READER | {"per_page": 4}}
+    events, rows = wp_json.collect((entry,), _fetcher(), _now(tz), tz, 365)
+    assert (rows[0]["status"], rows[0]["pages"]) == ("truncated", 1)
+    assert {e.title for e in events} == {"ORIA", "ALOISE SAUVAGE", "SAM QUEALY", "GROUNDATION"}
