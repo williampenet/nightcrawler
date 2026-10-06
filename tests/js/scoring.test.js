@@ -5,9 +5,9 @@ const assert = require("node:assert/strict");
 const S = require("../../src/nightcrawler/web/scoring.js");
 
 const artists = {
-  earth: { key: "earth", name: "Earth", fans: 50000, related: ["Sunn O)))", "Boris"], tags: ["drone", "doom metal"] },
-  boris: { key: "boris", name: "Boris", fans: 9000, related: ["Merzbow"], tags: ["drone", "noise"] },
-  popstar: { key: "popstar", name: "Popstar", fans: 9e6, related: [], tags: ["pop"] },
+  earth: { key: "earth", name: "Earth", fans: 50000, related: ["Sunn O)))", "Boris"], tags: ["drone", "doom metal"], confident: true },
+  boris: { key: "boris", name: "Boris", fans: 9000, related: ["Merzbow"], tags: ["drone", "noise"], confident: true },
+  popstar: { key: "popstar", name: "Popstar", fans: 9e6, related: [], tags: ["pop"], confident: true },
 };
 const c = (id, keys) => ({ id, start: "2026-10-10T20:00:00+02:00", artists: keys });
 
@@ -87,4 +87,10 @@ test("weekend in Europe/Paris, late Sunday and across the DST change", () => {
 
 test("mergeNames keeps commas inside names", () => {
   assert.deepEqual(S.mergeNames(["Earth"], ["Tyler, The Creator", "earth", "x"]), ["Earth", "Tyler, The Creator"]);
+});
+
+test("no discovery badge for an artist we are not sure about (homonyms, WIP-40)", () => {
+  const unsure = { asna: { key: "asna", name: "Asna", fans: 9000, related: ["Acid Arab"], tags: [], confident: false } };
+  const p = S.buildProfile({ seeds: [{ name: "Acid Arab", tags: [] }] }, unsure);
+  assert.equal(S.scoreConcert(c("1", ["asna"]), unsure, p).discovery, false);
 });

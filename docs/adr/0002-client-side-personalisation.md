@@ -51,3 +51,11 @@ Option A.
 
 ## Cost impact
 €0/month. Total vs budget: €0 / €20.
+
+## Amendment (2026-10-06, WIP-40): confident identities only
+Exact-name matching produced homonyms ("Sheldon + Lupi'o + Asna" shown as "Proche de Acid Arab").
+Related artists, style tags and the "Découverte" badge now come only from *confident* identities:
+a single exact-name artist on Deezer and exactly one on MusicBrainz, a name of ≥ 4 characters
+and ≥ 1,000 Deezer fans (artists with ≥ 50,000 fans may have a short name, and keep their
+related artists without tags when MusicBrainz lists homonyms). Other artists keep their identity for exact matches with the listener's own artists.
+Trade-off: less recall on small local acts, in exchange for precision (William's feedback).

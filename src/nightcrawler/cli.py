@@ -105,7 +105,10 @@ def one_line(report: dict) -> str:
         f"venues={report['venues']} with_website={report['venues_with_website']} | "
         f"probe: {status} | methods: {method or '-'} | raw_events={report['raw_events']} "
         f"concerts={report['concerts']} venues_with_concerts={report['venues_with_concerts']} | "
-        f"artists: {art.get('identified')}/{art.get('candidates')} identified, "
+        f"artists: {art.get('identified')}/{art.get('candidates')} identified "
+        f"({art.get('confident')} confident; doubts: ambiguous={art.get('doubt_ambiguous')} "
+        f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "
+        f"short={art.get('doubt_short_name')}), "
         f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered"
     )
 

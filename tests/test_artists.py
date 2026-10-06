@@ -91,6 +91,11 @@ def test_enrich_exact_match_only():
         "candidates": 3,
         "identified": 1,
         "with_tags": 1,
+        "confident": 1,
+        "doubt_ambiguous": 0,
+        "doubt_unverified": 0,
+        "doubt_low_fans": 0,
+        "doubt_short_name": 0,
         "concerts_with_artist": 1,
         "capped": False,
     }
@@ -106,7 +111,41 @@ def test_musicbrainz_needs_exact_name_and_score():
             ]
         }
     )
-    assert musicbrainz_tags(fetcher(), "Earth") == []
+    assert musicbrainz_tags(fetcher(), "Earth") is None
+
+
+@respx.mock
+def test_homonyms_and_thin_profiles_get_no_related_or_tags():
+    related = respx.get(url__regex=r"https://api\.deezer\.com/artist/\d+/related").respond(
+        json={"data": [{"name": "Acid Arab"}]}
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Sheldon"}).respond(
+        json={
+            "data": [
+                {"id": 1, "name": "Sheldon", "nb_fan": 5000},
+                {"id": 2, "name": "SHELDON", "nb_fan": 40},
+            ]
+        }
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Lupio"}).respond(
+        json={"data": [{"id": 3, "name": "Lupio", "nb_fan": 120}]}
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Asna"}).respond(
+        json={"data": [{"id": 4, "name": "Asna", "nb_fan": 9000}]}
+    )
+    respx.get(MB_SEARCH).respond(
+        json={"artists": [{"name": "Asna", "score": 100}, {"name": "Asna", "score": 100}]}
+    )
+    artists, stats = enrich([concert("t", ["Sheldon", "Lupio", "Asna"])], fetcher())
+    assert {k: a.doubt for k, a in artists.items()} == {
+        "sheldon": "ambiguous",
+        "lupio": "low_fans",
+        "asna": "unverified",
+    }
+    assert all(not a.related and not a.tags and not a.confident for a in artists.values())
+    assert artists["sheldon"].fans == 5000  # best-known homonym kept for exact seed matches
+    assert related.call_count == 0
+    assert (stats["confident"], stats["doubt_ambiguous"], stats["doubt_unverified"]) == (0, 1, 1)
 
 
 @respx.mock
@@ -146,7 +185,8 @@ def test_malformed_payloads_never_crash():
     respx.get(DEEZER_SEARCH, params={"q": "D4"}).respond(json={"error": {"code": 4}})
     concerts = [concert("t", ["A1", "B2", "C3", "D4"])]
     artists, stats = enrich(concerts, fetcher())
-    assert list(artists) == ["c3"] and artists["c3"].fans == 0 and artists["c3"].tags == ["x"]
+    c3 = artists["c3"]
+    assert list(artists) == ["c3"] and c3.fans == 0 and c3.tags == [] and c3.doubt == "short_name"
     assert stats["identified"] == 1
 
 
@@ -162,3 +202,26 @@ def test_quota_error_not_cached(tmp_path):
 def test_lookup_cap():
     artists, stats = enrich([concert("t", ["A1", "B2"])], fetcher(), max_lookups=0)
     assert stats["capped"] is True and artists == {}
+
+
+@respx.mock
+def test_unverified_short_and_famous_names():
+    respx.get(url__regex=r"https://api\.deezer\.com/artist/\d+/related").respond(
+        json={"data": [{"name": "Phoenix"}]}
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Asna"}).respond(
+        json={"data": [{"id": 4, "name": "Asna", "nb_fan": 9000}]}
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Air"}).respond(
+        json={"data": [{"id": 5, "name": "Air", "nb_fan": 900000}]}
+    )
+    respx.get(DEEZER_SEARCH, params={"q": "Nes"}).respond(
+        json={"data": [{"id": 6, "name": "Nes", "nb_fan": 20000}]}
+    )
+    respx.get(MB_SEARCH).respond(json={"artists": []})  # nobody on MusicBrainz
+    artists, stats = enrich([concert("t", ["Asna", "Air", "Nes"])], fetcher())
+    assert artists["asna"].doubt == "unverified" and not artists["asna"].related
+    assert artists["nes"].doubt == "short_name"
+    air = artists["air"]
+    assert air.confident and air.related == ["Phoenix"] and air.tags == []
+    assert stats["doubt_unverified"] == 1 and stats["confident"] == 1

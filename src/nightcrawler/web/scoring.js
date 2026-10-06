@@ -85,7 +85,8 @@
     const consider = (score, reason, artist) => {
       if (score > best.score) {
         // a discovery = a little-known artist reached through a related or style match
-        const known = Number.isInteger(artist.fans);
+        // only for confidently identified artists: a homonym's fan count says nothing (WIP-40)
+        const known = artist.confident === true && Number.isInteger(artist.fans);
         best = { score, reason, discovery: known && artist.fans < DISCOVERY_FANS && score <= 0.8 };
       }
     };
