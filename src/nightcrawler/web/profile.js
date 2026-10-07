@@ -1,5 +1,6 @@
 // Taste profile synced with the feedback function (WIP-46, ADR-0005): pure helpers + GET/PUT.
-// The profile is the listener's choices only (seed names and tags, ratings, hidden concerts);
+// The profile is the listener's choices only (seed names and tags, ratings, hidden concerts,
+// the written taste "Mon goût en mots", WIP-73: personal data, never logged);
 // no Spotify token (ADR-0003). Loaded by the page and by `node --test tests/js/*.test.js`.
 "use strict";
 
@@ -35,10 +36,22 @@
     const list = (v, re, max) => [...new Set(Array.isArray(v) ? v : [])].filter((x) => typeof x === "string" && re.test(x)).slice(-max);
     for (const k of KEY_LISTS) out[k] = list(s[k], KEY_RE, MAX_LIST);
     for (const k of ID_LISTS) out[k] = list(s[k], ID_RE, S.MAX_IDS);
+    // "Mon goût en mots" (WIP-73). Read from a page state (tasteText, tasteTextAt) or from a
+    // profile (taste_text, taste_text_at, the function's names): merge and afterPush get both.
+    const text = "taste_text" in s ? s.taste_text : s.tasteText;
+    const at = "taste_text_at" in s ? s.taste_text_at : s.tasteTextAt;
+    out.taste_text = S.cleanTasteText(text);
+    out.taste_text_at = Number.isSafeInteger(at) && at >= 0 ? at : 0;
     return out;
   }
 
-  const isEmpty = (p) => !p.seeds.length && [...KEY_LISTS, ...ID_LISTS].every((k) => !p[k].length);
+  // A profile as page state fields: taste_text -> tasteText, taste_text_at -> tasteTextAt.
+  function toState(profile) {
+    const { taste_text, taste_text_at, ...rest } = extract(profile);
+    return { ...rest, tasteText: taste_text, tasteTextAt: taste_text_at };
+  }
+
+  const isEmpty = (p) => !p.seeds.length && !p.taste_text && [...KEY_LISTS, ...ID_LISTS].every((k) => !p[k].length);
 
   // Seeds the function would not accept (over 200, name over 60 characters): not synced.
   const droppedSeeds = (state) => Math.max(0, (Array.isArray(state.seeds) ? state.seeds.length : 0) - extract(state).seeds.length);
@@ -46,6 +59,10 @@
   // Conflict merge: union of the lists, server seeds first then local seeds it lacks. A key
   // cannot be both liked and disliked: this browser's latest choice wins. Known limit: a
   // removal (un-like) made on one device comes back if it meets a change from another.
+  // The written taste (WIP-73) is one text, not a list: last writer wins, i.e. the copy with
+  // the most recent edit time (taste_text_at); on a tie this browser's copy. Known limits:
+  // the edit time comes from each device's clock (a clock far off can win wrongly), and the
+  // losing text is replaced, not combined.
   function merge(server, local) {
     const a = extract(server);
     const b = extract(local);
@@ -58,6 +75,9 @@
       out[no] = out[no].filter((k) => !localYes.has(k) || localNo.has(k));
       out[yes] = out[yes].filter((k) => !localNo.has(k) || localYes.has(k));
     }
+    const newest = a.taste_text_at > b.taste_text_at ? a : b;
+    out.taste_text = newest.taste_text;
+    out.taste_text_at = newest.taste_text_at;
     return out;
   }
 
@@ -113,7 +133,8 @@
   }
 
   // PUT with base_version; on 409 merges with the server copy (or, with force, overwrites it)
-  // and retries once. {status: "ok", data, version, merged} | {status: "unauthorized" | "error"}
+  // and retries once. {status: "ok", data, version, merged} | {status: "unauthorized" | "error"},
+  // with reason "too-large" when the function refuses the body size (400, ADR-0005)
   async function push(url, token, data, base, fetch, force = false) {
     let merged = false;
     try {
@@ -129,6 +150,9 @@
           continue;
         }
         if (res.status === 401) return { status: "unauthorized" };
+        if (res.status === 400 && (await res.json().catch(() => ({}))).error === "body too large") {
+          return { status: "error", reason: "too-large" };
+        }
         if (!res.ok) return { status: "error" };
         const body = await res.json();
         if (!Number.isInteger(body.version)) return { status: "error" };
@@ -156,7 +180,7 @@
     }
   }
 
-  const api = { SYNC_KEY, extract, isEmpty, droppedSeeds, merge, afterPull, snapshot, afterPush, pull, push, profileUrl, parseSync };
+  const api = { SYNC_KEY, extract, toState, isEmpty, droppedSeeds, merge, afterPull, snapshot, afterPush, pull, push, profileUrl, parseSync };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCProfile = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

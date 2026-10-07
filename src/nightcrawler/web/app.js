@@ -330,23 +330,131 @@ function showProbe(rows) {
   notify("Test Spotify terminé : résultat sous « Mes goûts ».", "info");
 }
 
+function showTasteCount() {
+  const n = document.getElementById("taste-text").value.length; // UTF-16 code units, as maxlength
+  const fr = (x) => x.toLocaleString("fr-FR");
+  document.getElementById("taste-text-count").textContent = `${fr(n)} / ${fr(S.MAX_TASTE_TEXT)} caractères`;
+}
+
 function setStatus(text) {
   document.getElementById("taste-status").textContent = text;
 }
 
 // ---------------------------------------------------------------- feedback
 
-function feedback(concert, kind, li) {
+// The one rating path, shared by the list buttons and the "À trier" mode (WIP-73): the
+// same state change and the same events sent to the feedback function.
+function applyRating(concert, kind) {
   if (concert.id === deepLinkId) deepLinkId = null; // the user acted on it: normal rules apply again
-  const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
   // without an identified artist the concert is rated by id and performer names (WIP-47)
   const { state: rated, send } = S.rate(state, concert, kind, DATA.concerts);
   Object.assign(state, rated);
   sendFeedback(send.kind, concert.id, send.keys);
   saveState();
   render();
+}
+
+function feedback(concert, kind, li) {
+  const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
+  applyRating(concert, kind);
   // an un-liked row may move into a collapsed "Tout voir" (WIP-53): then the next row
   refocus(...(kind === "like" ? [concert.id, next] : [next]));
+}
+
+// ---------------------------------------------------------------- "À trier" mode (WIP-73)
+// One upcoming, unrated concert at a time, drawn at random (S.sortCandidates, S.pickRandom),
+// so the ratings are not limited to what the current ranking shows first. "Session" = this
+// page load: skipped and rated concerts are not shown again until the page is reloaded.
+const sorter = { seen: new Set(), rated: 0, current: null };
+
+function sorterNext() {
+  const list = S.sortCandidates(DATA.concerts, state, sorter.seen, new Date(), dayKey);
+  sorter.current = S.pickRandom(list);
+  renderSorterCard(list.length);
+}
+
+function renderSorterCard(left) {
+  const card = document.getElementById("sorter-card");
+  const c = sorter.current;
+  const n = sorter.rated;
+  document.getElementById("sorter-count").textContent = `${n} noté${n > 1 ? "s" : ""} dans cette session`;
+  document.getElementById("sorter-actions").hidden = !c;
+  card.replaceChildren();
+  if (!c) {
+    const done = el("p", "Plus rien à trier pour le moment : tous les concerts à venir sont notés ou passés.", "muted");
+    done.tabIndex = -1;
+    card.append(done);
+    done.focus();
+    return;
+  }
+  const title = el("h3", c.title, "sorter-title");
+  title.tabIndex = -1; // focused on each new concert, so screen readers read it
+  card.append(title);
+  const start = new Date(c.start);
+  const t = timeFmt.format(start);
+  card.append(el("p", dayFmt.format(start) + (t === "00:00" ? "" : ` à ${t}`), "sorter-when"));
+  card.append(el("p", c.venue_name, "venue"));
+  const match = S.scoreConcert(c, DATA.artists, S.buildProfile(state, DATA.artists));
+  if (match.reason) {
+    const why = el("p", null, "why");
+    why.append(el("span", match.reason));
+    if (match.discovery) why.append(el("span", "Découverte", "badge"));
+    card.append(why);
+  }
+  const links = el("p", null, "links");
+  for (const l of S.concertLinks(c)) {
+    const a = safeLink(l.url, l.label);
+    if (a) links.append(a);
+  }
+  if (c.ai_extracted) {
+    // EU AI Act transparency (WIP-66), as in the list
+    const ai = el("span", "Lu par IA", "badge ai");
+    ai.title = "Cette annonce a été lue par un modèle d'IA.";
+    links.append(ai);
+  }
+  if (links.childNodes.length) card.append(links);
+  card.append(el("p", `Encore ${left - 1} concert${left - 1 > 1 ? "s" : ""} à trier après celui-ci.`, "muted"));
+  title.focus();
+}
+
+function sorterAct(kind) {
+  const c = sorter.current;
+  if (!c) return;
+  sorter.seen.add(c.id);
+  if (kind !== "skip") {
+    applyRating(c, kind); // exactly the list buttons' path: S.rate + the feedback queue
+    sorter.rated++;
+  }
+  sorterNext();
+}
+
+function setupSorter() {
+  const dialog = document.getElementById("sorter");
+  const opener = document.getElementById("sorter-open");
+  if (!dialog || typeof dialog.showModal !== "function") return; // the button stays hidden
+  opener.hidden = false;
+  // a modal <dialog> makes the rest of the page inert and closes on Escape
+  // (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog)
+  opener.addEventListener("click", () => {
+    dialog.showModal();
+    sorterNext();
+  });
+  document.getElementById("sorter-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => opener.focus()); // back where the listener was
+  document.getElementById("sorter-like").addEventListener("click", () => sorterAct("like"));
+  document.getElementById("sorter-dislike").addEventListener("click", () => sorterAct("dislike"));
+  document.getElementById("sorter-skip").addEventListener("click", () => sorterAct("skip"));
+  // desktop shortcuts: J, N, Space. Space on a focused button or link keeps its own meaning
+  // (it activates that control), so it means "Passer" only elsewhere in the dialog.
+  dialog.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || !sorter.current) return;
+    const onControl = e.target instanceof Element && e.target.closest("button, a, input, textarea, select");
+    const key = e.key.toLowerCase();
+    const kind = key === "j" ? "like" : key === "n" ? "dislike" : key === " " && !onControl ? "skip" : null;
+    if (!kind) return;
+    e.preventDefault();
+    sorterAct(kind);
+  });
 }
 
 // Server-side copy of the ratings (ADR-0005): queued here, sent when a URL and a key are set.
@@ -469,7 +577,10 @@ function profileChanged() {
 }
 
 function applyProfile(data) {
-  Object.assign(state, data);
+  Object.assign(state, P.toState(data)); // taste_text -> tasteText (WIP-73)
+  const taste = document.getElementById("taste-text");
+  if (document.activeElement !== taste) taste.value = state.tasteText; // never under the cursor
+  showTasteCount();
   // saved ids are kept even when absent today; an alias gets its current id (WIP-42, WIP-59)
   state.hidden = S.keepIds(DATA.concerts, state.hidden);
   state.likedConcerts = S.keepIds(DATA.concerts, state.likedConcerts);
@@ -521,7 +632,8 @@ async function pushProfile() {
     }
     profileChanged(); // sends again what changed meanwhile
   } else {
-    setSync(r.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé"); // retried on next change, load or reconnection
+    const why = r.reason === "too-large" ? " : profil trop volumineux (64 Ko au plus), retire des artistes" : "";
+    setSync(r.status === "unauthorized" ? "Clé refusée" : `Profil non synchronisé${why}`); // retried on next change, load or reconnection
   }
   syncAgain = false;
 }
@@ -926,6 +1038,22 @@ function setupControls() {
     showPending();
   }
   showWhere();
+  // "Mon goût en mots" (WIP-73): saved on each change, synced 1.5 s later like the rest of the
+  // profile. Personal data: never logged, never in the repo (kept in the event store, EU).
+  const taste = document.getElementById("taste-text");
+  taste.maxLength = S.MAX_TASTE_TEXT;
+  taste.value = state.tasteText;
+  showTasteCount();
+  taste.addEventListener("input", () => {
+    state.tasteText = S.cleanTasteText(taste.value);
+    state.tasteTextAt = Date.now(); // edit time for the last-writer-wins merge (profile.js)
+    showTasteCount();
+    saveState();
+  });
+  taste.addEventListener("blur", () => {
+    taste.value = S.blurTasteText(taste.value, state.tasteText); // a sync landed while focused
+    showTasteCount();
+  });
   document.getElementById("lb-import").addEventListener("click", () =>
     importListenBrainz(document.getElementById("lb-user").value),
   );
@@ -938,9 +1066,12 @@ function setupControls() {
     }
     state = Object.assign(loadState(), {
       seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
+      tasteText: "", tasteTextAt: Date.now(),
     });
     saveState();
     box.value = "";
+    taste.value = "";
+    showTasteCount();
     setStatus(`Goûts et avis effacés ${whereText()}.`);
     render();
   });
@@ -978,6 +1109,7 @@ async function main() {
     const m = DEEP_LINK_RE.exec(location.hash);
     deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
     setupControls();
+    setupSorter();
     render();
     renderSources(venues, report);
     renderAgendaCredits(report);

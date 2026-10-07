@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const P = require("../../src/nightcrawler/web/profile.js");
 
 const CID = "0123456789ab";
-const EMPTY = { seeds: [], liked: [], disliked: [], wrong: [], likedNames: [], dislikedNames: [], hidden: [], likedConcerts: [] };
+const EMPTY = { seeds: [], liked: [], disliked: [], wrong: [], likedNames: [], dislikedNames: [], hidden: [], likedConcerts: [], taste_text: "", taste_text_at: 0 };
 
 test("extract keeps the profile fields in the function's shape and limits", () => {
   const p = P.extract({
@@ -112,6 +112,10 @@ test("push retries once after a 409, merging or (force) overwriting", async () =
   const always409 = async () => reply(409, { data: null, version: 1 });
   assert.deepEqual(await P.push("u", "k", EMPTY, 0, always409), { status: "error" });
   assert.deepEqual(await P.push("u", "k", EMPTY, 0, async () => reply(503, {})), { status: "error" });
+  // a body over the function's 64 KB limit: the page can say why (ADR-0005)
+  const tooLarge = async () => reply(400, { error: "body too large" });
+  assert.deepEqual(await P.push("u", "k", EMPTY, 0, tooLarge), { status: "error", reason: "too-large" });
+  assert.deepEqual(await P.push("u", "k", EMPTY, 0, async () => reply(400, { error: "bad seed" })), { status: "error" });
 });
 
 test("profileUrl and parseSync", () => {
@@ -119,4 +123,50 @@ test("profileUrl and parseSync", () => {
   assert.equal(P.profileUrl("https://f.example/fn/"), "https://f.example/fn/profile");
   assert.deepEqual(P.parseSync("{oops"), { version: 0, dirty: false, force: false });
   assert.deepEqual(P.parseSync('{"version":4,"dirty":true}'), { version: 4, dirty: true, force: false });
+});
+
+// ---- "Mon goût en mots" (WIP-73)
+
+test("extract reads the written taste from a state or a profile, cleaned to the function's limits", () => {
+  const fromState = P.extract({ tasteText: "drone", tasteTextAt: 5 });
+  assert.deepEqual([fromState.taste_text, fromState.taste_text_at], ["drone", 5]);
+  const fromProfile = P.extract({ taste_text: "noise", taste_text_at: 7 });
+  assert.deepEqual([fromProfile.taste_text, fromProfile.taste_text_at], ["noise", 7]);
+  const bad = P.extract({ taste_text: 3, taste_text_at: -1 });
+  assert.deepEqual([bad.taste_text, bad.taste_text_at], ["", 0]);
+  const long = P.extract({ tasteText: "a\u0000".repeat(3000) + "b".repeat(3000), tasteTextAt: 1.5 });
+  assert.deepEqual([long.taste_text.length, long.taste_text.includes("\u0000"), long.taste_text_at], [4000, false, 0]);
+  // a surrogate pair cut by the cap is dropped, never sent half
+  assert.equal(P.extract({ tasteText: "x".repeat(3999) + "🎷" }).taste_text, "x".repeat(3999));
+  assert.ok(!P.isEmpty(P.extract({ tasteText: "drone" })));
+});
+
+test("toState maps the profile names to the page state names", () => {
+  const s = P.toState({ liked: ["asna"], taste_text: "drone", taste_text_at: 9 });
+  assert.deepEqual([s.tasteText, s.tasteTextAt, s.liked], ["drone", 9, ["asna"]]);
+  assert.ok(!("taste_text" in s) && !("taste_text_at" in s));
+});
+
+test("merge: the written taste is last-writer-wins on its edit time, ties keep this browser's", () => {
+  const server = { taste_text: "server", taste_text_at: 200, liked: ["asna"] };
+  let m = P.merge(server, { tasteText: "local", tasteTextAt: 100, liked: ["boris"] });
+  assert.deepEqual([m.taste_text, m.taste_text_at, m.liked], ["server", 200, ["asna", "boris"]]);
+  m = P.merge(server, { tasteText: "local", tasteTextAt: 300 });
+  assert.deepEqual([m.taste_text, m.taste_text_at], ["local", 300]);
+  m = P.merge(server, { taste_text: "local", taste_text_at: 200 });
+  assert.equal(m.taste_text, "local");
+  // an emptied text is an edit too: it wins when it is the most recent
+  m = P.merge(server, { tasteText: "", tasteTextAt: 400 });
+  assert.deepEqual([m.taste_text, m.taste_text_at], ["", 400]);
+});
+
+test("afterPull and push carry the written taste", async () => {
+  const found = { status: "found", data: { ...EMPTY, taste_text: "server", taste_text_at: 2 }, version: 4 };
+  assert.equal(P.afterPull(SYNC, found, P.extract({ tasteText: "local", tasteTextAt: 1 }), false).apply.taste_text, "server");
+  const dirty = P.afterPull({ ...SYNC, dirty: true }, found, P.extract({ tasteText: "local", tasteTextAt: 3 }), false);
+  assert.equal(dirty.apply.taste_text, "local");
+  let n = 0;
+  const fetch = async () => (n++ === 0 ? reply(409, { data: { taste_text: "other", taste_text_at: 50 }, version: 5 }) : reply(200, { version: 6 }));
+  const r = await P.push("u", "k", P.extract({ tasteText: "mine", tasteTextAt: 10 }), 4, fetch);
+  assert.deepEqual([r.data.taste_text, r.merged], ["other", true]);
 });

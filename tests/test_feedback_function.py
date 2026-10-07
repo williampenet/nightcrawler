@@ -2,6 +2,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import logging
 import os
 import threading
 import zipfile
@@ -195,6 +196,7 @@ class FakeProfile:
     def put(self, data, base):
         if (self.row["version"] if self.row else 0) != base:
             return False, self.row
+        data = handler.keep_taste_text(data, self.row["data"] if self.row else None)
         self.row = {"data": data, "version": base + 1, "updated_at": "t"}
         return True, {"version": base + 1}
 
@@ -264,6 +266,88 @@ def test_profile_accepts_500_concert_ids_per_list():
     assert data["hidden"] == ids and data["likedConcerts"] == ids
 
 
+# ---------------------------------------------------------------- written taste (WIP-73)
+
+
+@pytest.mark.parametrize(
+    "data,reason",
+    [
+        ({"taste_text": "a" * 4001}, "taste_text: a string of at most 4000 characters"),
+        ({"taste_text": 3}, "taste_text: a string of at most 4000 characters"),
+        ({"taste_text": None}, "taste_text: a string of at most 4000 characters"),
+        ({"taste_text": "ok\x00"}, "taste_text: a string of at most 4000 characters"),
+        ({"taste_text": "ok\ud800"}, "taste_text: not valid unicode"),
+        ({"taste_text_at": -1}, "bad taste_text_at"),
+        ({"taste_text_at": "1"}, "bad taste_text_at"),
+        ({"taste_text_at": True}, "bad taste_text_at"),
+        ({"taste_text_at": 2**53}, "bad taste_text_at"),
+    ],
+)
+def test_profile_rejects_bad_taste_text(data, reason):
+    assert pcall("PUT", {"data": data, "base_version": 0}) == (400, {"error": reason})
+
+
+def test_profile_taste_text_round_trip_and_defaults():
+    fake = FakeProfile()
+    head = "Drone et noise ; jazz seulement s'il croise autre chose. 🎷"
+    text = head + "é" * (4000 - len(head))  # exactly the cap, non-ASCII included
+    body = {"data": {**PROFILE, "taste_text": text, "taste_text_at": 1_760_000_000_000}}
+    assert pcall("PUT", {**body, "base_version": 0}, profile=fake) == (200, {"version": 1})
+    status, got = pcall("GET", profile=fake)
+    assert status == 200
+    assert got["data"]["taste_text"] == text
+    assert got["data"]["taste_text_at"] == 1_760_000_000_000
+
+
+def test_profile_save_without_taste_text_keeps_the_stored_text():
+    # a page older than WIP-73 PUTs profiles without the field: the stored text stays
+    fake = FakeProfile()
+    body = {"data": {**PROFILE, "taste_text": "drone", "taste_text_at": 50}, "base_version": 0}
+    assert pcall("PUT", body, profile=fake) == (200, {"version": 1})
+    assert pcall("PUT", {"data": {"liked": []}, "base_version": 1}, profile=fake)[0] == 200
+    data = pcall("GET", profile=fake)[1]["data"]
+    assert data["liked"] == [] and (data["taste_text"], data["taste_text_at"]) == ("drone", 50)
+    # an older edit does not replace it either
+    old = {"data": {"taste_text": "", "taste_text_at": 49}, "base_version": 2}
+    assert pcall("PUT", old, profile=fake)[0] == 200
+    assert pcall("GET", profile=fake)[1]["data"]["taste_text"] == "drone"
+
+
+def test_profile_explicit_empty_taste_text_with_newer_time_clears_it():
+    fake = FakeProfile()
+    body = {"data": {"taste_text": "drone", "taste_text_at": 50}, "base_version": 0}
+    assert pcall("PUT", body, profile=fake)[0] == 200
+    clear = {"data": {"taste_text": "", "taste_text_at": 51}, "base_version": 1}
+    assert pcall("PUT", clear, profile=fake) == (200, {"version": 2})
+    data = pcall("GET", profile=fake)[1]["data"]
+    assert (data["taste_text"], data["taste_text_at"]) == ("", 51)
+
+
+def test_profile_worst_case_taste_text_fits_the_body_limit():
+    # 4,000 characters that JSON escapes to 6 bytes each, plus both id lists at their cap
+    ids = [f"{i:012x}" for i in range(handler.MAX_IDS)]
+    data = {"taste_text": "\x01" * 4000, "taste_text_at": 2**53 - 1, "hidden": ids}
+    raw = json.dumps({"data": {**data, "likedConcerts": ids}, "base_version": 0}).encode()
+    assert len(raw) < handler.MAX_PROFILE_BODY
+    assert handler.validate_profile(raw)[0]["taste_text"] == "\x01" * 4000
+    # the body limit still applies first
+    big = json.dumps({"data": {"taste_text": "a" * 70000}, "base_version": 0}).encode()
+    assert pcall("PUT", big) == (400, {"error": "body too large"})
+
+
+def test_taste_text_is_never_logged(caplog):
+    class Down(FakeProfile):
+        def put(self, data, base):
+            raise RuntimeError(data["taste_text"])
+
+    secret = "texte personnel tres reconnaissable"
+    with caplog.at_level(logging.DEBUG):
+        body = {"data": {"taste_text": secret}, "base_version": 0}
+        status, got = pcall("PUT", body, profile=Down())
+    assert status == 503 and secret not in json.dumps(got)
+    assert secret not in caplog.text
+
+
 def test_profile_store_errors():
     class Down:
         def get(self):
@@ -328,6 +412,14 @@ def test_pg_profile_on_real_postgres(monkeypatch):
         conn.execute("UPDATE profile SET data = %s, version = 2", (json.dumps({"liked": []}),))
     row = pg.get()
     assert row["data"] == {"liked": []} and row["version"] == 2 and row["updated_at"]
+    taste = {"liked": [], "taste_text": "drone", "taste_text_at": 50}
+    assert pg.put(taste, 2) == (True, {"version": 3})
+    assert pg.put({"liked": []}, 3) == (True, {"version": 4})  # field absent: text kept
+    assert pg.get()["data"]["taste_text"] == "drone"
+    assert pg.put({**taste, "taste_text": "", "taste_text_at": 51}, 4) == (True, {"version": 5})
+    assert pg.get()["data"]["taste_text"] == ""
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("UPDATE profile SET version = 2")
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO profile_writes SELECT now() FROM generate_series(1, %s)",
