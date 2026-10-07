@@ -134,6 +134,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-66 | #54 REQUEST_CHANGES: 2 blocking (chunk size beyond evaluated input; 3-line overlap loses title-first events) + 8 non-blocking; #55 REQUEST_CHANGES: captures commit every run, verbatim pages in public history, write scope not branch-limited; fixed (#54), #55 closed | PR #54, PR #55 |
 | 2026-10-07 | agent:dev | fix | WIP-66 review: chunks of `llm_chunk_chars: 3200` (largest eval page 3,234 chars), `max_input_chars` as upper bound, `llm_chunks_per_page: 5`; overlap = `extract.BEFORE` (8) lines; cache key adds user template, temperature, extra, max_output_tokens, fallback; answers with check errors not cached; non-music venues need music words too; `crawl_delay_hosts` in report.json; `llm_calls_per_run`; Petit Bulletin removed (robots.txt opts out of AI crawlers) with by_location code; neutral badge tooltip | PR #54 |
 | 2026-10-07 | agent:dev | change | WIP-66 (coordinator): rebased on main after #53 (footer wording "hébergé dans l'Union européenne" kept, branch squashed to one commit); Chapelle de la Trinité `category: music_venue`; `llm_chunks_per_page: 6` | PR #54 |
+| 2026-10-07 | agent:reviewer | re-review WIP-66 (a949569) | APPROVE; follow-ups: stale max_input_chars comment (config/models.yaml, ADR-0004), add Trinité/Subsistances pages to the eval, overlap cost on long-line pages | PR #54 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
