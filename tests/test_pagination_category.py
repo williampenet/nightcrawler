@@ -197,3 +197,45 @@ def test_zone_config_opera_and_pagination_entries():
     # the Épicerie and Marché Gare "Afficher plus" links are ?page=1: pages count from 0
     for name in ("L'Épicerie Moderne", "Le Marché Gare"):
         assert readers[name]["paginate"]["start"] == 1 and len(readers[name]["urls"]) == 1
+
+
+EPICERIE = next(e for e in ZONE.priority_venues if e["name"] == "L'Épicerie Moderne")
+
+
+def _epicerie_event(title, tz, location="L'Épicerie Moderne"):
+    source = "listing_jsonld:epiceriemoderne.com"
+    start = datetime(2026, 10, 8, 19, 30, tzinfo=tz)
+    return RawEvent(title, start, source, source, types=["Event"], location_name=location)
+
+
+def test_configured_name_resolves_like_attribution_wip64b(tz):
+    # real names of the 2026-10-07 08:38 run: OSM node 523776298 and the Gancio place
+    osm = Venue(
+        "osm:node/523776298",
+        "L'épicerie moderne Place René Lescot, 69320 Feyzin",
+        45.67,
+        4.86,
+        "concert_hall",
+    )
+    gancio = Venue("gancio:villemorte:1", "L’Épicerie Moderne", 45.67, 4.86, "events_venue")
+    assert configured_venues((EPICERIE,), [osm, gancio]) == []  # no config: venue created
+    assert (osm.category, osm.latitude) == ("concert_hall", 45.67)  # nothing overridden
+    venues = {v.id: v for v in (osm, gancio)}
+    events = [_epicerie_event(t, tz) for t in ("THE LEMON TWIGS", "TEMPLES")]
+    concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
+    assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
+        ("TEMPLES", "osm:node/523776298", "music venue"),
+        ("THE LEMON TWIGS", "osm:node/523776298", "music venue"),
+    ]
+
+
+def test_default_category_is_not_stricter_than_the_place_fallback(tz):
+    entry = {"name": "X", "venue": "Salle Imaginaire Nord", "reader": {}}
+    (venue,) = configured_venues((entry,), [])
+    assert venue.category == "events_venue"
+    for title in ("Lemon Twigs", "Concert Lemon Twigs", "Atelier collage"):
+        ev = _epicerie_event(title, tz, location="Salle Imaginaire Nord")
+        now = _now(tz)
+        fallback = build_concerts([ev], {}, now=now, window_days=60, tz=tz)
+        configured = build_concerts([ev], {venue.id: venue}, now=now, window_days=60, tz=tz)
+        assert [c.reason for c in configured] == [c.reason for c in fallback], title

@@ -6,7 +6,7 @@ import math
 import re
 import unicodedata
 
-from .events import place_key
+from .events import best_venue_match, place_tokens
 from .models import Venue
 
 SAME_PLACE_METERS = 150
@@ -81,30 +81,39 @@ def merge(groups: list[list[Venue]]) -> tuple[list[Venue], dict[str, str]]:
 def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Venue]:
     """Known venues for "Mes salles" (config `priority_venues`, WIP-64); returns those to add.
 
-    Readers give their events the configured venue name, and events.attribute_venue attaches
-    them to the known venue of that name. A known venue with the same place key (the exact
-    match attribute_venue prefers) takes the configured `category`, if any. Without one, a
-    venue `config:<key>` is created rather than leaving the events to a `place:` venue with no
-    category: configured category (default events_venue, which gives no music rule) and
-    coordinates: `latitude`/`longitude`, else those of the known venue named in
-    `coordinates_from` (Opéra Underground plays in the "Opéra de Lyon" building, so the same
-    show listed there merges within dedup's 300 m), else none: the venue is then compared
-    with other venues by id only.
+    Readers give their events the configured venue name; events.attribute_venue attaches them
+    to the known venue that name matches (events.best_venue_match: words in a row, exact name
+    first, then the closest length). The same matching resolves the configured name here, so
+    "L'Épicerie Moderne" finds the OSM "L'épicerie moderne Place René Lescot, 69320 Feyzin".
+
+    - A match is kept as it is; only an explicit `category` in the config replaces its
+      category. Its coordinates are never changed.
+    - No match: a venue `config:<key>` is created instead of the `place:` fallback, with the
+      configured `category`, else events_venue. events_venue is not a music category, so the
+      concert rule is exactly the fallback's (events.concert_reason only uses
+      `is_music_venue`; a `place:` venue has none): never stricter than before (WIP-64b).
+      Coordinates: `latitude`/`longitude`, else those of the known venue that
+      `coordinates_from` names (Opéra Underground plays in the "Opéra de Lyon" building, so
+      the same show listed there merges within dedup's 300 m), else none (compared with
+      other venues by id only).
     """
     added: list[Venue] = []
     for entry in entries:
-        key = place_key(entry["venue"])
-        same = [v for v in [*venues, *added] if key and place_key(v.name) == key]
-        for v in same:
-            v.category = entry.get("category", v.category)
-        if key and not same:
-            lat, lon = entry.get("latitude"), entry.get("longitude")
-            src_key = place_key(entry.get("coordinates_from") or "")
-            src = next((v for v in venues if src_key and place_key(v.name) == src_key), None)
-            if lat is None and src is not None and src.latitude is not None:
-                lat, lon = src.latitude, src.longitude
-            category = entry.get("category", "events_venue")
-            added.append(
-                Venue(f"config:{key}", entry["venue"], lat, lon, category, sources=["config"])
-            )
+        known = {v.id: v for v in [*venues, *added]}
+        keys = {vid: place_tokens(v.name) for vid, v in known.items()}
+        tokens = place_tokens(entry["venue"])
+        if (match := best_venue_match(tokens, keys)) is not None:
+            if "category" in entry:
+                known[match].category = entry["category"]
+            continue
+        if not tokens:
+            continue
+        lat, lon = entry.get("latitude"), entry.get("longitude")
+        src_id = best_venue_match(place_tokens(entry.get("coordinates_from") or ""), keys)
+        src = known.get(src_id) if src_id else None
+        if lat is None and src is not None and src.latitude is not None:
+            lat, lon = src.latitude, src.longitude
+        category = entry.get("category", "events_venue")
+        key = "".join(tokens)
+        added.append(Venue(f"config:{key}", entry["venue"], lat, lon, category, sources=["config"]))
     return added

@@ -150,6 +150,21 @@ def is_excluded_place(location: str, excluded_keys: list[tuple[str, ...]]) -> bo
     )
 
 
+def best_venue_match(
+    tokens: tuple[str, ...], keys: dict[str, tuple[str, ...]], prefer: str | None = None
+) -> str | None:
+    """Id of the known venue whose name matches `tokens` (_names_match): exact name first,
+    then the closest length; ties go to `prefer`. None when no name matches."""
+    key = "".join(tokens)
+    matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
+
+    def rank(vid: str) -> tuple[bool, int, bool]:
+        vkey = "".join(keys[vid])
+        return (vkey != key, abs(len(vkey) - len(key)), vid != prefer)
+
+    return min(matches, key=rank) if matches else None
+
+
 def attribute_venue(
     event: RawEvent, venues: dict[str, Venue], keys: dict[str, tuple[str, ...]]
 ) -> tuple[str | None, str | None]:
@@ -171,14 +186,8 @@ def attribute_venue(
     key = "".join(tokens)
     if len(key) < MIN_PLACE_KEY and not platform:  # a room ("Grande salle") or a city
         return event.venue_id, None
-    matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
-    if matches:
-        # exact name first, then the closest length; ties stay at the page's venue
-        def rank(vid: str) -> tuple[bool, int, bool]:
-            vkey = "".join(keys[vid])
-            return (vkey != key, abs(len(vkey) - len(key)), vid != event.venue_id)
-
-        return min(matches, key=rank), None
+    if (match := best_venue_match(tokens, keys, prefer=event.venue_id)) is not None:
+        return match, None
     if platform:
         return None, None  # e.g. a tour date elsewhere listed on a promoter's page
     if page_venue is not None and page_venue.is_music_venue:

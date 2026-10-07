@@ -27,9 +27,11 @@ excluded_venues:
 # `paginate: {param, start, max}` also reads param=start, start+1... (at most `max` more pages
 # per URL) until a page brings no new link (WIP-64).
 # Optional per venue (WIP-64): `category` (e.g. music_venue: its events pass the venue-based
-# concert rule) and `latitude`/`longitude`. A known venue with the same name takes the
-# category; without one, a configured venue is created (venues.configured_venues), with
-# the configured coordinates or those of the known venue named in `coordinates_from`.
+# concert rule) and `latitude`/`longitude`. `venue` is matched against known venues as
+# events are attributed (words in a row, closest name first). A match keeps its category
+# and coordinates unless `category` is set; with no match, a configured venue is created
+# (venues.configured_venues; default category events_venue, the same concert rule as no
+# venue), with the configured coordinates or those of the venue `coordinates_from` names.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
 priority_venues:
   - name: Le Transbordeur
