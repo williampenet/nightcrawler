@@ -1,8 +1,9 @@
 """Scaleway Serverless Function: POST / (feedback) and GET/PUT /profile (ADR-0005, WIP-46).
 
 POST receives the listener's ratings and stores them in the `feedback` table. /profile keeps
-the taste profile (seed artists, ratings, hidden concerts) so it follows the listener across
-devices; PUT uses optimistic concurrency (base_version, 409 with the current profile).
+the taste profile (seed artists, ratings, hidden concerts, written taste) so it follows the
+listener across devices; PUT uses optimistic concurrency (base_version, 409 with the current
+profile).
 Security: CORS limited to the Pages origin, bearer token compared by SHA-256 hash, strict
 schema and size limits, parameterised SQL. Never logs the token or the body.
 
@@ -46,7 +47,15 @@ ID_LISTS = ("hidden", "likedConcerts")
 # saved concert ids are kept even when absent from a day's data (WIP-59): the page keeps
 # the 500 most recent per list (scoring.js MAX_IDS) and the function enforces the same cap
 MAX_IDS = 500
-PROFILE_FIELDS = ("seeds", *KEY_LISTS, *ID_LISTS)
+# "Mon goût en mots" (WIP-73): the listener's written taste profile (PRD FR-4), personal data,
+# stored here only and never logged. 4,000 characters (code points; the page counts UTF-16
+# code units, so its text is never longer here). Worst case 4,000 JSON escapes of 6 bytes =
+# 24 KB, plus 2 x 500 concert ids (about 15 KB): still under MAX_PROFILE_BODY.
+# taste_text_at: the edit time (ms since epoch, the browser's clock) the page uses for its
+# last-writer-wins merge; the function only checks its type.
+MAX_TASTE_TEXT = 4000
+MAX_TIMESTAMP = 2**53 - 1  # JavaScript's Number.MAX_SAFE_INTEGER
+PROFILE_FIELDS = ("seeds", *KEY_LISTS, *ID_LISTS, "taste_text", "taste_text_at")
 
 
 class Invalid(ValueError):
@@ -142,6 +151,14 @@ def validate_profile(raw: bytes) -> tuple[dict, int]:
         if not all(isinstance(v, str) and pattern.match(v) for v in values):
             raise Invalid(f"bad {field} item")
         out[field] = list(dict.fromkeys(values))
+    text = data.get("taste_text", "")
+    # PostgreSQL's jsonb rejects \u0000 (https://www.postgresql.org/docs/current/datatype-json.html)
+    if not (isinstance(text, str) and len(text) <= MAX_TASTE_TEXT and "\x00" not in text):
+        raise Invalid(f"taste_text: a string of at most {MAX_TASTE_TEXT} characters")
+    at = data.get("taste_text_at", 0)
+    if not isinstance(at, int) or isinstance(at, bool) or not 0 <= at <= MAX_TIMESTAMP:
+        raise Invalid("bad taste_text_at")
+    out["taste_text"], out["taste_text_at"] = text, at
     return out, base
 
 

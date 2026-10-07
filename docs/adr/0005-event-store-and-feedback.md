@@ -99,6 +99,18 @@ Scaleway, region fr-par:
   2026-10-06 deploy answered the preflight with 204 and a wrong-token POST with 401). The
   deploy smoke test now also requires, with a wrong token, `GET /profile` → 401 and
   `GET /` → 405, which proves sub-paths reach the function; the deploy fails otherwise.
+- Implementation note (WIP-73, written taste): the profile gains `taste_text` (« Mon goût
+  en mots », PRD FR-4: a string of at most 4,000 characters, no NUL because PostgreSQL's
+  jsonb rejects `\u0000`, https://www.postgresql.org/docs/current/datatype-json.html) and
+  `taste_text_at` (the edit time in ms, an integer ≤ 2^53 − 1). Both default to `""` / `0`
+  when absent. The text is not a list, so the page merges it last-writer-wins: the copy with
+  the more recent `taste_text_at` is kept, this browser's on a tie. Known limits: the time is
+  each device's clock, and the losing text is replaced, not combined. Worst case the text
+  adds about 24 KB (4,000 JSON escapes of 6 bytes), within the 64 KB body limit with both id
+  lists full (test `test_profile_worst_case_taste_text_fits_the_body_limit`). Personal data:
+  never logged (test `test_taste_text_is_never_logged`), never in the repo, same EU provider.
+  A page older than this change still PUTs profiles without the field, which would empty it
+  on the server (unverified risk, only until that browser reloads the page).
 - Implementation note (WIP-59, saved concert ids): `hidden` and `likedConcerts` are never
   pruned because an id is absent from a day's data (source failure, id change, past concert);
   only the display resolves current ids, and a saved alias stays next to its current id. The

@@ -56,6 +56,13 @@
           <button type="button" id="save-seeds" class="primary">Enregistrer</button>
           <button type="button" id="reset" class="ghost">Tout effacer</button>
         </div>
+        <label for="taste-text" class="field-label">Mon goût en mots</label>
+        <textarea id="taste-text" rows="7" maxlength="4000" aria-describedby="taste-text-count taste-text-help"
+          placeholder="Décris ce que tu aimes, avec tes mots.&#10;– Les familles que tu préfères, avec des artistes de référence pour chacune (ex. : drone et doom, comme Sunn O))) ou Éliane Radigue).&#10;– Ce que tu veux écarter (ex. : le mainstream, l'évident).&#10;– Tes conditions (ex. : « jazz seulement s'il croise autre chose »)."></textarea>
+        <p class="muted small">
+          <span id="taste-text-count">0 / 4&#8239;000 caractères</span> ·
+          <span id="taste-text-help">Enregistré à chaque modification, <span data-where>dans ce navigateur</span>. Pas encore utilisé pour trier les concerts.</span>
+        </p>
         <div class="row">
           <label for="lb-user">Importer depuis ListenBrainz</label>
           <input id="lb-user" type="text" autocomplete="off" placeholder="nom d'utilisateur">
@@ -74,8 +81,27 @@
         <label class="visually-hidden" for="when">Quand</label><select id="when"></select>
         <label class="visually-hidden" for="style">Style</label><select id="style"></select>
         <label class="visually-hidden" for="venue">Lieu</label><select id="venue"></select>
+        <button type="button" id="sorter-open" class="ghost" aria-haspopup="dialog" hidden>À trier</button>
         <span id="count" class="muted" role="status"></span>
       </div>
+
+      <dialog id="sorter" class="sorter" aria-labelledby="sorter-heading">
+        <div class="sorter-head">
+          <h2 id="sorter-heading">À trier</h2>
+          <button type="button" id="sorter-close" class="ghost">Fermer</button>
+        </div>
+        <p class="muted small">
+          Des concerts à venir que tu n'as pas encore notés, tirés au hasard.
+          <span class="sorter-keys">Raccourcis clavier : J (J'aime), N (Pas pour moi), Espace (Passer).</span>
+        </p>
+        <div id="sorter-card" class="sorter-card"></div>
+        <div id="sorter-actions" class="sorter-actions">
+          <button type="button" id="sorter-like" class="big primary" aria-keyshortcuts="J">J'aime</button>
+          <button type="button" id="sorter-dislike" class="big" aria-keyshortcuts="N">Pas pour moi</button>
+          <button type="button" id="sorter-skip" class="big" aria-keyshortcuts="Space">Passer</button>
+        </div>
+        <p id="sorter-count" class="muted small" role="status"></p>
+      </dialog>
 
       <div id="concerts">
         <p class="muted">Chargement…</p>

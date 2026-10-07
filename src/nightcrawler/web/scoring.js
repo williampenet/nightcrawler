@@ -58,8 +58,24 @@
       // normalised performer names
       likedConcerts: [], likedNames: [], dislikedNames: [],
       sort: "date", when: "all", style: "", venue: "",
+      // "Mon goût en mots" (WIP-73): the written taste profile and its edit time (ms, for the
+      // last-writer-wins sync merge in profile.js)
+      tasteText: "", tasteTextAt: 0,
     };
   }
+
+  // Written taste (WIP-73): at most MAX_TASTE_TEXT UTF-16 code units (what the textarea's
+  // maxlength and the counter count), no NUL (PostgreSQL's jsonb rejects \u0000:
+  // https://www.postgresql.org/docs/current/datatype-json.html) and no lone surrogate (not
+  // encodable as UTF-8 by the function), so the function always accepts it.
+  const MAX_TASTE_TEXT = 4000;
+  function cleanTasteText(v) {
+    if (typeof v !== "string") return "";
+    // a pair cut in two by the cap is dropped first; any other lone surrogate becomes U+FFFD
+    const t = v.replace(/\u0000/g, "").slice(0, MAX_TASTE_TEXT).replace(/[\ud800-\udbff]$/, "");
+    return typeof t.toWellFormed === "function" ? t.toWellFormed() : t;
+  }
+  const cleanTime = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
 
   const NAME_KEY_RE = /^[a-z0-9]{1,100}$/;
 
@@ -76,6 +92,8 @@
     for (const k of ["liked", "disliked", "hidden", "wrong", "likedConcerts"]) s[k] = strings(raw[k]);
     for (const k of ["likedNames", "dislikedNames"]) s[k] = [...new Set(strings(raw[k]).filter((x) => NAME_KEY_RE.test(x)))];
     for (const k of ["sort", "when", "style", "venue"]) if (typeof raw[k] === "string") s[k] = raw[k];
+    s.tasteText = cleanTasteText(raw.tasteText);
+    s.tasteTextAt = cleanTime(raw.tasteTextAt);
     return s;
   }
 
@@ -143,6 +161,33 @@
       }
     }
     return { state: s, send: { kind: kind === "dislike" ? "dislike" : on ? "like" : "unlike", keys } };
+  }
+
+  // "À trier" mode (WIP-73): concerts to rate, drawn at random so the ratings are not limited
+  // to what the current ranking surfaces. A candidate is upcoming (its day, in the zone's time
+  // zone, is today or later), not liked (isLiked), not hidden (aliases resolved), has no
+  // disliked artist or performer name, and was not shown in this session (seen: ids skipped or
+  // rated). Pure: dayKey(Date) -> "YYYY-MM-DD" in the zone, as for inWhen.
+  function sortCandidates(concerts, state, seen, now, dayKey) {
+    const list = Array.isArray(concerts) ? concerts : [];
+    const hidden = new Set(currentIds(list, state.hidden || []));
+    const disliked = new Set([...(state.disliked || []), ...(state.dislikedNames || [])]);
+    const done = seen instanceof Set ? seen : new Set(seen || []);
+    const today = dayKey(now);
+    return list.filter((c) => {
+      if (!c || done.has(c.id) || hidden.has(c.id) || isLiked(state, c)) return false;
+      if ([...(c.artists || []), ...performerKeys(c)].some((k) => disliked.has(k))) return false;
+      const start = new Date(c.start);
+      return !Number.isNaN(start.getTime()) && dayKey(start) >= today;
+    });
+  }
+
+  // One item drawn uniformly with rng() in [0, 1) (Math.random by default), or null.
+  function pickRandom(list, rng = Math.random) {
+    if (!Array.isArray(list) || !list.length) return null;
+    const r = Number(rng());
+    const u = Number.isFinite(r) ? Math.min(Math.max(r, 0), 1 - Number.EPSILON) : 0;
+    return list[Math.floor(u * list.length)];
   }
 
   // profile: { seeds: [{name, tags}], liked: [artistKey], disliked: [artistKey] }
@@ -317,7 +362,7 @@
     return kept.slice(-MAX_IDS);
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
