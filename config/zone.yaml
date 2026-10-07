@@ -18,6 +18,9 @@ gancio_instances:
 excluded_venues:
   - Radiant Bellevue
   - Toï Toï le Zinc
+# Asked by William on 2026-10-07 21:23 (WIP-71).
+  - médiathèque de Meyzieu
+  - À Thou Bout d'Chant
 # "Mes salles" (PRD FR-1) read through a configured reader, on top of the automatic probe.
 # `venue` is the known venue (OpenStreetMap / Ticketmaster name) the events are attached to.
 # wp_json: a WordPress REST endpoint; field paths are dotted keys of one item (WIP-60).

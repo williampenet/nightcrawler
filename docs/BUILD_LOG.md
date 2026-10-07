@@ -150,6 +150,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-69 (dfc667e) | APPROVE: config loads, dedup merge reproduced; follow-ups: merged concert keeps Gancio's "La Trinité" name (SOURCE_RANK), coordinates not cross-checked, add a merge test | PR #58 |
 | 2026-10-07 | agent:dev | feature | WIP-70: banner above the list when ratings are queued without a send key, with a button that opens "Mes goûts" and focuses the key field; hidden once the key flush empties the queue; "clé d'envoi refusée" variant after a 401 (Playwright smoke check unverified (local run, script not committed): 2 ratings queued, 401 shows the refused text, good key: 1 POST, queue 0, banner hidden) | [WIP-70](https://linear.app/wip-coding/issue/WIP-70) |
 | 2026-10-07 | agent:reviewer | review WIP-70 (81e7cce) | APPROVE; follow-ups: live-region announce, refused key, smoke not committed; 1-2, 4 applied | PR #59 |
+| 2026-10-07 | agent:orchestrator | config | WIP-71: excluded "médiathèque de Meyzieu" and "À Thou Bout d'Chant" (asked by William 2026-10-07 21:23); test pins the live spellings (Gancio place 237, OSM node 6509969997); pytest 369 passed | [WIP-71](https://linear.app/wip-coding/issue/WIP-71) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
