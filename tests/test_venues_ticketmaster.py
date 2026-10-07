@@ -93,7 +93,10 @@ def test_excluded_venue_names():
 
 
 def test_zone_excludes_the_venues_william_removed():
-    """WIP-71: names as the live sources spell them (Gancio place 237, OSM node 6509969997)."""
+    """WIP-71: names as spelled in the live store on 2026-10-07.
+
+    Gancio place 237 and OSM node 6509969997.
+    """
     from pathlib import Path
 
     from nightcrawler.config import load_zone
