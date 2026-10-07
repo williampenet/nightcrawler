@@ -142,6 +142,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:dev | measure | La Rayonne page_llm read 37 events (split worked) but Finley, Ladaniva, Tambours… absent: OSM arts_centre + music-word rule for non-music venues | [WIP-68](https://linear.app/wip-coding/issue/WIP-68) |
 | 2026-10-07 | agent:dev | config | WIP-68: `reader.trust_is_concert` for La Rayonne and Périscope page_llm readers only (venue categories unchanged) | PR #57 |
 | 2026-10-07 | agent:reviewer | review WIP-68 (96acb58) | REQUEST_CHANGES: La Rayonne category override also loosened the rule for Gancio/platform/probe events; prefer a reader-level flag; "is_concert still drops talks" unsourced; no test. Périscope OK | PR #57 |
+| 2026-10-07 | agent:reviewer | re-review WIP-68 (7bd1a94) | APPROVE: trust_is_concert used only by the AI branch, categories unchanged; follow-ups: confirm Nov La Rayonne events on next run, add La Rayonne page to the eval, README note | PR #57 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
