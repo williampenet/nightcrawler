@@ -139,6 +139,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-67 | REQUEST_CHANGES: split half could be 90–97% of the chunk; follow-ups split marker cache, unclosed think, unknown code; fixed | PR #56 |
 | 2026-10-07 | agent:dev | fix | WIP-67 review: each split half at most 75% of the chunk characters (nearest fitting date line, else middle, else no split); split marker cached under the full chunk key (next run: 0 calls for it); unclosed `<think>` counts as `truncated`; missing final brace documented; `unknown` code when none is given | PR #56 |
 | 2026-10-07 | agent:reviewer | re-review WIP-67 (c49fb9c) | APPROVE; follow-ups: chunks under ~32 lines cannot be split, split marker pins a one-off failure until cache expiry, marker counted in `cached` | PR #56 |
+| 2026-10-07 | agent:dev | measure | La Rayonne page_llm read 37 events (split worked) but Finley, Ladaniva, Tambours… absent: OSM arts_centre + music-word rule for non-music venues | [WIP-68](https://linear.app/wip-coding/issue/WIP-68) |
+| 2026-10-07 | agent:dev | config | WIP-68: La Rayonne and Périscope set to music_venue in priority_venues | PR #57 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

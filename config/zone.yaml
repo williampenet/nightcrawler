@@ -122,6 +122,10 @@ priority_venues:
   - name: La Rayonne
     venue: La Rayonne
     venue_id: osm:node/11268760933  # live concerts.json, 2026-10-07
+    # OSM says arts_centre; its agenda labels events "Musique / Programmation" (Chrome capture,
+    # 2026-10-07). Without this, model-read concerts named after the artist only were dropped by
+    # the music-word rule for non-music venues (WIP-68); the model's is_concert still drops talks.
+    category: music_venue
     reader:
       type: page_llm
       # ~70 events on one page, "jeu. 08 octobre - à partir de 19h - Didier Super Metal" (no
@@ -133,6 +137,8 @@ priority_venues:
     # (checked 2026-10-06), so the concerts page is read by the model.
     venue: Le Périscope
     venue_id: osm:node/6875303994  # live concerts.json, 2026-10-07
+    # OSM says arts_centre; read from its /concerts/ page (WIP-68, same reason as La Rayonne).
+    category: music_venue
     reader:
       type: page_llm
       # 21 items, "Louis Sclavis Shunkan Trio Mercredi 07 oct" (no year), no pagination.
