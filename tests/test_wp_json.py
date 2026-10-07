@@ -16,7 +16,7 @@ from nightcrawler.config import load_zone
 from nightcrawler.events import build_concerts
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
-from nightcrawler.sources import wp_json
+from nightcrawler.sources import priority, wp_json
 
 URL = "https://venue.example/wp-json/wp/v2/evenement"
 READER = {
@@ -116,7 +116,7 @@ def test_pagination_stops_on_short_page(items, tz):
         side_effect=[respx.MockResponse(200, json=p) for p in _pages(items, 3)]
     )
     entry = ENTRY | {"reader": READER | {"per_page": 3}}
-    events, rows = wp_json.collect((entry,), _fetcher(), _now(tz), tz, 60)
+    events, rows = priority.collect((entry,), _fetcher(), _now(tz), tz, 60)
     assert route.call_count == 3  # 3 + 3 + 2 items
     assert [dict(c.request.url.params) for c in route.calls][-1] == {"per_page": "3", "page": "3"}
     assert len(events) == 3
@@ -134,7 +134,7 @@ def test_pagination_stops_past_last_page(items, tz):
         + [respx.MockResponse(400, json={"code": "rest_post_invalid_page_number"})]
     )
     entry = ENTRY | {"reader": READER | {"per_page": 4}}
-    _, rows = wp_json.collect((entry,), _fetcher(), _now(tz), tz, 60)
+    _, rows = priority.collect((entry,), _fetcher(), _now(tz), tz, 60)
     assert (rows[0]["status"], rows[0]["pages"], rows[0]["events"]) == ("ok", 2, 3)
 
 
@@ -145,7 +145,7 @@ def test_pagination_stops_at_page_cap(items, tz):
         side_effect=[respx.MockResponse(200, json=p) for p in _pages(items, 4)]
     )
     entry = ENTRY | {"reader": READER | {"per_page": 4, "max_pages": 1}}
-    _, rows = wp_json.collect((entry,), _fetcher(), _now(tz), tz, 60)
+    _, rows = priority.collect((entry,), _fetcher(), _now(tz), tz, 60)
     assert route.call_count == 1  # a second full page exists, but the cap is 1
     assert (rows[0]["status"], rows[0]["pages"]) == ("page_cap", 1)
 
@@ -160,7 +160,7 @@ def test_robots_and_errors_never_stop_the_run(tz):
     respx.get("https://broken.example/wp-json/wp/v2/e").respond(200, text='[{"title": ')
     other = ENTRY | {"reader": READER | {"url": "https://other.example/wp-json/wp/v2/e"}}
     broken = ENTRY | {"reader": READER | {"url": "https://broken.example/wp-json/wp/v2/e"}}
-    events, rows = wp_json.collect((ENTRY, other, broken), _fetcher(), _now(tz), tz, 60)
+    events, rows = priority.collect((ENTRY, other, broken), _fetcher(), _now(tz), tz, 60)
     assert events == [] and not route.called
     assert [r["status"] for r in rows] == ["robots_blocked", "error: HTTP 500", rows[2]["status"]]
     assert rows[2]["status"].startswith("error: ")  # truncated JSON
@@ -229,6 +229,6 @@ def test_truncated_page_keeps_earlier_pages(items, tz, monkeypatch):
     # the second page is larger than the cap: the fetcher would have cut it mid-JSON
     monkeypatch.setattr(wp_json, "MAX_BYTES", len(json.dumps(first)) + 10)
     entry = ENTRY | {"reader": READER | {"per_page": 4}}
-    events, rows = wp_json.collect((entry,), _fetcher(), _now(tz), tz, 365)
+    events, rows = priority.collect((entry,), _fetcher(), _now(tz), tz, 365)
     assert (rows[0]["status"], rows[0]["pages"]) == ("truncated", 1)
     assert {e.title for e in events} == {"ORIA", "ALOISE SAUVAGE", "SAM QUEALY", "GROUNDATION"}

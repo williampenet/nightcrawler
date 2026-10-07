@@ -8,6 +8,8 @@ venue_aliases:
   "Rock n Eat, Lyon 9e": [Rock n Eat]
   "Groom, Lyon 1er": [Groom]
   "Le Sucre, Lyon 2e": [Le Sucre]
+  # the WIP-62 reader attaches its events to the OSM venue "Auditorium Maurice-Ravel"
+  "Auditorium de Lyon": [Auditorium Maurice-Ravel]
 
 # Words dropped from a reference artist name before it is searched in the concert's title
 # and performers, only while other words remain, so a bare name still matches:
