@@ -51,7 +51,7 @@ priority_venues:
       # The season is in the URL: update it each season.
       urls:
         - https://www.opera-lyon.com/programmation-reservations/saison-2026-2027?tag%5B0%5D=opera-underground
-      include: /opera-underground/[^/]+
+      include: ^/fr/programmation/[^/]+/opera-underground/[^/]+$
       max_details: 30
   - name: L'Épicerie Moderne
     venue: L'Épicerie Moderne
@@ -83,7 +83,7 @@ priority_venues:
       # sessions (scolaires) and workshops (atelier-*) are not public concerts and are
       # dropped; family concerts (famille) are public concerts and are kept.
       urls: ["https://www.auditorium-lyon.com/fr/agenda/{yyyymm}"]
-      include: ^/fr/saison-\d{4}-\d{2}/[a-z-]+/[^/]+
+      include: ^/fr/saison-\d{4}-\d{2}/[a-z-]+/[^/]+$
       exclude: ^/fr/saison-\d{4}-\d{2}/(scolaires|atelier-[a-z-]+)/
       max_details: 80
   # Le Périscope: not added. Its WP REST types `kelkii_concert` and `periscope_event`

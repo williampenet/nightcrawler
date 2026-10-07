@@ -273,3 +273,48 @@ def test_zone_config_has_the_four_listing_readers():
         "Auditorium de Lyon",
     }
     assert all(e["reader"].get("max_details") for e in ENTRIES.values() if "urls" in e["reader"])
+
+
+def _jsonld(name="Live", start="2026-10-20T21:00:00+02:00"):
+    data = f'{{"@type": "MusicEvent", "name": "{name}", "startDate": "{start}"}}'
+    return f'<script type="application/ld+json">{data}</script>'
+
+
+def _entry(**reader):
+    base = {"urls": ["https://v.example/agenda"], "include": "^/e/"}
+    return {"venue": "V", "reader": base | reader}
+
+
+@respx.mock
+def test_origin_is_the_configured_url_not_the_redirect(tz):
+    _robots("v.example", "w.example")
+    respx.get("https://v.example/agenda").respond(301, headers={"Location": "https://w.example/a"})
+    respx.get("https://w.example/a").respond(
+        200, html='<a href="/e/moved">redirect host</a><a href="https://v.example/e/1">x</a>'
+    )
+    respx.get("https://v.example/e/1").respond(200, html=_jsonld())
+    events, _, status = _read(_entry(), tz)  # no route for w.example/e/moved
+    assert [e.url for e in events] == ["https://v.example/e/1"] and status == "ok"
+
+
+@respx.mock
+def test_empty_results_have_their_own_status(tz):
+    _robots("v.example")
+    respx.get("https://v.example/agenda").respond(200, html='<a href="/e/1">x</a>')
+    respx.get("https://v.example/e/1").respond(200, html=EMPTY)
+    assert _read(_entry(), tz)[2] == "no_events"
+    assert _read(_entry(include="^/nothing/"), tz)[1:] == (1, "no_links")
+
+
+@respx.mock
+def test_one_bad_detail_page_is_a_detail_error(tz):
+    _robots("v.example")
+    respx.get("https://v.example/agenda").respond(200, html='<a href="/e/1">x</a><a href="/e/2">')
+    nested = "[" * 100_000 + "]" * 100_000  # past the recursion limit of json / the tree walk
+    respx.get("https://v.example/e/1").respond(
+        200, html=f'<script type="application/ld+json">{nested}</script>'
+    )
+    respx.get("https://v.example/e/2").respond(200, html=_jsonld("Kept"))
+    events, pages, status = _read(_entry(), tz)
+    assert [e.title for e in events] == ["Kept"]
+    assert (pages, status) == (2, "detail errors: 1")

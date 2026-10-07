@@ -50,10 +50,13 @@ def listing_urls(reader: dict, now: datetime, window_days: int) -> list[str]:
     return list(dict.fromkeys(urls))
 
 
-def event_links(html: str, base_url: str, include: str, exclude: str | None) -> list[str]:
-    """Absolute links on the page's own scheme and host (no other site, no http downgrade)
-    whose path matches `include` and not `exclude`."""
-    origin = urlsplit(base_url)
+def event_links(
+    html: str, base_url: str, include: str, exclude: str | None, origin_url: str | None = None
+) -> list[str]:
+    """Absolute links (resolved against `base_url`, the page's final URL) on the scheme and host
+    of `origin_url`, the configured listing URL, so a redirect cannot move the origin (no
+    other site, no http downgrade), whose path matches `include` and not `exclude`."""
+    origin = urlsplit(origin_url or base_url)
     links: list[str] = []
     for a in BeautifulSoup(html, "lxml").find_all("a", href=True):
         url = urldefrag(urljoin(base_url, a["href"].strip())).url
@@ -92,13 +95,15 @@ def read(
             first_error = first_error or error
             continue
         pages += 1
-        links += event_links(resp.text, resp.url, reader["include"], reader.get("exclude"))
+        links += event_links(resp.text, resp.url, reader["include"], reader.get("exclude"), url)
     if not pages:
         raise ValueError(f"no listing page read ({first_error})")
     links = list(dict.fromkeys(links))
     notes = [f"detail_cap: {cap} of {len(links)} links"] if len(links) > cap else []
+    if not links:
+        notes.append("no_links")  # the include regex matches nothing: site changed?
     events: list[RawEvent] = []
-    detail_errors = 0
+    detail_errors, seen = 0, 0
     for link in links[:cap]:
         try:
             resp = fetcher.get(link)
@@ -107,11 +112,19 @@ def read(
         if resp is None or resp.status != 200:
             detail_errors += 1
             continue
+        try:  # one bad page (e.g. JSON nested past the recursion limit) is a detail error
+            found = jsonld_events(resp.text, source, tz)
+        except Exception:
+            detail_errors += 1
+            continue
         pages += 1
-        for ev in jsonld_events(resp.text, source, tz):
+        seen += len(found)
+        for ev in found:
             ev.source, ev.location_name, ev.url = source, venue, link
             if in_window(ev, now, window_days):
                 events.append(ev)
+    if links and not seen:
+        notes.append("no_events")  # detail pages read, none holds a JSON-LD Event
     if listing_errors:
         notes.append(f"listing errors: {listing_errors} ({first_error})")
     if detail_errors:
