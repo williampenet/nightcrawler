@@ -16,7 +16,15 @@ from nightcrawler.events import build_concerts, place_tokens
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import listing_jsonld
-from nightcrawler.venues import attach_to_configured, configured_venue_ids, configured_venues
+from nightcrawler.venues import (
+    SAME_PLACE_METERS,
+    _norm,
+    attach_to_configured,
+    configured_venue_ids,
+    configured_venues,
+    distance_m,
+    merge,
+)
 
 ZONE = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
 OPERA = next(e for e in ZONE.priority_venues if e["name"] == "Opéra Underground")
@@ -172,6 +180,7 @@ READER = "{type: listing_jsonld, urls: ['https://v.example/'], include: x"
         ("{latitude: 45.7, longitude: east}", "", "latitude and longitude"),
         ("{latitude: 48.85, longitude: 2.35}", "", "outside the zone"),  # Paris
         ("coordinates_from: ''", "", "coordinates_from"),
+        ("venue_id: ''", "", "venue_id"),
         ("", ", paginate: {param: page, start: -1, max: 2}", "paginate"),
         ("", ", paginate: {start: 1, max: 2}", "paginate"),
         ("", ", paginate: {param: page, start: 1, max: 0}", "paginate"),
@@ -208,33 +217,83 @@ def _epicerie_event(title, tz, location="L'Épicerie Moderne"):
     return RawEvent(title, start, source, source, types=["Event"], location_name=location)
 
 
-def test_configured_name_resolves_like_attribution_wip64b(tz):
-    # real names of the 2026-10-07 08:38 run: OSM node 523776298 and the Gancio place
+# Live venues.json of 2026-10-07 08:38: the same place twice. Longitudes are not in the
+# measure; both get the same one, the case most favourable to a merge.
+LON = 4.86
+
+
+def _epicerie_twice():
     osm = Venue(
         "osm:node/523776298",
         "L'épicerie moderne Place René Lescot, 69320 Feyzin",
-        45.67,
-        4.86,
+        45.6747674,
+        LON,
         "concert_hall",
     )
-    gancio = Venue("gancio:villemorte:1", "L’Épicerie Moderne", 45.67, 4.86, "events_venue")
-    assert configured_venues((EPICERIE,), [osm, gancio]) == []  # no config: venue created
-    assert (osm.category, osm.latitude) == ("concert_hall", 45.67)  # nothing overridden
-    # with ’ read as a separator the Gancio name is an exact match, and attribution by name
-    # alone would pick it (events_venue): the reader's events go to the resolved venue
-    assert configured_venue_ids((EPICERIE,), [osm, gancio]) == {
-        "L'Épicerie Moderne": "osm:node/523776298"  # music venues first
-    }
-    venues = {v.id: v for v in (osm, gancio)}
+    gancio = Venue("gancio:villemorte:1", "L’Épicerie Moderne", 45.673384, LON, "events_venue")
+    return osm, gancio
+
+
+def test_venue_id_attaches_reader_events_directly(tz):
+    osm, gancio = _epicerie_twice()
+    assert EPICERIE["venue_id"] == "osm:node/523776298"  # the real config entry
+    assert configured_venues((EPICERIE,), [osm, gancio]) == []
+    assert (osm.category, osm.latitude) == ("concert_hall", 45.6747674)  # nothing overridden
+    ids, notes = configured_venue_ids((EPICERIE,), [osm, gancio])
+    assert (ids, notes) == ({"L'Épicerie Moderne": "osm:node/523776298"}, {})
     events = [_epicerie_event(t, tz) for t in ("THE LEMON TWIGS", "TEMPLES")]
-    by_name = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
-    assert by_name == []  # attributed to the Gancio events_venue: no music rule
-    attach_to_configured(events, configured_venue_ids((EPICERIE,), [osm, gancio]))
+    attach_to_configured(events, ids)
+    venues = {v.id: v for v in (osm, gancio)}
     concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
     assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
         ("TEMPLES", "osm:node/523776298", "music venue"),
         ("THE LEMON TWIGS", "osm:node/523776298", "music venue"),
     ]
+
+
+def test_missing_venue_id_falls_back_to_the_name_with_a_note():
+    _, gancio = _epicerie_twice()  # the OSM node is not in this run
+    assert configured_venues((EPICERIE,), [gancio]) == []
+    ids, notes = configured_venue_ids((EPICERIE,), [gancio])
+    assert ids == {"L'Épicerie Moderne": "gancio:villemorte:1"}  # exact name
+    assert notes == {"L'Épicerie Moderne": "venue_id osm:node/523776298 not found, matched by name"}
+
+
+def test_exact_name_beats_a_longer_music_venue():
+    exact = Venue("osm:node/7", "Le Sonic", 45.74, 4.82, "events_venue")
+    longer = Venue("osm:node/8", "Sonic Music Hall", 45.74, 4.82, "concert_hall")
+    entry = {"name": "Le Sonic", "venue": "Le Sonic", "reader": {}}
+    assert configured_venues((entry,), [longer, exact]) == []
+    assert configured_venue_ids((entry,), [longer, exact])[0] == {"Le Sonic": "osm:node/7"}
+
+
+def test_probe_and_platform_events_stay_at_the_page_venue(tz):
+    osm, gancio = _epicerie_twice()  # the Gancio duplicate is now an exact name match
+    start = datetime(2026, 10, 19, 20, tzinfo=tz)
+    events = [
+        RawEvent("TEMPLES", start, "json-ld", osm.id, location_name="L'Épicerie Moderne"),
+        RawEvent("GILDAA", start, "platform:shotgun", osm.id, location_name="L'Épicerie Moderne"),
+    ]
+    venues = {v.id: v for v in (osm, gancio)}
+    concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
+    assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
+        ("GILDAA", "osm:node/523776298", "music venue"),
+        ("TEMPLES", "osm:node/523776298", "music venue"),
+    ]
+
+
+def test_curly_apostrophe_in_merge_names_and_the_measured_distance():
+    osm, gancio = _epicerie_twice()
+    assert _norm("L’Épicerie Moderne") == _norm("L'Épicerie Moderne") == "epiceriemoderne"
+    # measured latitudes alone are 153.8 m apart: beyond the 150 m containment radius
+    assert distance_m(osm, gancio) > SAME_PLACE_METERS
+    merged, _ = merge([[osm], [gancio]])
+    assert [v.id for v in merged] == ["osm:node/523776298", "gancio:villemorte:1"]
+    # 100 m apart they would merge now that ’ separates words (before: "lepiceriemoderne")
+    gancio.latitude = 45.6747674 - 0.0009
+    merged, alias = merge([[osm], [gancio]])
+    assert [v.id for v in merged] == ["osm:node/523776298"]
+    assert alias["gancio:villemorte:1"] == "osm:node/523776298"
 
 
 def test_default_category_is_not_stricter_than_the_place_fallback(tz):
@@ -265,7 +324,7 @@ def test_shorter_known_names_are_decoys_not_matches(tz):
     assert [v.id for v in added] == ["config:operaunderground", "config:marchegare"]
     assert (bar.category, restaurant.category) == ("bar", "restaurant")
     known = [building, bar, restaurant, *added]
-    ids = configured_venue_ids((OPERA, marche), known)
+    ids, _ = configured_venue_ids((OPERA, marche), known)
     assert ids == {
         "Opéra Underground": "config:operaunderground",
         "Le Marché Gare": "config:marchegare",

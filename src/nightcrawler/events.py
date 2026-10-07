@@ -157,10 +157,17 @@ def is_excluded_place(location: str, excluded_keys: list[tuple[str, ...]]) -> bo
 def best_venue_match(
     tokens: tuple[str, ...], keys: dict[str, tuple[str, ...]], prefer: str | None = None
 ) -> str | None:
-    """Id of the known venue whose name matches `tokens` (_names_match): exact name first,
-    then the closest length; ties go to `prefer`. None when no name matches."""
+    """Id of the known venue whose name matches `tokens` (_names_match), or None.
+
+    `prefer` (the page's venue) wins whenever its name matches: the location then names the
+    page's own place, not another one, even if a duplicate record of it has the exact name
+    (Gancio "L’Épicerie Moderne" next to the OSM concert hall "L'épicerie moderne Place René
+    Lescot, 69320 Feyzin", 2026-10-07). Otherwise: exact name first, then the closest length.
+    """
     key = "".join(tokens)
     matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
+    if prefer in matches:
+        return prefer
 
     def rank(vid: str) -> tuple[bool, int, bool]:
         vkey = "".join(keys[vid])

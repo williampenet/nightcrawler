@@ -90,6 +90,10 @@ def _priority_venue(entry: dict) -> dict:
         if not all(isinstance(c, int | float) and not isinstance(c, bool) for c in coords):
             raise ValueError(f"priority venue {name}: latitude and longitude must be numbers")
         out["latitude"], out["longitude"] = float(coords[0]), float(coords[1])
+    if (venue_id := entry.get("venue_id")) is not None:
+        if not isinstance(venue_id, str) or not venue_id.strip():
+            raise ValueError(f"priority venue {name}: venue_id must be a venue id")
+        out["venue_id"] = venue_id
     if (source := entry.get("coordinates_from")) is not None:
         if not isinstance(source, str) or not source.strip():
             raise ValueError(f"priority venue {name}: coordinates_from must be a venue name")

@@ -6,7 +6,7 @@ import math
 import re
 import unicodedata
 
-from .events import best_venue_match, place_tokens
+from .events import APOSTROPHES, best_venue_match, place_tokens
 from .models import RawEvent, Venue
 
 SAME_PLACE_METERS = 150
@@ -29,6 +29,7 @@ def distance_m(a: Venue, b: Venue) -> float:
 
 
 def _norm(name: str) -> str:
+    name = APOSTROPHES.sub(" ", name)  # L’Épicerie = L'Épicerie (events.place_tokens)
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     name = re.sub(r"\b(le|la|les|l|the|salle|club|bar|theatre)\b", " ", name)
     return re.sub(r"[^a-z0-9]+", "", name)
@@ -81,25 +82,30 @@ def merge(groups: list[list[Venue]]) -> tuple[list[Venue], dict[str, str]]:
 def _resolve(name: str, known: dict[str, Venue]) -> str | None:
     """Id of the known venue a configured name designates, or None.
 
-    Same matching as attribution (events.best_venue_match: words in a row, exact name first,
-    then the closest length), with two limits: the known name must contain the configured
-    one (a shorter "Underground" bar is another place), and music venues come first, since
-    the same place may be known twice (OSM "L'épicerie moderne Place René Lescot, 69320
-    Feyzin", concert_hall, and Gancio "L’Épicerie Moderne", events_venue: run of 2026-10-07).
+    The exact name first, then the closest known name that contains the configured one
+    (events.best_venue_match on names at least as long: a shorter "Underground" bar is
+    another place). When one place is known twice under different names, set `venue_id`.
     """
     tokens = place_tokens(name)
     size = len("".join(tokens))
     keys = {vid: place_tokens(v.name) for vid, v in known.items()}
     longer = {vid: k for vid, k in keys.items() if len("".join(k)) >= size}
-    music = {vid: k for vid, k in longer.items() if known[vid].is_music_venue}
-    return best_venue_match(tokens, music) or best_venue_match(tokens, longer)
+    return best_venue_match(tokens, longer)
+
+
+def _target(entry: dict, known: dict[str, Venue]) -> str | None:
+    """`venue_id` when the run knows it (deterministic), else the name resolution."""
+    if entry.get("venue_id") in known:
+        return entry["venue_id"]
+    return _resolve(entry["venue"], known)
 
 
 def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Venue]:
     """Known venues for "Mes salles" (config `priority_venues`, WIP-64); returns those to add.
 
-    Each configured venue name is resolved to a known venue (`_resolve`); the readers' events
-    are then attached to it (`attach_to_configured`), not left to attribution by name.
+    Each entry designates a known venue: its `venue_id` when the run has it, else its name
+    (`_resolve`). The readers' events are then attached to it (`attach_to_configured`), not
+    left to attribution by name.
 
     - A match is kept as it is; only an explicit `category` in the config replaces its
       category. Its coordinates are never changed.
@@ -115,7 +121,7 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
     added: list[Venue] = []
     for entry in entries:
         known = {v.id: v for v in [*venues, *added]}
-        if (match := _resolve(entry["venue"], known)) is not None:
+        if (match := _target(entry, known)) is not None:
             if "category" in entry:
                 known[match].category = entry["category"]
             continue
@@ -134,11 +140,21 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
     return added
 
 
-def configured_venue_ids(entries: tuple[dict, ...], venues: list[Venue]) -> dict[str, str]:
-    """{configured venue name: id of the venue it resolves to}, once configured_venues ran."""
+def configured_venue_ids(
+    entries: tuple[dict, ...], venues: list[Venue]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """({configured venue name: id its events attach to}, {entry name: note for its status
+    row}), once configured_venues ran. A `venue_id` the run does not know falls back to the
+    name resolution, with a note."""
     known = {v.id: v for v in venues}
-    resolved = {e["venue"]: _resolve(e["venue"], known) for e in entries}
-    return {name: vid for name, vid in resolved.items() if vid is not None}
+    ids: dict[str, str] = {}
+    notes: dict[str, str] = {}
+    for entry in entries:
+        if (vid := entry.get("venue_id")) and vid not in known:
+            notes[entry["name"]] = f"venue_id {vid} not found, matched by name"
+        if (target := _target(entry, known)) is not None:
+            ids[entry["venue"]] = target
+    return ids, notes
 
 
 def attach_to_configured(events: list[RawEvent], resolved: dict[str, str]) -> None:
