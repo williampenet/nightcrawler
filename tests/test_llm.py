@@ -77,6 +77,8 @@ FULL = json.dumps({"events": [EVENT, EVENT]})
         (None, "length", "truncated"),  # some providers send no content when cut
         ({"events": [EVENT, EVENT]}, "length", None),  # complete despite the limit: valid
         ({"events": [{"title": "x"}]}, "length", "truncated"),  # cut events fail the schema
+        ("<think>the page lists", None, "truncated"),  # think block never closed
+        ("<think>ok</think>" + FULL[:-1], None, "truncated"),  # only the final brace missing
         ("not json", "stop", "json"),
         ('{"events": [] ]', None, "json"),  # complete but malformed
         ({"events": [{"title": "x"}]}, "stop", "schema"),

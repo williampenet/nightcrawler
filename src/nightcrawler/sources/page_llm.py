@@ -29,11 +29,15 @@ model is never named here: `extract.extract_events` goes through the task router
   unchanged chunk costs no tokens. Grounding is re-run on every read. At most
   `llm_calls_per_run` chunks per run are sent to the model (cache hits are free).
 - An invalid answer (WIP-67) is counted by reason in the status, `invalid answer: truncated
-  1, json 0, ...`: `truncated` (finish_reason "length" or JSON cut off), `json` (not
-  parseable), `schema` (fails validation). Codes only, never page text or model output. The
+  1, schema 2`: `truncated` (finish_reason "length", or output cut off), `json` (not
+  parseable), `schema` (fails validation), `unknown` (no code given). Codes only, never
+  page text or model output. The
   chunk is then split once in two on a date line near its middle (`split_chunk`, same
   `OVERLAP_LINES` overlap) and each half is asked once, through the same cache and run-wide
-  cap; a half that fails again is counted and left out (never a second split). A smaller
+  cap; a half that fails again is counted and left out (never a second split). Each half is
+  at most 75% of the chunk's characters, else no split. A split marker is cached under the
+  full chunk's key, so later runs go straight to the halves (no call for the full chunk)
+  until the entry expires. A smaller
   input also means a shorter answer, so a `truncated` chunk is fixed without raising
   `max_output_tokens` (which would need an eval).
 - No key, or a model error: the venue gets a `skipped: no key` / `error: <Type> (transport)`
@@ -139,19 +143,37 @@ def chunk_text(
     return chunks, False
 
 
-def split_chunk(text: str, overlap: int = OVERLAP_LINES) -> tuple[str, str] | None:
-    """Two halves of a chunk whose answer was invalid (WIP-67), or None when it is too short.
+MAX_HALF = 0.75  # each half of a split chunk is at most this share of its characters
+SPLIT_MARKER = {"_split": True}  # cached under a chunk's key: go straight to its halves
+MARKER_MODEL = "split"  # `model` field of a split marker's cache entry
 
-    Cut before the date-looking line nearest the middle (within the middle half), else at the
-    middle line; the second half starts `overlap` lines before the cut, like chunk_text."""
+
+def split_chunk(text: str, overlap: int = OVERLAP_LINES) -> tuple[str, str] | None:
+    """Two halves of a chunk whose answer was invalid (WIP-67), or None.
+
+    Cut before a date-looking line: the one nearest the middle among those that leave both
+    halves at most MAX_HALF of the chunk's characters (the second half starts `overlap` lines
+    before the cut, like chunk_text); else at the middle line if that fits; else None (too
+    short, or the overlap is most of the chunk): a split that does not shrink the input
+    would not shrink the answer."""
     lines = text.split("\n")
     n, mid = len(lines), len(lines) // 2
-    lo, hi = max(overlap + 1, n // 4), min(n - 1, (3 * n) // 4)
-    dated = [i for i in range(lo, hi + 1) if is_date_line(lines[i])]
-    cut = min(dated, key=lambda i: (abs(i - mid), i)) if dated else mid
-    if cut <= overlap or cut >= n:
-        return None
-    return "\n".join(lines[:cut]), "\n".join(lines[cut - overlap :])
+    cap = MAX_HALF * len(text)
+
+    def halves(cut: int) -> tuple[str, str] | None:
+        if not overlap < cut < n:
+            return None
+        first, second = "\n".join(lines[:cut]), "\n".join(lines[cut - overlap :])
+        return (first, second) if max(len(first), len(second)) <= cap else None
+
+    dated = sorted(
+        (i for i in range(overlap + 1, n) if is_date_line(lines[i])),
+        key=lambda i: (abs(i - mid), i),
+    )
+    for cut in [*dated, mid]:
+        if parts := halves(cut):
+            return parts
+    return None
 
 
 class CallBudget:
@@ -358,11 +380,15 @@ def read(
                 chunk_count += not half
                 asked += how == "asked"
                 cached += how == "cached"
-                if data is None:
-                    invalid[reason] = invalid.get(reason, 0) + 1
-                    log.warning("page_llm %s: invalid answer (%s)", host, reason)  # code only
+                if data is None or data == SPLIT_MARKER:  # marker: split on an earlier run
+                    if data is None:
+                        invalid[reason] = invalid.get(reason, 0) + 1
+                        log.warning("page_llm %s: invalid answer (%s)", host, reason)  # code
                     if not half and (halves := split_chunk(text)):
                         splits += 1
+                        if data is None:  # next runs go straight to the halves
+                            key = ctx.cache.key(text, ctx.task, venue)
+                            ctx.cache.put(key, SPLIT_MARKER, MARKER_MODEL)
                         todo = [(h, True) for h in halves]  # one split level, never more
                     continue
                 kept, rejected = extract.check_events(data, text, today)  # against this text
@@ -420,5 +446,5 @@ def _answer(
     answer = result["answer"]
     if answer.data is not None and not answer.errors:
         ctx.cache.put(key, answer.data, answer.model)
-    reason = (answer.reason or "json") if answer.data is None else None
+    reason = (answer.reason or "unknown") if answer.data is None else None
     return answer.data, "asked", reason

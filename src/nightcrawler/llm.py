@@ -251,8 +251,9 @@ class Answer:
     tokens_out: int = 0
     escalated: bool = False
     attempts: int = 1
-    # why `data` is None (WIP-67): "truncated" (finish_reason "length", or JSON cut off),
-    # "json" (not parseable) or "schema" (fails validation). A code only: never the output.
+    # why `data` is None (WIP-67): "truncated" (finish_reason "length", or output cut off:
+    # see _cut_off), "json" (not parseable) or "schema" (fails validation). A code only,
+    # never the output.
     reason: str | None = None
 
 
@@ -374,8 +375,13 @@ def _unwrap(content: str) -> str:
 
 
 def _cut_off(content: str) -> bool:
-    """True when the output ends inside a JSON string or with a bracket left open: an answer
-    cut short (most often by max_tokens), not a complete but malformed one."""
+    """True when the output looks cut short (most often by max_tokens), not complete but
+    malformed: a `<think>` block never closed, or JSON that ends inside a string or with a
+    bracket left open. A JSON answer missing only its final brace (`{"events": [...]`) is
+    counted as cut short too: from the text alone it cannot be told apart from one."""
+    head = content.lstrip()
+    if head.startswith("<think>") and "</think>" not in head:
+        return True
     text = _unwrap(content)
     depth, in_str, esc = 0, False, False
     for c in text:

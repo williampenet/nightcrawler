@@ -500,11 +500,39 @@ def test_invalid_chunk_is_split_and_every_event_found(tz, tmp_path, caplog):
     assert status.endswith("; invalid answer: truncated 1; split 1")
     assert "invalid answer (truncated)" in caplog.text
     assert "Artiste" not in caplog.text and "events" not in caplog.text  # codes only
-    # halves are cached like any chunk; the invalid full chunk is not, so it is asked again
+    # halves are cached like any chunk; the full chunk has a split marker: no call at all
     again = page_llm.Context(_task(), page_llm.ExtractionCache(tmp_path))
     events, _, status = _read(tz, again, days=120)
-    assert len(events) == len(expected) and again.budget.used == 1
-    assert status.startswith(f"ok; chunks {n}, model 1, cached {n + 1}")
+    assert [(e.title, e.start.date().isoformat()) for e in events] == expected
+    assert again.budget.used == 0 and api.call_count == n + 2  # 0 calls for that chunk
+    assert status == (
+        f"ok; chunks {n}, model 0, cached {n + 2}, ungrounded 0, not concert 0; split 1"
+    )  # no invalid answer this time: the marker is not one
+
+
+def test_split_halves_are_each_at_most_three_quarters_of_the_chunk():
+    _, _, chunks = _long_chunks()
+    for text in chunks:
+        parts = page_llm.split_chunk(text)
+        if parts:
+            assert max(map(len, parts)) <= page_llm.MAX_HALF * len(text)
+    # short chunk (36 lines), its only date line near n/4: cutting there would leave a second
+    # half of 3/4 + the 8-line overlap, so the middle line is used instead
+    lines = [f"Ligne de description numéro {i:02d}" for i in range(36)]
+    lines[9] = "sam. 10 octobre"
+    text = "\n".join(lines)
+    first, second = page_llm.split_chunk(text)
+    assert max(len(first), len(second)) <= 0.75 * len(text)
+    assert len(first.split("\n")) == 18  # the middle, not the date line
+    # too short for any cut to shrink both halves enough: no split
+    assert page_llm.split_chunk("\n".join(lines[:14])) is None
+
+
+def test_unknown_reason_when_the_answer_gives_none(monkeypatch):
+    answer = llm.Answer(None, ["x"], "m", 0.0)  # no reason set
+    monkeypatch.setattr(extract, "extract_events", lambda *a, **k: {"answer": answer})
+    ctx = page_llm.Context(_task())
+    assert page_llm._answer("t", datetime(*NOW).date(), "V", ctx) == (None, "asked", "unknown")
 
 
 @respx.mock
