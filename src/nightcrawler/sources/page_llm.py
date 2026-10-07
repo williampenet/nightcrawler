@@ -409,6 +409,7 @@ def read(
                         url=url,
                         performers=ev["performers"],
                         location_name=venue,
+                        trust_model_concert=reader.get("trust_is_concert") is True,
                     )
                     if in_window(raw, now, window_days):
                         events.append(raw)

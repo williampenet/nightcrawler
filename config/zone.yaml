@@ -128,6 +128,12 @@ priority_venues:
       # year); concerts mixed with workshops. robots.txt: `User-agent: *`, `Crawl-delay: 10`.
       # Bare domain: www.larayonne.org has a TLS name mismatch (WIP-56).
       urls: [https://larayonne.org/agenda/]
+      # OSM says arts_centre, which is accurate (mixed agenda), so the venue keeps its category.
+      # The page labels each item "Musique / Programmation" or "Rencontres et formations"
+      # (Chrome capture, 2026-10-07), so the model's is_concert is trusted for this reader only:
+      # artist-only titles (Robert Finley, LADANIVA) were dropped by the music-word rule (WIP-68).
+      # Unverified: how well the model separates talks here (page not in the eval set).
+      trust_is_concert: true
   - name: Le Périscope
     # WP REST types `kelkii_concert` / `periscope_event` carry no event date field
     # (checked 2026-10-06), so the concerts page is read by the model.
@@ -135,6 +141,9 @@ priority_venues:
     venue_id: osm:node/6875303994  # live concerts.json, 2026-10-07
     reader:
       type: page_llm
+      # OSM says arts_centre; this reader reads the /concerts/ page only (18/18 concerts on the
+      # eval capture of 2026-10-05, docs/MODEL_EVAL.md), so is_concert is trusted (WIP-68).
+      trust_is_concert: true
       # 21 items, "Louis Sclavis Shunkan Trio Mercredi 07 oct" (no year), no pagination.
       # robots.txt: `User-agent: *`, empty Disallow (all allowed).
       urls: [https://www.periscope-lyon.com/concerts/]

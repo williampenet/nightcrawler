@@ -77,6 +77,8 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
         # Trinité: dance, talks, tours) the music-word rule must agree with the model
         if venue is not None and venue.is_music_venue:
             return "model: concert, music venue"
+        if event.trust_model_concert:  # this venue's agenda is a concert programme (config)
+            return "model: concert, trusted programme"
         return "model: concert, music keywords" if MUSIC_WORDS.search(text) else None
     if venue is not None and venue.is_music_venue:
         return "music venue"
