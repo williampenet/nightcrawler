@@ -374,7 +374,22 @@ function feedbackUrl() {
 function sendFeedback(kind, concertId, keys) {
   if (!feedbackUrl()) return; // no service configured: nothing is queued
   fbSave(FB.enqueue(fbLoad(), FB.makeItem(kind, concertId, keys)));
+  showPending();
   flushFeedback();
+}
+
+// Ratings queued without a key used to wait silently (WIP-70): say so above the list.
+function showPending() {
+  const box = document.getElementById("pending-banner");
+  const text = feedbackUrl() ? FB.pendingBanner(fbLoad().length, Boolean(fbToken())) : null;
+  box.querySelector(".banner-text").textContent = text || "";
+  box.hidden = !text;
+}
+
+function askFeedbackKey() {
+  document.getElementById("taste").open = true;
+  document.getElementById("feedback-row").hidden = false;
+  document.getElementById("feedback-key").focus();
 }
 
 async function flushFeedback() {
@@ -393,6 +408,7 @@ async function flushFeedback() {
   else if (result === "sent") fbText = "Avis envoyés au service";
   else fbText = pending ? `${pending} avis en attente` : "";
   showSyncStatus();
+  showPending();
 }
 
 let fbText = "";
@@ -888,7 +904,10 @@ function setupControls() {
       flushFeedback();
       showWhere();
       startSync();
+      showPending(); // a cleared key brings the warning back at once
     });
+    document.getElementById("pending-key").addEventListener("click", askFeedbackKey);
+    showPending();
   }
   showWhere();
   document.getElementById("lb-import").addEventListener("click", () =>

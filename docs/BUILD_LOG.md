@@ -148,6 +148,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | human:william | feedback | Cannot find any Chapelle de la Trinité date in the app (they sit in the collapsed "Tout voir"; one duplicate under "La Trinité") | [WIP-69](https://linear.app/wip-coding/issue/WIP-69) |
 | 2026-10-07 | agent:dev | config | WIP-69: Trinité configured venue gets Ville Morte's coordinates so both listings merge | PR #58 |
 | 2026-10-07 | agent:reviewer | review WIP-69 (dfc667e) | APPROVE: config loads, dedup merge reproduced; follow-ups: merged concert keeps Gancio's "La Trinité" name (SOURCE_RANK), coordinates not cross-checked, add a merge test | PR #58 |
+| 2026-10-07 | agent:dev | feature | WIP-70: banner above the list when ratings are queued without a send key, with a button that opens "Mes goûts" and focuses the key field; hidden once the key flush empties the queue (local Playwright smoke run: 2 ratings queued, 1 POST, queue 0, banner hidden) | [WIP-70](https://linear.app/wip-coding/issue/WIP-70) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

@@ -94,7 +94,15 @@
     return "sent";
   }
 
-  const api = { QUEUE_KEY, TOKEN_KEY, MAX_QUEUE, makeItem, parseQueue, enqueue, nextBatch, flush };
+  // Warning while ratings wait for a send key (WIP-70), or null. Only the count is shown
+  // ("avis" is the same in singular and plural).
+  function pendingBanner(queueLength, hasToken) {
+    const n = Number.isInteger(queueLength) && queueLength > 0 ? queueLength : 0;
+    if (!n || hasToken) return null;
+    return `${n} avis en attente d'envoi : saisis ta clé d'envoi`;
+  }
+
+  const api = { QUEUE_KEY, TOKEN_KEY, MAX_QUEUE, makeItem, parseQueue, enqueue, nextBatch, flush, pendingBanner };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCFeedback = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

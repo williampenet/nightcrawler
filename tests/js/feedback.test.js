@@ -145,3 +145,12 @@ test("a trim during the request does not remove unsent items", async () => {
   assert.equal(x.box.queue[0].artist_keys[0], "a50");
   assert.equal(x.box.queue.at(-1), added);
 });
+
+test("pendingBanner warns only while ratings wait for a key (WIP-70)", () => {
+  assert.equal(F.pendingBanner(39, false), "39 avis en attente d'envoi : saisis ta clé d'envoi");
+  assert.equal(F.pendingBanner(1, false), "1 avis en attente d'envoi : saisis ta clé d'envoi");
+  assert.equal(F.pendingBanner(39, true), null);
+  assert.equal(F.pendingBanner(0, false), null);
+  assert.equal(F.pendingBanner(-1, false), null);
+  assert.equal(F.pendingBanner(undefined, false), null);
+});
