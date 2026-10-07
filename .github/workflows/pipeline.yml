@@ -61,6 +61,14 @@ jobs:
           key: http-${{ github.run_id }}
           restore-keys: http-
 
+      # extract_events answers keyed by page-text hash + model + prompt version (WIP-66):
+      # an unchanged page costs no tokens. Entries older than 30 days are pruned by the run.
+      - uses: actions/cache@v4
+        with:
+          path: .cache/llm
+          key: llm-${{ github.run_id }}
+          restore-keys: llm-
+
       # --store (ADR-0005, WIP-46): the database URL is built and used inside this step
       # only, never exported to later steps; without the secrets or if the store fails,
       # the run goes on stateless with a notice / warning annotation.
@@ -71,6 +79,9 @@ jobs:
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
           SCW_DB_USER: ${{ secrets.SCW_DB_USER }}  # optional
+          # Scaleway Generative APIs key for the extract_events task (page_llm readers);
+          # without it those venues are skipped
+          SCW_GENAI_SECRET_KEY: ${{ secrets.SCW_GENAI_SECRET_KEY }}
         run: python -m nightcrawler run --out site --store
 
       - uses: actions/upload-pages-artifact@v3

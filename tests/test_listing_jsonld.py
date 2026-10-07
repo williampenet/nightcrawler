@@ -272,7 +272,8 @@ def test_zone_config_has_the_four_listing_readers():
         "Le Marché Gare",
         "Auditorium de Lyon",
     }
-    assert all(e["reader"].get("max_details") for e in ENTRIES.values() if "urls" in e["reader"])
+    listing = [e for e in ENTRIES.values() if e["reader"]["type"] == "listing_jsonld"]
+    assert all(e["reader"].get("max_details") for e in listing)
 
 
 def _jsonld(name="Live", start="2026-10-20T21:00:00+02:00"):

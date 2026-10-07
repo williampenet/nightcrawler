@@ -27,6 +27,8 @@ class Zone:
     excluded_venues: tuple[str, ...] = field(default=())
     # "Mes salles" read by a configured reader (WIP-60): ({"name", "venue", "reader"}, ...)
     priority_venues: tuple[dict, ...] = field(default=())
+    # run-wide cap on pages sent to the extract_events model by page_llm readers (WIP-66)
+    llm_pages_per_run: int = 40
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """True when the point is within radius_km of the zone centre (haversine)."""
@@ -63,6 +65,7 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         ),
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
+        llm_pages_per_run=_non_negative_int(data.get("llm_pages_per_run", 40), "llm_pages_per_run"),
     )
     names = [e["venue"] for e in zone.priority_venues]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
@@ -80,6 +83,8 @@ def _priority_venue(entry: dict) -> dict:
         _check_wp_json(name, reader)
     elif reader.get("type") == "listing_jsonld":
         _check_listing_jsonld(name, reader)
+    elif reader.get("type") == "page_llm":
+        _check_page_llm(name, reader)
     else:
         raise ValueError(f"priority venue {name}: unknown reader type {reader.get('type')!r}")
     out = {"name": name, "venue": str(entry.get("venue") or name), "reader": reader}
@@ -144,6 +149,28 @@ def _check_listing_jsonld(name: str, reader: dict) -> None:
         except (KeyError, re.error) as exc:
             raise ValueError(f"priority venue {name}: {key} must be a regex") from exc
     _check_ints(name, reader, {"max_details": None})
+    _check_paginate(name, reader)
+
+
+def _check_page_llm(name: str, reader: dict) -> None:
+    """reader {urls: [https], paginate?, attach?: venue | by_location} (WIP-66)"""
+    urls = reader.get("urls")
+    if not isinstance(urls, list) or not urls:
+        raise ValueError(f"priority venue {name}: urls must be a non-empty list")
+    if not all(isinstance(u, str) and u.startswith("https://") for u in urls):
+        raise ValueError(f"priority venue {name}: urls must be https")
+    if reader.setdefault("attach", "venue") not in ("venue", "by_location"):
+        raise ValueError(f"priority venue {name}: attach must be venue or by_location")
+    _check_paginate(name, reader)
+
+
+def _non_negative_int(value, key: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{key} must be an int >= 0")
+    return value
+
+
+def _check_paginate(name: str, reader: dict) -> None:
     if (pager := reader.get("paginate")) is not None:
         ok = isinstance(pager, dict) and isinstance(pager.get("param"), str) and pager["param"]
         start, top = (pager.get(k) if ok else None for k in ("start", "max"))

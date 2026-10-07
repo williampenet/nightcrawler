@@ -20,6 +20,7 @@ PROJECT_URL = "https://github.com/williampenet/nightcrawler"
 USER_AGENT = f"NightcrawlerBot/0.1 (+{PROJECT_URL})"
 MAX_BYTES = 3_000_000
 TIMEOUT = 20.0
+MAX_CRAWL_DELAY = 60.0  # seconds; a longer robots.txt Crawl-delay means "do not crawl" to us
 
 
 TEXT_TYPES = ("text/", "html", "xml", "json", "calendar")
@@ -157,6 +158,7 @@ class Fetcher:
                 if r.status == 200 and "html" not in r.content_type:
                     parser = RobotFileParser()
                     parser.parse(r.text.splitlines())
+                    self._honour_crawl_delay(parts.netloc.lower(), parser)
                 elif r.status >= 500:  # RFC 9309: server error means disallow all
                     parser = RobotFileParser()
                     parser.disallow_all = True
@@ -168,6 +170,22 @@ class Fetcher:
         return True if parser is None else parser.can_fetch(USER_AGENT, url)
 
     # -- internals ----------------------------------------------------------
+
+    def _honour_crawl_delay(self, host: str, parser: RobotFileParser) -> None:
+        """`Crawl-delay` for our agent (or `*`) widens this host's interval (La Rayonne asks
+        10 s, larayonne.org/robots.txt, 2026-10-07). Above MAX_CRAWL_DELAY the host is
+        treated as disallowed: waiting minutes per page would stall the run."""
+        try:
+            delay = float(parser.crawl_delay(USER_AGENT) or 0)
+        except (TypeError, ValueError):
+            return
+        if delay > MAX_CRAWL_DELAY:
+            log.info("%s: Crawl-delay %s s, host skipped", host, delay)
+            parser.disallow_all = True
+        elif delay > 0:
+            with self._lock:
+                current = self.host_intervals.get(host, self.min_interval)
+                self.host_intervals[host] = max(current, delay)
 
     def _host_lock(self, host: str) -> threading.Lock:
         with self._lock:

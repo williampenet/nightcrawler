@@ -100,6 +100,12 @@ def _target(entry: dict, known: dict[str, Venue]) -> str | None:
     return _resolve(entry["venue"], known)
 
 
+def _own_venue(entry: dict) -> bool:
+    """False for an aggregator (`attach: by_location`, WIP-66): it is not a place, its
+    events name theirs and go through attribution by location."""
+    return entry["reader"].get("attach") != "by_location"
+
+
 def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Venue]:
     """Known venues for "Mes salles" (config `priority_venues`, WIP-64); returns those to add.
 
@@ -119,7 +125,7 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
       other venues by id only).
     """
     added: list[Venue] = []
-    for entry in entries:
+    for entry in filter(_own_venue, entries):
         known = {v.id: v for v in [*venues, *added]}
         if (match := _target(entry, known)) is not None:
             if "category" in entry:
@@ -149,7 +155,7 @@ def configured_venue_ids(
     known = {v.id: v for v in venues}
     ids: dict[str, str] = {}
     notes: dict[str, str] = {}
-    for entry in entries:
+    for entry in filter(_own_venue, entries):
         if (vid := entry.get("venue_id")) and vid not in known:
             notes[entry["name"]] = f"venue_id {vid} not found, matched by name"
         if (target := _target(entry, known)) is not None:

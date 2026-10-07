@@ -15,6 +15,7 @@ import yaml
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
+from .sources import page_llm
 from .sources.osm import osmium_filter_expressions as osm_filters
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument(
         "--store", action="store_true", help="use the event store when SCW_* secrets are set"
     )
+    r.add_argument("--models", default="config/models.yaml")
+    r.add_argument("--llm-cache", default=".cache/llm")
     sub.add_parser("store", help="create the Scaleway event store if needed and migrate it")
     sub.add_parser("deploy-feedback", help="package and deploy the feedback function (Scaleway)")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
@@ -59,14 +62,18 @@ def main(argv: list[str] | None = None) -> int:
     shutil.copytree(WEB_DIR, out, dirs_exist_ok=True)
     write_app_config(Path(args.app_config), out / "app-config.json")
     try:
+        zone = load_zone(args.zone)
         report = run(
-            load_zone(args.zone),
+            zone,
             out,
             # Deezer allows ~50 requests / 5 s; everyone else gets 1 request / s
             Fetcher(cache_dir=args.cache, host_intervals={"api.deezer.com": 0.2}),
             osm_extract=Path(args.osm_extract),
             database_url=store_url() if args.store else os.environ.get("DATABASE_URL") or None,
             reference=Path(args.reference),
+            llm_ctx=page_llm.Context.from_config(
+                args.models, args.llm_cache, zone.llm_pages_per_run
+            ),
         )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets

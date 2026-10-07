@@ -47,6 +47,18 @@ def test_binary_responses_not_downloaded():
 
 
 @respx.mock
+def test_crawl_delay_widens_the_host_interval():
+    # larayonne.org/robots.txt, 2026-10-07: "User-agent: *" then "Crawl-delay: 10"
+    robots = "User-agent: *\nCrawl-delay: 10\n"
+    respx.get("https://a.example/robots.txt").respond(200, text=robots)
+    respx.get("https://b.example/robots.txt").respond(200, text="User-agent: *\nCrawl-delay: 600")
+    f = Fetcher(cache_dir=None, min_interval=1.0, host_intervals={"c.example": 0.2})
+    assert f.allowed("https://a.example/agenda/") is True
+    assert f.host_intervals == {"c.example": 0.2, "a.example": 10.0}
+    assert f.allowed("https://b.example/agenda/") is False  # beyond MAX_CRAWL_DELAY
+
+
+@respx.mock
 def test_unreachable_robots_allows_then_page_fails():
     respx.get("https://a.example/robots.txt").mock(side_effect=httpx.ConnectError("x"))
     assert Fetcher(cache_dir=None, min_interval=0).allowed("https://a.example/") is True

@@ -11,6 +11,7 @@ from .dedup import MAX_DISTANCE_M, dedupe, distance_m, make_links
 from .models import Concert, RawEvent, Venue
 
 MUSIC_TYPES = {"MusicEvent", "Festival"}
+AI_SOURCE = "page_llm:"  # events read by a language model (sources/page_llm.py, WIP-66)
 
 # A performance: the only thing that keeps an activity ("Atelier + concert").
 PERFORMANCE_WORDS = re.compile(
@@ -71,6 +72,8 @@ def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
     )
     if other_show and not STRONG_MUSIC_WORDS.search(text):
         return None
+    if event.source.startswith(AI_SOURCE):  # page_llm keeps only is_concert answers
+        return "model: concert"
     if venue is not None and venue.is_music_venue:
         return "music venue"
     if MUSIC_WORDS.search(text):
@@ -265,6 +268,7 @@ def build_concerts(
                 sources=[ev.source],
                 reason=reason,
                 links=make_links(ev.url, ev.ticket_url, ev.source),
+                ai_extracted=ev.source.startswith(AI_SOURCE),
             )
         )
     concerts, dedup_stats = dedupe(found, venues)

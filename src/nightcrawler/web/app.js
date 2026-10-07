@@ -639,6 +639,12 @@ function concertRow(c, match, showDate) {
   }
   const actions = el("span", null, "links");
   const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
+  if (c.ai_extracted) {
+    // EU AI Act transparency (WIP-66): this listing was read from the venue page by a model
+    const ai = el("span", "Lu par IA", "badge ai");
+    ai.title = "Date et titre extraits automatiquement de la page de la salle par un modèle d'IA : vérifiez sur la page.";
+    links.push(ai);
+  }
   for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
   {
     // every row can be rated; without an identified artist the concert itself is (WIP-47)
