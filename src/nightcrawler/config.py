@@ -29,6 +29,8 @@ class Zone:
     priority_venues: tuple[dict, ...] = field(default=())
     # run-wide cap on pages sent to the extract_events model by page_llm readers (WIP-66)
     llm_pages_per_run: int = 40
+    # a page_llm page longer than the model's input limit is read in chunks, at most this many
+    llm_chunks_per_page: int = 4
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """True when the point is within radius_km of the zone centre (haversine)."""
@@ -66,7 +68,12 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
         llm_pages_per_run=_non_negative_int(data.get("llm_pages_per_run", 40), "llm_pages_per_run"),
+        llm_chunks_per_page=_non_negative_int(
+            data.get("llm_chunks_per_page", 4), "llm_chunks_per_page"
+        ),
     )
+    if zone.llm_chunks_per_page < 1:
+        raise ValueError("llm_chunks_per_page must be >= 1")
     names = [e["venue"] for e in zone.priority_venues]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
         raise ValueError(f"priority venues: venue names must be unique: {', '.join(dupes)}")

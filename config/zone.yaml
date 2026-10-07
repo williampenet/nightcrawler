@@ -39,7 +39,10 @@ excluded_venues:
 # events go to the place written on the page, not to `venue` (needs a location field in the
 # extraction schema: skipped until then). Hosts' robots.txt Crawl-delay is honoured.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
-llm_pages_per_run: 40  # pages sent to the model per run, all page_llm venues together
+# A page longer than the model's input limit (models.yaml `max_input_chars`, else 7,000) is
+# read in chunks of that size, cut before a date line, a few lines overlapping.
+llm_pages_per_run: 40  # chunks sent to the model per run, all page_llm venues together
+llm_chunks_per_page: 4  # La Rayonne ~10,700 characters (coordinator, 2026-10-07): 2-3 chunks
 priority_venues:
   - name: Le Transbordeur
     venue: Le Transbordeur

@@ -86,7 +86,7 @@ def test_happy_path_keeps_grounded_concerts_only(tz):
     assert ev.source == ev.venue_id == "page_llm:larayonne.org"
     assert (ev.location_name, ev.url, ev.performers) == ("La Rayonne", URL, ["Didier Super"])
     assert pages == 1
-    assert status == "ok; model 1, cached 0, ungrounded 1, not concert 1"
+    assert status == "ok; chunks 1, model 1, cached 0, ungrounded 1, not concert 1"
     sent = json.loads(api.calls[0].request.content)
     assert sent["model"] == "test-model"
     assert "<<<PAGE" in sent["messages"][1]["content"]  # page text goes in as data
@@ -102,7 +102,7 @@ def test_cache_hit_costs_no_model_call(tz, tmp_path):
     second = _read(tz, ctx)
     assert api.call_count == 1
     assert [e.title for e in second[0]] == [e.title for e in first[0]]
-    assert second[2].startswith("ok; model 0, cached 1")
+    assert second[2].startswith("ok; chunks 1, model 0, cached 1")
     assert ctx.budget.used == 0
     # another model id is another key: asked again
     other = page_llm.Context(_task(), page_llm.ExtractionCache(tmp_path))
@@ -124,6 +124,110 @@ def test_run_wide_cap(tz):
     assert api.call_count == 1 and ctx.budget.used == 1
     assert pages == 2 and "llm_cap" in status
     assert len(events) == 2  # the first page's concerts are kept
+
+
+MONTHS_FR = {10: "octobre", 11: "novembre", 12: "décembre"}
+
+
+def _long_page(n: int = 40) -> tuple[str, list[tuple[str, str]]]:
+    """An agenda of `n` concerts, one every 1-2 days from 8 Oct 2026 (the last on 5 Dec), in
+    La Rayonne's shape (date, time, title, description): ~11,000 characters of page text."""
+    items, expected = [], []
+    day = datetime(2026, 10, 8)
+    for i in range(n):
+        d = day.toordinal() + (i * 3) // 2
+        when = datetime.fromordinal(d)
+        title = f"Artiste numéro {i:02d}"
+        items.append(
+            f"<li>sam. {when.day:02d} {MONTHS_FR[when.month]}</li><li>à partir de 20h</li>"
+            f"<li>{title}</li><li>Concert, première partie annoncée bientôt, tarif 12 € sur"
+            " place et en prévente, ouverture des portes une heure avant le début</li>"
+            "<li>Accessible aux personnes à mobilité réduite, bar et restauration sur place,"
+            " vestiaire gratuit, billets sur shotgun</li>"
+        )
+        expected.append((title, when.date().isoformat()))
+    expected[-1] = ("Tambours du Bronx", expected[-1][1])
+    items[-1] = items[-1].replace(f"Artiste numéro {n - 1:02d}", "Tambours du Bronx")
+    return "<html><body><ul>" + "".join(items) + "</ul></body></html>", expected
+
+
+def _fake_model(request: httpx.Request) -> httpx.Response:
+    """Answers like a perfect model: every title in the chunk with the date line above it.
+    A title whose date line is not in the chunk (cut by the overlap) is left out."""
+    content = json.loads(request.content)["messages"][1]["content"]
+    lines = content.split("<<<PAGE\n", 1)[1].rsplit("\nPAGE>>>", 1)[0].split("\n")
+    events, current = [], None
+    month = {v: k for k, v in MONTHS_FR.items()}
+    for line in lines:
+        if line.startswith("sam. "):
+            _, dd, mm = line.split(" ")
+            current = f"2026-{month[mm]:02d}-{dd}"
+        elif current and (line.startswith("Artiste") or line == "Tambours du Bronx"):
+            events.append(
+                {"title": line, "date": current, "time": "20:00", "performers": [],
+                 "is_concert": True}
+            )  # fmt: skip
+    return _completion({"events": events})
+
+
+def test_chunks_cut_on_lines_before_a_date_with_overlap():
+    lines = []
+    for i in range(40):
+        lines += [f"sam. {10 + i % 18:02d} octobre", "à partir de 20h", f"Titre {i}", "x" * 50]
+    text = "\n".join(lines)
+    chunks, left = page_llm.chunk_text(text, 1000, 10)
+    assert not left and len(chunks) > 1
+    assert all(len(c) <= 1000 for c in chunks)
+    for prev, nxt in zip(chunks, chunks[1:], strict=False):
+        assert prev.split("\n")[-3:] == nxt.split("\n")[:3]  # 3 lines of overlap
+        assert page_llm.is_date_line(nxt.split("\n")[3])  # the new part starts at a date
+    assert chunks[-1].endswith("x" * 50)  # nothing lost at the end
+    capped, left = page_llm.chunk_text(text, 1000, 2)
+    assert capped == chunks[:2] and left
+    assert page_llm.chunk_text("", 1000, 4) == ([], False)
+    assert page_llm.is_date_line("jeu. 08 octobre") and page_llm.is_date_line("Mercredi 07 oct")
+    assert page_llm.is_date_line("Thu. Nov 12, 2026 at 20:00")
+    assert not page_llm.is_date_line("à partir de 19h") and not page_llm.is_date_line("FAKEAR")
+
+
+@respx.mock
+def test_long_page_is_read_in_chunks_and_its_last_events_found(tz):
+    html, expected = _long_page()
+    text = extract.page_text(html, 10**6)
+    assert len(text) > 10_000  # La Rayonne measured ~10,700
+    n_chunks = len(page_llm.chunk_text(text, extract.MAX_CHARS, 4)[0])
+    assert n_chunks >= 2
+    _site(page=html)
+    api = respx.post(API).mock(side_effect=_fake_model)
+    ctx = page_llm.Context(_task())
+    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    now = datetime(2026, 10, 7, 9, tzinfo=tz)
+    events, pages, status = page_llm.read(
+        ENTRY["reader"], ENTRY["venue"], fetcher, now, tz, 120, ctx
+    )
+    sizes = [len(json.loads(c.request.content)["messages"][1]["content"]) for c in api.calls]
+    assert api.call_count == ctx.budget.used == n_chunks  # each chunk counts toward the cap
+    assert all(s < extract.MAX_CHARS + 200 for s in sizes)  # chunk + the prompt's header
+    found = [(e.title, e.start.date().isoformat()) for e in events]
+    assert found == expected  # every concert once (overlap merged), the last chunk included
+    assert ("Tambours du Bronx", "2026-12-05") in found
+    assert status.startswith(f"ok; chunks {n_chunks}, model {n_chunks}")
+
+
+@respx.mock
+def test_chunk_cap_per_page_and_cache_per_chunk(tz, tmp_path):
+    html, expected = _long_page()
+    _site(page=html)
+    api = respx.post(API).mock(side_effect=_fake_model)
+    cache = page_llm.ExtractionCache(tmp_path)
+    ctx = page_llm.Context(_task(), cache, chunks_per_page=1)
+    events, _, status = _read(tz, ctx)
+    assert api.call_count == 1 and f"chunk_cap: {URL}" in status
+    assert 0 < len(events) < len(expected)
+    full = page_llm.Context(_task(), cache)  # same cache, all chunks
+    events, _, status = _read(tz, full)
+    assert "cached 1" in status  # the chunk already answered is a cache hit
+    assert api.call_count == 1 + full.budget.used and full.budget.used >= 1
 
 
 @respx.mock

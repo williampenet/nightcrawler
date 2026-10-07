@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             database_url=store_url() if args.store else os.environ.get("DATABASE_URL") or None,
             reference=Path(args.reference),
             llm_ctx=page_llm.Context.from_config(
-                args.models, args.llm_cache, zone.llm_pages_per_run
+                args.models, args.llm_cache, zone.llm_pages_per_run, zone.llm_chunks_per_page
             ),
         )
     except Exception as exc:
