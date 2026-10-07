@@ -1,12 +1,14 @@
 import hashlib
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
+import yaml
 
 from nightcrawler import llm
-from nightcrawler.extract import SCHEMA
+from nightcrawler.extract import SCHEMA, page_text
 
 EVENT = {
     "title": "Buck",
@@ -95,9 +97,62 @@ def test_run_task_without_key_keeps_primary(monkeypatch):
 
 
 def test_load_tasks_reads_repo_config():
+    """ADR-0004: extract_events routed to Gemma 4 26B-A4B on Scaleway, as evaluated in run 3."""
     t = llm.load_tasks("config/models.yaml")["extract_events"]
-    assert t.primary.provider == "local" and len(t.primary.sha256) == 64
-    assert t.primary.file.endswith(".gguf")
+    assert t.primary.provider == "scaleway" and t.primary.model == "gemma-4-26b-a4b-it"
+    assert t.primary.extra == {"reasoning_effort": "none"}
+    assert t.fallback is None and t.min_quality == 0.85 and t.temperature == 0.0
+    assert t.max_output_tokens == 2048 and t.timeout_s == 600.0
+    assert t.max_input_chars == 7000  # not raised without an eval (WIP-66)
+    assert t.adr and Path(t.adr).is_file()
+
+
+def test_routed_model_is_the_evaluated_candidate():
+    """The routed request (provider, model, extra) is the eval candidate whose scores are cited."""
+    from eval.__main__ import routed_candidate
+
+    cands = yaml.safe_load(Path("eval/models.yaml").read_text("utf-8"))["extract_events"]
+    t = llm.load_tasks("config/models.yaml")["extract_events"]
+    assert routed_candidate(cands, t)["id"] == "gemma-4-26b-a4b-scaleway"
+    # same model id, other provider or other extra: not the routed request
+    t.primary.extra = {}
+    assert routed_candidate(cands, t) is None
+
+
+def _write_task(tmp_path, limits):
+    path = tmp_path / "models.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {"tasks": {"t": {"primary": {"provider": "local", "model": "m"}, "limits": limits}}}
+        ),
+        "utf-8",
+    )
+    return path
+
+
+def test_max_input_chars_defaults_and_is_read(tmp_path):
+    assert llm.load_tasks(_write_task(tmp_path, {}))["t"].max_input_chars == 7000
+    assert llm.load_tasks(_write_task(tmp_path, None))["t"].max_input_chars == 7000
+    custom = llm.load_tasks(_write_task(tmp_path, {"max_input_chars": 12000}))["t"]
+    assert custom.max_input_chars == 12000
+
+
+@pytest.mark.parametrize("bad", [0, -1, "7000", 7000.5, True, None])
+def test_max_input_chars_rejects_non_positive_int(tmp_path, bad):
+    with pytest.raises(ValueError, match="max_input_chars"):
+        llm.load_tasks(_write_task(tmp_path, {"max_input_chars": bad}))
+
+
+def test_page_text_honours_task_max_input_chars(tmp_path):
+    # 37-char lines: a 500 cap falls inside line 14 (13 x 38 = 494), so a mid-line cut would show
+    lines = [f"concert {i:04d} " + "x" * 24 for i in range(3000)]
+    html = "<body>" + "".join(f"<p>{line}</p>" for line in lines) + "</body>"
+    task = llm.load_tasks(_write_task(tmp_path, {"max_input_chars": 500}))["t"]
+    text = page_text(html, task.max_input_chars)
+    assert text == "\n".join(lines[:13])  # whole lines only, as many as fit
+    routed = llm.load_tasks("config/models.yaml")["extract_events"]
+    long_text = page_text(html, routed.max_input_chars)
+    assert 7000 - 38 < len(long_text) <= 7000 and long_text == "\n".join(lines[:184])
 
 
 @respx.mock

@@ -75,11 +75,10 @@ jobs:
     name: Model evaluation
     needs: build
     runs-on: ubuntu-latest
-    # Hosted candidates read their keys from secrets; the runner skips any whose key is absent (e.g. fork PRs).
-    env:
-      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-      SCALEWAY_API_KEY: ${{ secrets.SCALEWAY_API_KEY }}
-      BASELINE_API_KEY: ${{ secrets.BASELINE_API_KEY }}
+    # Offline smoke run of the eval runner and scorer (gold row only, no key, no model call).
+    # The measured eval, with keys and local CPU models, is the Model eval workflow (eval.yml):
+    # on push to main, weekly on the routed model, and on demand. Running every candidate here
+    # would fail the routed-model gate on every PR, since no key reaches this job.
     steps:
       - uses: actions/checkout@v4
       - name: Skip when the product has no eval set
@@ -100,4 +99,4 @@ jobs:
       - if: steps.check.outputs.run == 'true' && hashFiles('pyproject.toml') != ''
         run: |
           pip install -e ".[dev]" || pip install -e .
-          python -m eval
+          python -m eval --only reference-gold-claude-opus

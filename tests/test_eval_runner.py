@@ -52,7 +52,7 @@ def test_candidates_file_pins_scaleway_ids_and_retires_old_mistral():
 def test_hosted_candidates_skipped_without_key(env, monkeypatch, capsys):
     monkeypatch.delenv("SCW_GENAI_SECRET_KEY", raising=False)
     code, summary, results = run(env, HOSTED + ["mistral-small-api"])
-    assert code == 0
+    assert code == 1  # the routed Gemma was not measured: the gate fails (see below)
     for i in HOSTED:
         assert results[i] == {"skipped": "no key (SCW_GENAI_SECRET_KEY not set)"}
         assert f"| {i} |" in summary
@@ -160,3 +160,80 @@ def test_uncached_weights_are_removed_after_the_run(env, monkeypatch):
     with pytest.raises(runner.llm.ModelError):
         runner.run_candidate(cand["ministral-3-14b-q4"], [], None)
     assert not scratch.exists()
+
+
+@respx.mock
+def test_routed_model_below_the_bar_fails_the_eval(env, monkeypatch, capsys):
+    """config/models.yaml sets min_quality for extract_events: the routed Gemma is gated."""
+    monkeypatch.setenv("SCW_GENAI_SECRET_KEY", "k")
+    respx.post("https://api.scaleway.ai/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": json.dumps({"events": []})}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 10},
+            },
+        )
+    )
+    code, _, _ = run(env, ["gemma-4-26b-a4b-scaleway"])
+    assert code == 1
+    assert "::error::gemma-4-26b-a4b-scaleway: F1 0.0 < 0.85" in capsys.readouterr().out
+    # a non-routed candidate with the same answers is reported, never gated
+    assert run(env, ["mistral-small-3.2-scaleway"])[0] == 0
+
+
+@pytest.mark.parametrize(
+    "setup, reason",
+    [
+        (lambda mp: mp.delenv("SCW_GENAI_SECRET_KEY", raising=False), "no key"),
+        (
+            lambda mp: mp.setattr(
+                runner,
+                "run_candidate",
+                lambda *a: (_ for _ in ()).throw(runner.llm.ModelError("gemma: HTTP 401")),
+            ),
+            "error: gemma: HTTP 401",
+        ),
+        (lambda mp: mp.setattr(runner, "run_candidate", lambda *a: 1 / 0), "error: ZeroDivision"),
+    ],
+    ids=["no-key", "model-error", "crash"],
+)
+def test_gate_fails_when_routed_model_is_not_measured(env, monkeypatch, capsys, setup, reason):
+    setup(monkeypatch)
+    code, _, results = run(env, ["routed"])
+    assert code == 1 and "skipped" in results["gemma-4-26b-a4b-scaleway"]
+    out = capsys.readouterr().out
+    assert "::error::gemma-4-26b-a4b-scaleway (routed): not measured (" in out and reason in out
+
+
+def test_only_routed_selects_the_routed_candidate(env, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        runner, "run_candidate", lambda cand, *a: seen.append(cand["id"]) or {"skipped": "fake"}
+    )
+    run(env, ["routed"])
+    assert seen == ["gemma-4-26b-a4b-scaleway"]
+
+
+def test_gate_fails_when_no_candidate_matches_the_routed_request(env, monkeypatch, capsys):
+    real = runner.llm.load_tasks
+
+    def other_extra(path):
+        tasks = real(path)
+        tasks["extract_events"].primary.extra = {}  # same model id, different request
+        return tasks
+
+    monkeypatch.setattr(runner.llm, "load_tasks", other_extra)
+    monkeypatch.setattr(runner, "run_candidate", lambda *a: {"skipped": "fake"})
+    assert run(env, ["mistral-small-3.2-scaleway"])[0] == 1
+    assert "no eval candidate matches the routed model" in capsys.readouterr().out
+
+
+def test_local_gemma_candidate_is_pinned_to_the_publisher_gguf():
+    cands = {
+        c["id"]: c for c in yaml.safe_load((ROOT / "models.yaml").read_text())["extract_events"]
+    }
+    g = cands["gemma-4-26b-a4b-qat-q4-local"]
+    assert g["provider"] == "local" and g["repo"].startswith("google/")
+    assert g["file"].endswith(".gguf") and len(g["sha256"]) == 64 and len(g["revision"]) == 40
+    assert g["size_bytes"] == 14439363584 and g["cache"] is False

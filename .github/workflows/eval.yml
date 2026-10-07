@@ -8,6 +8,11 @@ on:
     branches: [main]
     paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
             .github/workflows/eval.yml]
+  # Weekly check of the routed model only (`--only routed`), so a provider-side change to a hosted
+  # model shows up as a failed gate (ADR-0004). ~11 k tokens on Scaleway per run (run 3: 7 pages x
+  # 964 in / 585 out), < €0.01 at €0.25 / €0.50 per M tokens. Mondays 05:17 UTC.
+  schedule:
+    - cron: '17 5 * * 1'
   workflow_dispatch:
     inputs:
       only:
@@ -30,7 +35,9 @@ env:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    # 240: run 3 took ~2 h; the local Gemma 26B-A4B QAT candidate (14.4 GB, up to 10 min per
+    # page) can add ~70 min. GitHub-hosted jobs allow 360; public repo, so no minute cost.
+    timeout-minutes: 240
     env:
       MODEL_CACHE: .cache/models
     steps:
@@ -77,6 +84,7 @@ jobs:
           echo "::notice::llama.cpp $LLAMA_CPP_TAG, $(nproc) CPUs, $(free -g | awk '/Mem/{print $2}') GB RAM, $(df -BG --output=avail . | tail -1 | tr -d ' ') free disk"
 
       - name: Cache model weights (SHA-256 verified on use)
+        if: github.event_name != 'schedule'  # the weekly run calls the hosted routed model only
         uses: actions/cache@v4
         with:
           path: .cache/models
@@ -90,5 +98,6 @@ jobs:
           # Scaleway IAM application limited to GenerativeApisModelAccess (README)
           SCW_GENAI_SECRET_KEY: ${{ secrets.SCW_GENAI_SECRET_KEY }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
-          ONLY: ${{ inputs.only }}
+          # schedule: the routed candidate only; dispatch: the input; push: empty = all
+          ONLY: ${{ github.event_name == 'schedule' && 'routed' || inputs.only }}
         run: python -m eval --only "$ONLY"
