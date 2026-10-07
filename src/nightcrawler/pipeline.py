@@ -19,7 +19,7 @@ from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
 from .sources import gancio, osm, priority, ticketmaster
 from .store import sync
-from .venues import is_excluded, merge
+from .venues import configured_venues, is_excluded, merge
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ def run(
     tm_events = [ev for ev in tm_events if ev.venue_id not in dropped]
     ga_events = [ev for ev in ga_events if ev.venue_id not in dropped]
     venues, alias = merge([osm_venues, tm_venues, ga_venues])
+    venues += configured_venues(zone.priority_venues, venues)  # "Mes salles" (WIP-64)
     for ev in tm_events + ga_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
     by_id = {v.id: v for v in venues}

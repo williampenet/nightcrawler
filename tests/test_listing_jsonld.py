@@ -66,7 +66,7 @@ def test_top_level_object_links_filtered_and_venue_configured(page, tz):
     assert ev.source == ev.venue_id == "listing_jsonld:epiceriemoderne.com"
     assert ev.location_name == "L'Épicerie Moderne"
     assert ev.url == f"{base}/2026-10-08-the-lemon-twigs"
-    assert (pages, status) == (3, "listing errors: 1 (HTTP 404)")  # ?page=1 missing
+    assert (pages, status) == (3, "ok")  # ?page=1 answers 404: past the last page, no error
 
 
 @respx.mock
@@ -96,7 +96,7 @@ def test_detail_errors_and_pages_without_event_are_counted(page, tz):
         "Lucio Bukowski + Anton Serra + OSter Lapwass (nouvelle date)"
     ]
     assert events[0].location_name == "Le Marché Gare"
-    assert (pages, status) == (3, "detail errors: 1")
+    assert (pages, status) == (4, "detail errors: 1")  # ?page=1 served page 0 again: stop
 
 
 def test_month_template_expansion(tz):
@@ -177,7 +177,7 @@ def test_detail_cap(page, tz):
     reader = EPICERIE["reader"] | {"urls": ["https://epiceriemoderne.com/agenda"]}
     events, pages, status = _read(EPICERIE, tz, reader=reader | {"max_details": 1})
     assert first.call_count == 1 and len(events) == 1  # the second link is never fetched
-    assert (pages, status) == (2, "detail_cap: 1 of 2 links")
+    assert (pages, status) == (3, "detail_cap: 1 of 2 links")  # /agenda, ?page=1, 1 detail
 
 
 @respx.mock

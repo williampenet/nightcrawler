@@ -6,6 +6,7 @@ import math
 import re
 import unicodedata
 
+from .events import place_key
 from .models import Venue
 
 SAME_PLACE_METERS = 150
@@ -75,3 +76,28 @@ def merge(groups: list[list[Venue]]) -> tuple[list[Venue], dict[str, str]]:
                 if s not in match.sources:
                     match.sources.append(s)
     return merged, alias
+
+
+def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Venue]:
+    """Known venues for "Mes salles" (config `priority_venues`, WIP-64); returns those to add.
+
+    Readers give their events the configured venue name, and events.attribute_venue attaches
+    them to the known venue of that name. A known venue with the same place key (the exact
+    match attribute_venue prefers) takes the configured `category`, if any. Without one, a
+    venue `config:<key>` is created rather than leaving the events to a `place:` venue with no
+    category: configured category (default events_venue, which gives no music rule) and
+    coordinates (optional; without them it is compared with other venues by id only).
+    """
+    added: list[Venue] = []
+    for entry in entries:
+        key = place_key(entry["venue"])
+        same = [v for v in [*venues, *added] if key and place_key(v.name) == key]
+        for v in same:
+            v.category = entry.get("category", v.category)
+        if key and not same:
+            lat, lon = entry.get("latitude"), entry.get("longitude")
+            category = entry.get("category", "events_venue")
+            added.append(
+                Venue(f"config:{key}", entry["venue"], lat, lon, category, sources=["config"])
+            )
+    return added

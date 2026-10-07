@@ -158,7 +158,9 @@ def near(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
     if a.venue_id == b.venue_id:
         return True
     va, vb = venues.get(a.venue_id), venues.get(b.venue_id)
-    return va is not None and vb is not None and distance_m(va, vb) <= MAX_DISTANCE_M
+    if va is None or vb is None or None in (va.latitude, vb.latitude):
+        return False  # unknown place, or a configured venue without coordinates
+    return distance_m(va, vb) <= MAX_DISTANCE_M
 
 
 def same_concert_across_runs(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
