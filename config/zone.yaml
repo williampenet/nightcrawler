@@ -148,9 +148,12 @@ priority_venues:
       # robots.txt: `User-agent: *`, empty Disallow (all allowed).
       urls: [https://www.periscope-lyon.com/concerts/]
   - name: Chapelle de la Trinité
-    # no known venue of that name in the run (live venues.json read up to "F"): a configured
-    # venue without coordinates (unverified: no sourced coordinates found)
+    # no known venue of that name in the run: a configured venue. Coordinates from Ville Morte's
+    # place "La Trinité", 29-31 rue de la Bourse (gancio:agenda.villemorte.fr:254 in the live
+    # venues.json, 2026-10-07), so its listings merge with this one (WIP-69).
     venue: Chapelle de la Trinité
+    latitude: 45.765704
+    longitude: 4.836768
     # a concert venue (coordinator, 2026-10-07): its concert titles rarely carry music words,
     # so the venue rule, not the keyword rule, backs the model's is_concert. The listing also
     # had a dance show, a guided tour and a talk on 2026-10-07 (WebFetch): those are dropped
