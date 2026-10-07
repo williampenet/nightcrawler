@@ -171,3 +171,15 @@ def test_excluded_venue_dropped_when_listed_on_other_pages(tz):
     excluded = ("Radiant Bellevue", "Le Sucre Salé Rive Gauche")
     concerts = build_concerts(raw, venues, now=now, window_days=60, tz=tz, excluded=excluded)
     assert [c.title for c in concerts] == ["Gig C"]
+
+
+def test_wip71_excluded_venues_dropped_by_location_name(tz):
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+    raw = [
+        ev("Gig A", venue="m", location_name="Médiathèque de Meyzieu"),
+        ev("Gig B", venue="m", location_name="A Thou Bout d’Chant"),
+        ev("Gig C", venue="m", location_name="Médiathèque de Lyon"),
+    ]
+    excluded = ("médiathèque de Meyzieu", "À Thou Bout d'Chant")
+    concerts = build_concerts(raw, {"m": MUSIC}, now=now, window_days=60, tz=tz, excluded=excluded)
+    assert [c.title for c in concerts] == ["Gig C"]
