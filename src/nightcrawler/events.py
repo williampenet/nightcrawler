@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .dedup import dedupe, make_links
+from .dedup import MAX_DISTANCE_M, dedupe, distance_m, make_links
 from .models import Concert, RawEvent, Venue
 
 MUSIC_TYPES = {"MusicEvent", "Festival"}
@@ -155,25 +155,35 @@ def is_excluded_place(location: str, excluded_keys: list[tuple[str, ...]]) -> bo
 
 
 def best_venue_match(
-    tokens: tuple[str, ...], keys: dict[str, tuple[str, ...]], prefer: str | None = None
+    tokens: tuple[str, ...],
+    keys: dict[str, tuple[str, ...]],
+    prefer: str | None = None,
+    venues: dict[str, Venue] | None = None,
 ) -> str | None:
     """Id of the known venue whose name matches `tokens` (_names_match), or None.
 
-    `prefer` (the page's venue) wins whenever its name matches: the location then names the
-    page's own place, not another one, even if a duplicate record of it has the exact name
-    (Gancio "L’Épicerie Moderne" next to the OSM concert hall "L'épicerie moderne Place René
-    Lescot, 69320 Feyzin", 2026-10-07). Otherwise: exact name first, then the closest length.
+    Exact name first, then the closest length; ties go to `prefer` (the page's venue).
+    `prefer` also wins when its name matches and it lies within dedup's MAX_DISTANCE_M of
+    the best match: a duplicate record of the page's own place (Gancio "L’Épicerie Moderne",
+    153.8 m from the OSM concert hall "L'épicerie moderne Place René Lescot, 69320 Feyzin",
+    2026-10-07). Farther away, or without coordinates, the best match is another place.
     """
     key = "".join(tokens)
     matches = [vid for vid, vkey in keys.items() if _names_match(tokens, vkey)]
-    if prefer in matches:
-        return prefer
+    if not matches:
+        return None
 
     def rank(vid: str) -> tuple[bool, int, bool]:
         vkey = "".join(keys[vid])
         return (vkey != key, abs(len(vkey) - len(key)), vid != prefer)
 
-    return min(matches, key=rank) if matches else None
+    best = min(matches, key=rank)
+    if prefer in matches and best != prefer and venues is not None:
+        a, b = venues.get(prefer), venues.get(best)
+        located = a is not None and b is not None and None not in (a.latitude, b.latitude)
+        if located and distance_m(a, b) <= MAX_DISTANCE_M:
+            return prefer
+    return best
 
 
 def attribute_venue(
@@ -197,7 +207,7 @@ def attribute_venue(
     key = "".join(tokens)
     if len(key) < MIN_PLACE_KEY and not platform:  # a room ("Grande salle") or a city
         return event.venue_id, None
-    if (match := best_venue_match(tokens, keys, prefer=event.venue_id)) is not None:
+    if (match := best_venue_match(tokens, keys, prefer=event.venue_id, venues=venues)) is not None:
         return match, None
     if platform:
         return None, None  # e.g. a tour date elsewhere listed on a promoter's page

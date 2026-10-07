@@ -64,6 +64,9 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
     )
+    names = [e["venue"] for e in zone.priority_venues]
+    if dupes := sorted({n for n in names if names.count(n) > 1}):
+        raise ValueError(f"priority venues: venue names must be unique: {', '.join(dupes)}")
     for entry in zone.priority_venues:
         if "latitude" in entry and not zone.contains(entry["latitude"], entry["longitude"]):
             raise ValueError(f"priority venue {entry['name']}: coordinates outside the zone")

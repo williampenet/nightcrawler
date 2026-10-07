@@ -12,7 +12,7 @@ import pytest
 import respx
 
 from nightcrawler.config import load_zone
-from nightcrawler.events import build_concerts, place_tokens
+from nightcrawler.events import attribute_venue, build_concerts, place_tokens
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import listing_jsonld
@@ -334,3 +334,35 @@ def test_shorter_known_names_are_decoys_not_matches(tz):
     venues = {v.id: v for v in known}
     (concert,) = build_concerts([ev], venues, now=_now(tz), window_days=60, tz=tz)
     assert (concert.venue_id, concert.reason) == ("config:operaunderground", "music venue")
+
+
+def test_page_venue_wins_only_within_300_m(tz):
+    osm, gancio = _epicerie_twice()  # 153.8 m apart: the page venue keeps its own name
+    start = datetime(2026, 10, 19, 20, tzinfo=tz)
+    probe = RawEvent("TEMPLES", start, "json-ld", osm.id, location_name="L'Épicerie Moderne")
+    venues = {v.id: v for v in (osm, gancio)}
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
+    assert attribute_venue(probe, venues, keys) == ("osm:node/523776298", None)
+    # an aggregator page: the Auditorium's site lists a show at another auditorium 1.8 km
+    # away; "Auditorium" (Villeurbanne is a generic word) matches both, the exact one wins
+    ravel = Venue("osm:way/62336964", "Auditorium Maurice-Ravel", 45.7608, 4.8592, "theatre")
+    other = Venue("osm:node/11", "Auditorium de Villeurbanne", 45.7670, 4.8818, "theatre")
+    ev = RawEvent("Récital", start, "json-ld", ravel.id, location_name="Auditorium de Villeurbanne")
+    venues = {v.id: v for v in (ravel, other)}
+    assert 1700 < distance_m(ravel, other) < 1900
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
+    assert attribute_venue(ev, venues, keys) == ("osm:node/11", None)
+    other.latitude = other.longitude = None  # no coordinates: the old ranking too
+    assert attribute_venue(ev, venues, keys) == ("osm:node/11", None)
+
+
+def test_zone_config_rejects_duplicate_venue_names(tmp_path):
+    reader = "{type: listing_jsonld, urls: ['https://v.example/'], include: x}"
+    path = tmp_path / "zone.yaml"
+    path.write_text(
+        "name: T\nlatitude: 45\nlongitude: 4\nradius_km: 1\npriority_venues:\n"
+        f"  - {{name: A, venue: Le Sonic, reader: {reader}}}\n"
+        f"  - {{name: B, venue: Le Sonic, reader: {reader}}}\n"
+    )
+    with pytest.raises(ValueError, match="unique: Le Sonic"):
+        load_zone(path)
