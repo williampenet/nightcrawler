@@ -49,10 +49,11 @@ ID_LISTS = ("hidden", "likedConcerts")
 MAX_IDS = 500
 # "Mon goût en mots" (WIP-73): the listener's written taste profile (PRD FR-4), personal data,
 # stored here only and never logged. 4,000 characters (code points; the page counts UTF-16
-# code units, so its text is never longer here). Worst case 4,000 JSON escapes of 6 bytes =
-# 24 KB, plus 2 x 500 concert ids (about 15 KB): still under MAX_PROFILE_BODY.
-# taste_text_at: the edit time (ms since epoch, the browser's clock) the page uses for its
-# last-writer-wins merge; the function only checks its type.
+# code units, so its text is never longer here). The text alone is at most 24 KB of JSON
+# (4,000 escapes of 6 bytes); seeds and artist lists are not bounded under MAX_PROFILE_BODY
+# with it, so a large profile gets 400 "body too large" (the page says so).
+# taste_text_at: the edit time (ms since epoch, the browser's clock) of the last-writer-wins
+# merge, applied by the page and again on the locked row (keep_taste_text).
 MAX_TASTE_TEXT = 4000
 MAX_TIMESTAMP = 2**53 - 1  # JavaScript's Number.MAX_SAFE_INTEGER
 PROFILE_FIELDS = ("seeds", *KEY_LISTS, *ID_LISTS, "taste_text", "taste_text_at")
@@ -155,11 +156,34 @@ def validate_profile(raw: bytes) -> tuple[dict, int]:
     # PostgreSQL's jsonb rejects \u0000 (https://www.postgresql.org/docs/current/datatype-json.html)
     if not (isinstance(text, str) and len(text) <= MAX_TASTE_TEXT and "\x00" not in text):
         raise Invalid(f"taste_text: a string of at most {MAX_TASTE_TEXT} characters")
+    try:  # a lone surrogate ("\ud800" in the JSON) is not text: it cannot be stored as UTF-8
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise Invalid("taste_text: not valid unicode") from exc
     at = data.get("taste_text_at", 0)
     if not isinstance(at, int) or isinstance(at, bool) or not 0 <= at <= MAX_TIMESTAMP:
         raise Invalid("bad taste_text_at")
-    out["taste_text"], out["taste_text_at"] = text, at
+    if "taste_text" in data:  # absent (a page older than WIP-73): the stored text is kept
+        out["taste_text"], out["taste_text_at"] = text, at
     return out, base
+
+
+def keep_taste_text(data: dict, stored: dict | None) -> dict:
+    """`data` to store, with the written taste the stored row keeps (WIP-73).
+
+    A body without `taste_text` keeps the stored text; a body with it replaces the stored text
+    only if its `taste_text_at` is not older (a tie goes to the request, as on the page), so
+    only an explicit "" with an edit time at least as recent clears it."""
+    stored = stored or {}
+    if "taste_text" in stored and (
+        "taste_text" not in data or data["taste_text_at"] < stored.get("taste_text_at", 0)
+    ):
+        return {
+            **data,
+            "taste_text": stored["taste_text"],
+            "taste_text_at": stored.get("taste_text_at", 0),
+        }
+    return data
 
 
 def _profile(method: str, body: bytes, profile, allowed: str) -> dict:
@@ -274,7 +298,7 @@ class PgProfile:
             current = {"data": row[0], "version": row[1]} if row else None
             if (current["version"] if current else 0) != base:
                 return False, current
-            payload = Jsonb(data)
+            payload = Jsonb(keep_taste_text(data, current["data"] if current else None))
             if current:
                 cur.execute(
                     "UPDATE profile SET data = %s, version = version + 1, updated_at = now() "

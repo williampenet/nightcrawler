@@ -632,7 +632,8 @@ async function pushProfile() {
     }
     profileChanged(); // sends again what changed meanwhile
   } else {
-    setSync(r.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé"); // retried on next change, load or reconnection
+    const why = r.reason === "too-large" ? " : profil trop volumineux (64 Ko au plus), retire des artistes" : "";
+    setSync(r.status === "unauthorized" ? "Clé refusée" : `Profil non synchronisé${why}`); // retried on next change, load or reconnection
   }
   syncAgain = false;
 }
@@ -1044,6 +1045,10 @@ function setupControls() {
     state.tasteTextAt = Date.now(); // edit time for the last-writer-wins merge (profile.js)
     showTasteCount();
     saveState();
+  });
+  taste.addEventListener("blur", () => {
+    taste.value = S.blurTasteText(taste.value, state.tasteText); // a sync landed while focused
+    showTasteCount();
   });
   document.getElementById("lb-import").addEventListener("click", () =>
     importListenBrainz(document.getElementById("lb-user").value),

@@ -71,3 +71,9 @@ test("sanitizeState keeps the written taste, cleaned", () => {
   assert.equal(s.tasteTextAt, 12);
   assert.deepEqual([S.sanitizeState({ tasteText: 4, tasteTextAt: "x" }).tasteText, S.sanitizeState({}).tasteTextAt], ["", 0]);
 });
+
+test("blurTasteText shows the saved text when a sync landed while the box was focused", () => {
+  assert.equal(S.blurTasteText("my draft", "my draft"), "my draft"); // typed last: kept
+  assert.equal(S.blurTasteText("old text", "newer remote text"), "newer remote text");
+  assert.equal(S.blurTasteText("a\u0000b", "ab"), "a\u0000b"); // same once cleaned: untouched
+});

@@ -102,15 +102,24 @@ Scaleway, region fr-par:
 - Implementation note (WIP-73, written taste): the profile gains `taste_text` (« Mon goût
   en mots », PRD FR-4: a string of at most 4,000 characters, no NUL because PostgreSQL's
   jsonb rejects `\u0000`, https://www.postgresql.org/docs/current/datatype-json.html) and
-  `taste_text_at` (the edit time in ms, an integer ≤ 2^53 − 1). Both default to `""` / `0`
-  when absent. The text is not a list, so the page merges it last-writer-wins: the copy with
-  the more recent `taste_text_at` is kept, this browser's on a tie. Known limits: the time is
-  each device's clock, and the losing text is replaced, not combined. Worst case the text
-  adds about 24 KB (4,000 JSON escapes of 6 bytes), within the 64 KB body limit with both id
-  lists full (test `test_profile_worst_case_taste_text_fits_the_body_limit`). Personal data:
-  never logged (test `test_taste_text_is_never_logged`), never in the repo, same EU provider.
-  A page older than this change still PUTs profiles without the field, which would empty it
-  on the server (unverified risk, only until that browser reloads the page).
+  `taste_text_at` (the edit time in ms, an integer ≤ 2^53 − 1); a text that is not valid
+  Unicode (a lone surrogate, not encodable as UTF-8) gets 400. The text is not a list, so the
+  page merges it last-writer-wins: the copy with the more recent `taste_text_at` is kept,
+  this browser's on a tie. The function applies the same rule on the row it has locked
+  (`SELECT … FOR UPDATE`): a PUT without the field (a page older than this change) keeps the
+  stored text, and a PUT with an older `taste_text_at` does not replace it, so only an
+  explicit `""` with an edit time at least as recent clears it (tests
+  `test_profile_save_without_taste_text_keeps_the_stored_text`,
+  `test_profile_explicit_empty_taste_text_with_newer_time_clears_it`, and the real-Postgres
+  test in CI). Known limits: the time is each device's clock, and the losing text is
+  replaced, not combined. Size: the text alone is at most about 24 KB of JSON (4,000 escapes
+  of 6 bytes), and fits the 64 KB body with both id lists full (test
+  `test_profile_worst_case_taste_text_fits_the_body_limit`); seeds (200 × 12 tags of 100
+  characters) and the artist key lists (2,000 keys each) are not counted there, so a large
+  profile can exceed 64 KB: the function answers 400 "body too large" and the page shows
+  « Profil non synchronisé : profil trop volumineux » (test in `tests/js/profile.test.js`).
+  Personal data: never logged (test `test_taste_text_is_never_logged`), never in the repo,
+  same EU provider.
 - Implementation note (WIP-59, saved concert ids): `hidden` and `likedConcerts` are never
   pruned because an id is absent from a day's data (source failure, id change, past concert);
   only the display resolves current ids, and a saved alias stays next to its current id. The

@@ -133,7 +133,8 @@
   }
 
   // PUT with base_version; on 409 merges with the server copy (or, with force, overwrites it)
-  // and retries once. {status: "ok", data, version, merged} | {status: "unauthorized" | "error"}
+  // and retries once. {status: "ok", data, version, merged} | {status: "unauthorized" | "error"},
+  // with reason "too-large" when the function refuses the body size (400, ADR-0005)
   async function push(url, token, data, base, fetch, force = false) {
     let merged = false;
     try {
@@ -149,6 +150,9 @@
           continue;
         }
         if (res.status === 401) return { status: "unauthorized" };
+        if (res.status === 400 && (await res.json().catch(() => ({}))).error === "body too large") {
+          return { status: "error", reason: "too-large" };
+        }
         if (!res.ok) return { status: "error" };
         const body = await res.json();
         if (!Number.isInteger(body.version)) return { status: "error" };

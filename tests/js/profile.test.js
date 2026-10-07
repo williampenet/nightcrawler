@@ -112,6 +112,10 @@ test("push retries once after a 409, merging or (force) overwriting", async () =
   const always409 = async () => reply(409, { data: null, version: 1 });
   assert.deepEqual(await P.push("u", "k", EMPTY, 0, always409), { status: "error" });
   assert.deepEqual(await P.push("u", "k", EMPTY, 0, async () => reply(503, {})), { status: "error" });
+  // a body over the function's 64 KB limit: the page can say why (ADR-0005)
+  const tooLarge = async () => reply(400, { error: "body too large" });
+  assert.deepEqual(await P.push("u", "k", EMPTY, 0, tooLarge), { status: "error", reason: "too-large" });
+  assert.deepEqual(await P.push("u", "k", EMPTY, 0, async () => reply(400, { error: "bad seed" })), { status: "error" });
 });
 
 test("profileUrl and parseSync", () => {

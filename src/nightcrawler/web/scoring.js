@@ -75,6 +75,10 @@
     const t = v.replace(/\u0000/g, "").slice(0, MAX_TASTE_TEXT).replace(/[\ud800-\udbff]$/, "");
     return typeof t.toWellFormed === "function" ? t.toWellFormed() : t;
   }
+  // The text to show when the box loses focus (WIP-73): a sync that landed while it had the
+  // focus left the box alone; if the listener did not type since, the box still differs from
+  // the saved text and shows it now, instead of a later keystroke overwriting it.
+  const blurTasteText = (value, saved) => (cleanTasteText(value) === saved ? value : saved);
   const cleanTime = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
 
   const NAME_KEY_RE = /^[a-z0-9]{1,100}$/;
@@ -362,7 +366,7 @@
     return kept.slice(-MAX_IDS);
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
