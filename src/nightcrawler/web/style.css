@@ -115,3 +115,28 @@ button.linkish {
 }
 .banner.inline { position: static; margin: 0 0 8px; } /* pending ratings (WIP-70): not stacked over the error banner */
 .banner[hidden] { display: none; }
+
+/* "Mon goût en mots" and "À trier" (WIP-73) */
+.field-label { display: block; margin: 14px 0 4px; font-weight: 600; }
+.small { font-size: 0.85rem; margin: 4px 0; }
+dialog.sorter {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto;
+  padding: 16px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--bg); color: var(--fg);
+}
+dialog.sorter::backdrop { background: rgb(0 0 0 / 0.45); }
+.sorter-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sorter-head h2 { margin: 0; }
+.sorter-card { margin: 12px 0; min-height: 8rem; }
+.sorter-card p { margin: 4px 0; }
+.sorter-title { margin: 0 0 6px; font-size: 1.25rem; overflow-wrap: anywhere; outline: none; }
+.sorter-when { font-weight: 600; }
+.sorter-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sorter-actions[hidden] { display: none; }
+button.big {
+  font: inherit; font-weight: 600; cursor: pointer; min-height: 56px; padding: 8px;
+  border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--accent);
+}
+button.big.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+/* touch screens: no keyboard, no shortcut hint */
+@media (hover: none) and (pointer: coarse) { .sorter-keys { display: none; } }
