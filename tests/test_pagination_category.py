@@ -12,11 +12,19 @@ import pytest
 import respx
 
 from nightcrawler.config import load_zone
-from nightcrawler.events import build_concerts
+from nightcrawler.events import attribute_venue, build_concerts, place_tokens
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import listing_jsonld
-from nightcrawler.venues import configured_venues
+from nightcrawler.venues import (
+    SAME_PLACE_METERS,
+    _norm,
+    attach_to_configured,
+    configured_venue_ids,
+    configured_venues,
+    distance_m,
+    merge,
+)
 
 ZONE = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
 OPERA = next(e for e in ZONE.priority_venues if e["name"] == "Opéra Underground")
@@ -172,6 +180,7 @@ READER = "{type: listing_jsonld, urls: ['https://v.example/'], include: x"
         ("{latitude: 45.7, longitude: east}", "", "latitude and longitude"),
         ("{latitude: 48.85, longitude: 2.35}", "", "outside the zone"),  # Paris
         ("coordinates_from: ''", "", "coordinates_from"),
+        ("venue_id: ''", "", "venue_id"),
         ("", ", paginate: {param: page, start: -1, max: 2}", "paginate"),
         ("", ", paginate: {start: 1, max: 2}", "paginate"),
         ("", ", paginate: {param: page, start: 1, max: 0}", "paginate"),
@@ -197,3 +206,163 @@ def test_zone_config_opera_and_pagination_entries():
     # the Épicerie and Marché Gare "Afficher plus" links are ?page=1: pages count from 0
     for name in ("L'Épicerie Moderne", "Le Marché Gare"):
         assert readers[name]["paginate"]["start"] == 1 and len(readers[name]["urls"]) == 1
+
+
+EPICERIE = next(e for e in ZONE.priority_venues if e["name"] == "L'Épicerie Moderne")
+
+
+def _epicerie_event(title, tz, location="L'Épicerie Moderne"):
+    source = "listing_jsonld:epiceriemoderne.com"
+    start = datetime(2026, 10, 8, 19, 30, tzinfo=tz)
+    return RawEvent(title, start, source, source, types=["Event"], location_name=location)
+
+
+# Live venues.json of 2026-10-07 08:38: the same place twice. Longitudes are not in the
+# measure; both get the same one, the case most favourable to a merge.
+LON = 4.86
+
+
+def _epicerie_twice():
+    osm = Venue(
+        "osm:node/523776298",
+        "L'épicerie moderne Place René Lescot, 69320 Feyzin",
+        45.6747674,
+        LON,
+        "concert_hall",
+    )
+    gancio = Venue("gancio:villemorte:1", "L’Épicerie Moderne", 45.673384, LON, "events_venue")
+    return osm, gancio
+
+
+def test_venue_id_attaches_reader_events_directly(tz):
+    osm, gancio = _epicerie_twice()
+    assert EPICERIE["venue_id"] == "osm:node/523776298"  # the real config entry
+    assert configured_venues((EPICERIE,), [osm, gancio]) == []
+    assert (osm.category, osm.latitude) == ("concert_hall", 45.6747674)  # nothing overridden
+    ids, notes = configured_venue_ids((EPICERIE,), [osm, gancio])
+    assert (ids, notes) == ({"L'Épicerie Moderne": "osm:node/523776298"}, {})
+    events = [_epicerie_event(t, tz) for t in ("THE LEMON TWIGS", "TEMPLES")]
+    attach_to_configured(events, ids)
+    venues = {v.id: v for v in (osm, gancio)}
+    concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
+    assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
+        ("TEMPLES", "osm:node/523776298", "music venue"),
+        ("THE LEMON TWIGS", "osm:node/523776298", "music venue"),
+    ]
+
+
+def test_missing_venue_id_falls_back_to_the_name_with_a_note():
+    _, gancio = _epicerie_twice()  # the OSM node is not in this run
+    assert configured_venues((EPICERIE,), [gancio]) == []
+    ids, notes = configured_venue_ids((EPICERIE,), [gancio])
+    assert ids == {"L'Épicerie Moderne": "gancio:villemorte:1"}  # exact name
+    assert notes == {"L'Épicerie Moderne": "venue_id osm:node/523776298 not found, matched by name"}
+
+
+def test_exact_name_beats_a_longer_music_venue():
+    exact = Venue("osm:node/7", "Le Sonic", 45.74, 4.82, "events_venue")
+    longer = Venue("osm:node/8", "Sonic Music Hall", 45.74, 4.82, "concert_hall")
+    entry = {"name": "Le Sonic", "venue": "Le Sonic", "reader": {}}
+    assert configured_venues((entry,), [longer, exact]) == []
+    assert configured_venue_ids((entry,), [longer, exact])[0] == {"Le Sonic": "osm:node/7"}
+
+
+def test_probe_and_platform_events_stay_at_the_page_venue(tz):
+    osm, gancio = _epicerie_twice()  # the Gancio duplicate is now an exact name match
+    start = datetime(2026, 10, 19, 20, tzinfo=tz)
+    events = [
+        RawEvent("TEMPLES", start, "json-ld", osm.id, location_name="L'Épicerie Moderne"),
+        RawEvent("GILDAA", start, "platform:shotgun", osm.id, location_name="L'Épicerie Moderne"),
+    ]
+    venues = {v.id: v for v in (osm, gancio)}
+    concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
+    assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
+        ("GILDAA", "osm:node/523776298", "music venue"),
+        ("TEMPLES", "osm:node/523776298", "music venue"),
+    ]
+
+
+def test_curly_apostrophe_in_merge_names_and_the_measured_distance():
+    osm, gancio = _epicerie_twice()
+    assert _norm("L’Épicerie Moderne") == _norm("L'Épicerie Moderne") == "epiceriemoderne"
+    # measured latitudes alone are 153.8 m apart: beyond the 150 m containment radius
+    assert distance_m(osm, gancio) > SAME_PLACE_METERS
+    merged, _ = merge([[osm], [gancio]])
+    assert [v.id for v in merged] == ["osm:node/523776298", "gancio:villemorte:1"]
+    # 100 m apart they would merge now that ’ separates words (before: "lepiceriemoderne")
+    gancio.latitude = 45.6747674 - 0.0009
+    merged, alias = merge([[osm], [gancio]])
+    assert [v.id for v in merged] == ["osm:node/523776298"]
+    assert alias["gancio:villemorte:1"] == "osm:node/523776298"
+
+
+def test_default_category_is_not_stricter_than_the_place_fallback(tz):
+    entry = {"name": "X", "venue": "Salle Imaginaire Nord", "reader": {}}
+    (venue,) = configured_venues((entry,), [])
+    assert venue.category == "events_venue"
+    for title in ("Lemon Twigs", "Concert Lemon Twigs", "Atelier collage"):
+        ev = _epicerie_event(title, tz, location="Salle Imaginaire Nord")
+        now = _now(tz)
+        fallback = build_concerts([ev], {}, now=now, window_days=60, tz=tz)
+        configured = build_concerts([ev], {venue.id: venue}, now=now, window_days=60, tz=tz)
+        assert [c.reason for c in configured] == [c.reason for c in fallback], title
+
+
+def test_curly_apostrophes_separate_words():
+    straight = place_tokens("L'Épicerie Moderne")
+    assert straight == ("epicerie", "moderne")
+    for curly in ("L’Épicerie Moderne", "L‘Épicerie Moderne", "Lʼ Épicerie Moderne"):
+        assert place_tokens(curly) == straight, curly
+
+
+def test_shorter_known_names_are_decoys_not_matches(tz):
+    building = Venue("osm:way/1", "Opéra de Lyon", 45.7676, 4.8361, "theatre")
+    bar = Venue("osm:node/5", "Underground", 45.75, 4.84, "bar")
+    restaurant = Venue("osm:node/6", "Le Marché", 45.74, 4.83, "restaurant")
+    marche = next(e for e in ZONE.priority_venues if e["name"] == "Le Marché Gare")
+    added = configured_venues((OPERA, marche), [building, bar, restaurant])
+    assert [v.id for v in added] == ["config:operaunderground", "config:marchegare"]
+    assert (bar.category, restaurant.category) == ("bar", "restaurant")
+    known = [building, bar, restaurant, *added]
+    ids, _ = configured_venue_ids((OPERA, marche), known)
+    assert ids == {
+        "Opéra Underground": "config:operaunderground",
+        "Le Marché Gare": "config:marchegare",
+    }
+    ev = _epicerie_event("Quatuor Béla", tz, location="Opéra Underground")
+    attach_to_configured([ev], ids)
+    venues = {v.id: v for v in known}
+    (concert,) = build_concerts([ev], venues, now=_now(tz), window_days=60, tz=tz)
+    assert (concert.venue_id, concert.reason) == ("config:operaunderground", "music venue")
+
+
+def test_page_venue_wins_only_within_300_m(tz):
+    osm, gancio = _epicerie_twice()  # 153.8 m apart: the page venue keeps its own name
+    start = datetime(2026, 10, 19, 20, tzinfo=tz)
+    probe = RawEvent("TEMPLES", start, "json-ld", osm.id, location_name="L'Épicerie Moderne")
+    venues = {v.id: v for v in (osm, gancio)}
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
+    assert attribute_venue(probe, venues, keys) == ("osm:node/523776298", None)
+    # an aggregator page: the Auditorium's site lists a show at another auditorium 1.8 km
+    # away; "Auditorium" (Villeurbanne is a generic word) matches both, the exact one wins
+    ravel = Venue("osm:way/62336964", "Auditorium Maurice-Ravel", 45.7608, 4.8592, "theatre")
+    other = Venue("osm:node/11", "Auditorium de Villeurbanne", 45.7670, 4.8818, "theatre")
+    ev = RawEvent("Récital", start, "json-ld", ravel.id, location_name="Auditorium de Villeurbanne")
+    venues = {v.id: v for v in (ravel, other)}
+    assert 1700 < distance_m(ravel, other) < 1900
+    keys = {vid: place_tokens(v.name) for vid, v in venues.items()}
+    assert attribute_venue(ev, venues, keys) == ("osm:node/11", None)
+    other.latitude = other.longitude = None  # no coordinates: the old ranking too
+    assert attribute_venue(ev, venues, keys) == ("osm:node/11", None)
+
+
+def test_zone_config_rejects_duplicate_venue_names(tmp_path):
+    reader = "{type: listing_jsonld, urls: ['https://v.example/'], include: x}"
+    path = tmp_path / "zone.yaml"
+    path.write_text(
+        "name: T\nlatitude: 45\nlongitude: 4\nradius_km: 1\npriority_venues:\n"
+        f"  - {{name: A, venue: Le Sonic, reader: {reader}}}\n"
+        f"  - {{name: B, venue: Le Sonic, reader: {reader}}}\n"
+    )
+    with pytest.raises(ValueError, match="unique: Le Sonic"):
+        load_zone(path)

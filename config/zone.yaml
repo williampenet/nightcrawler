@@ -27,9 +27,13 @@ excluded_venues:
 # `paginate: {param, start, max}` also reads param=start, start+1... (at most `max` more pages
 # per URL) until a page brings no new link (WIP-64).
 # Optional per venue (WIP-64): `category` (e.g. music_venue: its events pass the venue-based
-# concert rule) and `latitude`/`longitude`. A known venue with the same name takes the
-# category; without one, a configured venue is created (venues.configured_venues), with
-# the configured coordinates or those of the known venue named in `coordinates_from`.
+# concert rule) and `latitude`/`longitude`. `venue` is matched against known venues as
+# events are attributed (words in a row, closest name first). A match keeps its category
+# and coordinates unless `category` is set; with no match, a configured venue is created
+# (venues.configured_venues; default category events_venue, the same concert rule as no
+# venue), with the configured coordinates or those of the venue `coordinates_from` names.
+# `venue_id` (optional) attaches the events to that venue id directly, no name matching;
+# if the run does not know it, the name is used and the status row says so.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
 priority_venues:
   - name: Le Transbordeur
@@ -69,6 +73,10 @@ priority_venues:
       max_details: 60
   - name: L'Épicerie Moderne
     venue: L'Épicerie Moderne
+    # the run knows this place twice: OSM "L'épicerie moderne Place René Lescot, 69320
+    # Feyzin" (concert_hall, lat 45.6747674) and Gancio "L’Épicerie Moderne" (lat 45.673384,
+    # >150 m apart: not merged). Live venues.json of 2026-10-07 08:38.
+    venue_id: osm:node/523776298
     reader:
       type: listing_jsonld
       # 24 links on /agenda, "Afficher plus" = ?page=1 (pages count from 0); one Event object

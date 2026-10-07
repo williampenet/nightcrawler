@@ -64,6 +64,9 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
     )
+    names = [e["venue"] for e in zone.priority_venues]
+    if dupes := sorted({n for n in names if names.count(n) > 1}):
+        raise ValueError(f"priority venues: venue names must be unique: {', '.join(dupes)}")
     for entry in zone.priority_venues:
         if "latitude" in entry and not zone.contains(entry["latitude"], entry["longitude"]):
             raise ValueError(f"priority venue {entry['name']}: coordinates outside the zone")
@@ -90,6 +93,10 @@ def _priority_venue(entry: dict) -> dict:
         if not all(isinstance(c, int | float) and not isinstance(c, bool) for c in coords):
             raise ValueError(f"priority venue {name}: latitude and longitude must be numbers")
         out["latitude"], out["longitude"] = float(coords[0]), float(coords[1])
+    if (venue_id := entry.get("venue_id")) is not None:
+        if not isinstance(venue_id, str) or not venue_id.strip():
+            raise ValueError(f"priority venue {name}: venue_id must be a venue id")
+        out["venue_id"] = venue_id
     if (source := entry.get("coordinates_from")) is not None:
         if not isinstance(source, str) or not source.strip():
             raise ValueError(f"priority venue {name}: coordinates_from must be a venue name")
