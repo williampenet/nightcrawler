@@ -122,6 +122,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | re-review WIP-64b (d6f7b96) | REQUEST_CHANGES: 1 blocking (page venue beat an exact far-away match); fixed with a 300 m limit | PR #51 |
 | 2026-10-07 | agent:reviewer | re-review WIP-64b (e60f02f) | APPROVE: page-venue rule limited to 300 m, unique priority venue names; to confirm on next run: Épicerie back to 9/9, Opéra Underground coordinates | PR #51 |
 | 2026-10-07 | agent:dev | build | WIP-63 step 2: Scaleway provider (strict json_schema, project-scoped URL, 429/5xx retries, key never logged); eval candidates Mistral Small 3.2 24B, Gemma 4 26B-A4B, Qwen3.6 35B-A3B (Scaleway, reasoning off) and Ministral 3 14B Q4_K_M (local, revision and SHA-256 pinned); `mistral-small-2506` marked retired; summary adds tokens, retries and measured cost; ADR-0004 amended, decision pending run | PR #52 |
+| 2026-10-07 | agent:reviewer | review WIP-63 | REQUEST_CHANGES: 1 blocking (a non-ModelError on the local 14B could abort the run before the Scaleway candidates; disk/cache size) + 8 non-blocking; fixed | PR #52 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

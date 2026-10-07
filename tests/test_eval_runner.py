@@ -1,12 +1,14 @@
 """The eval runner on hosted candidates, offline (respx): skip without key, metrics with one."""
 
 import json
+from collections import namedtuple
 
 import httpx
 import pytest
 import respx
 import yaml
 
+import eval.__main__ as runner
 from eval.__main__ import ROOT, main
 
 HOSTED = ["mistral-small-3.2-scaleway", "gemma-4-26b-a4b-scaleway", "qwen3.6-35b-a3b-scaleway"]
@@ -93,3 +95,68 @@ def test_hosted_candidate_metrics_tokens_and_cost(env, monkeypatch, capsys):
     assert "| 2000 / 400 | 0 / 1 | €0.44 |" in summary
     out = capsys.readouterr().out
     assert "::notice::mistral-small-3.2-scaleway: F1 " in out and "cost/1000 0.44 EUR" in out
+
+
+@respx.mock
+def test_no_page_answered_shows_cost_na(env, monkeypatch):
+    monkeypatch.setenv("SCW_GENAI_SECRET_KEY", "k")
+    respx.post("https://api.scaleway.ai/v1/chat/completions").mock(return_value=httpx.Response(503))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    _, summary, results = run(env, ["gemma-4-26b-a4b-scaleway"])
+    m = results["gemma-4-26b-a4b-scaleway"]["metrics"]
+    assert m["cost_eur_per_1000"] is None and m["failed_calls"] == 7 and m["retries"] == 0
+    assert summary.rstrip().endswith("| 0 / 0 | 7 / 0 | n/a |")
+
+
+def test_hosted_run_first_and_one_crash_never_aborts_the_rest(env, monkeypatch, capsys):
+    order = []
+
+    def fake(cand, cases, task):
+        order.append(cand["id"])
+        if cand["provider"] == "local":
+            raise OSError("/secret/path: No space left on device")
+        return {"skipped": "fake"}
+
+    monkeypatch.setattr(runner, "run_candidate", fake)
+    ids = ["ministral-3-14b-q4", "ministral-3-3b-q4", "mistral-small-3.2-scaleway", "nope"]
+    code, summary, results = run(env, ids)
+    assert code == 0
+    assert order == ["mistral-small-3.2-scaleway", "ministral-3-3b-q4", "ministral-3-14b-q4"]
+    assert results["ministral-3-14b-q4"] == {"skipped": "error: OSError"}  # no message leaked
+    assert "/secret/path" not in summary
+    assert "::warning::--only: unknown candidate id(s): nope" in capsys.readouterr().out
+
+
+def test_local_model_skipped_when_disk_is_low(env, monkeypatch):
+    monkeypatch.setenv("LLAMA_SERVER", "/bin/false")
+    monkeypatch.setenv("MODEL_SCRATCH", str(env / "scratch"))
+    Usage = namedtuple("Usage", "total used free")
+    monkeypatch.setattr(runner.shutil, "disk_usage", lambda p: Usage(0, 0, 9 * 10**9))
+    fetched = []
+    monkeypatch.setattr(runner.llm, "ensure_weights", lambda *a: fetched.append(a))
+    cand = {
+        c["id"]: c for c in yaml.safe_load((ROOT / "models.yaml").read_text())["extract_events"]
+    }
+    # 8.24 GB + 2 GiB margin > 9 GB free
+    res = runner.run_candidate(cand["ministral-3-14b-q4"], [], None)
+    assert res["skipped"].startswith("disk (9.0 GB free < 10.4 GB needed)") and not fetched
+    assert runner.low_disk(env, 1000) is None  # 1 kB + margin fits in 9 GB
+
+
+def test_uncached_weights_are_removed_after_the_run(env, monkeypatch):
+    monkeypatch.setenv("LLAMA_SERVER", "/bin/false")
+    scratch = env / "scratch"
+    monkeypatch.setenv("MODEL_SCRATCH", str(scratch))
+
+    def fake_weights(spec, cache_dir):
+        (cache_dir / "w").mkdir(parents=True)
+        raise runner.llm.ModelError("download failed")
+
+    monkeypatch.setattr(runner.llm, "ensure_weights", fake_weights)
+    cand = {
+        c["id"]: c for c in yaml.safe_load((ROOT / "models.yaml").read_text())["extract_events"]
+    }
+    monkeypatch.setattr(runner, "low_disk", lambda d, s: None)
+    with pytest.raises(runner.llm.ModelError):
+        runner.run_candidate(cand["ministral-3-14b-q4"], [], None)
+    assert not scratch.exists()

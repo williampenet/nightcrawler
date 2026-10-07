@@ -51,10 +51,18 @@ cost from measured tokens.
 
 | Model | Publisher (country) | Licence | Size | Hosting | Est. cost / 1 000 pages | Notes |
 |---|---|---|---|---|---|---|
-| Mistral Small 3.2 24B Instruct 2506 (`mistral-small-3.2-24b-instruct-2506`) | Mistral AI (FR) | Apache 2.0 ([card](https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506)) | 24 B | Scaleway, Paris | €1.08 (€0.15 / €0.35 per M) | EU model, EU host |
-| Gemma 4 26B A4B it (`gemma-4-26b-a4b-it`) | Google (US) | Apache 2.0 ([card](https://huggingface.co/google/gemma-4-26B-A4B-it)) | 25.2 B total / 3.8 B active (MoE) | Scaleway, Paris | €1.63 (€0.25 / €0.50) | non-EU, non-CN comparison point; `reasoning_effort: none` |
-| Qwen3.6 35B-A3B (`qwen3.6-35b-a3b`) | Alibaba Qwen (CN) | Apache 2.0 ([card](https://huggingface.co/Qwen/Qwen3.6-35B-A3B)) | 35 B total / 3 B active (MoE) | Scaleway, Paris | €3.63 (€0.25 / €1.50) | thinking off with `reasoning_effort: none` (Scaleway does not accept `chat_template_kwargs`, [supported models](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/supported-models.mdx)) |
-| Ministral 3 14B Instruct 2512, Q4_K_M GGUF | Mistral AI (FR) | Apache 2.0 ([card](https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512)) | 13.5 B (+0.4 B vision, unused) | local CPU, llama.cpp | €0 | publisher GGUF, revision `74fac473…` and SHA-256 pinned; estimated 25–44 min per eval run, so it cannot meet the 4-min p95 bar on CPU; if it wins, production would use the same weights through an EU API |
+| Mistral Small 3.2 24B Instruct 2506 (`mistral-small-3.2-24b-instruct-2506`) | Mistral AI (FR) | Apache 2.0 ([card](https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506)) | 24 B | Scaleway, Paris | €1.08 (€0.15 / €0.35 per M) | EU model, EU host; served in **fp8** |
+| Gemma 4 26B A4B it (`gemma-4-26b-a4b-it`) | Google (US) | Apache 2.0 ([card](https://huggingface.co/google/gemma-4-26B-A4B-it)) | 25.2 B total / 3.8 B active (MoE) | Scaleway, Paris | €1.63 (€0.25 / €0.50) | non-EU, non-CN comparison point; `reasoning_effort: none`; served in **bf16** |
+| Qwen3.6 35B-A3B (`qwen3.6-35b-a3b`) | Alibaba Qwen (CN) | Apache 2.0 ([card](https://huggingface.co/Qwen/Qwen3.6-35B-A3B)) | 35 B total / 3 B active (MoE) | Scaleway, Paris | €3.63 (€0.25 / €1.50) | thinking off with `reasoning_effort: none` (Scaleway does not accept `chat_template_kwargs`, [supported models](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/supported-models.mdx)); catalogue lists both **bf16** and **fp8**, the precision served by the serverless endpoint is not stated (**unverified**) |
+| Ministral 3 14B Instruct 2512, Q4_K_M GGUF | Mistral AI (FR) | Apache 2.0 ([card](https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512)) | 13.5 B (+0.4 B vision, unused) | local CPU, llama.cpp | €0 | publisher GGUF, revision `74fac473…` and SHA-256 pinned; estimated 25–44 min per eval run, so it cannot meet the 4-min p95 bar on CPU; if it wins, production would use the same model through Mistral's API, `ministral-14b-2512` at $0.20 / $0.20 per M (≈ $0.90 / 1 000 pages, [card](https://docs.mistral.ai/models/model-cards/ministral-3-14b-25-12)) — **caveat:** API access is not settled: this ADR recorded that a key needs a paid plan (William, 2026-10-05), the [pricing page](https://mistral.ai/pricing) now lists API credits on the Free plan, and Experiment-plan requests "may be used to train Mistral's models" ([help](https://help.mistral.ai/en/articles/455206-how-can-i-try-the-api-for-free-with-the-experiment-plan)); to confirm before relying on it (**unverified**) |
+
+Serving precision of the hosted candidates: from the model names in Scaleway's
+[supported models](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/supported-models.mdx)
+page (read 2026-10-07): `mistral/mistral-small-3.2-24b-instruct-2506:fp8`,
+`google/gemma-4-26b-a4b-it:bf16`, `qwen/qwen3.6-35b-a3b:bf16` and `:fp8`. The page covers both
+serverless and dedicated deployments, so these are the catalogue precisions, not a measurement of
+the serverless endpoint. Any effect of fp8 on quality is not assumed: the eval measures each model
+as served.
 
 Set aside (research notes): EuroLLM 9B (4 k context), Qwen3.8 27B (output price €2.7–3.3 / M),
 Mistral Small 4 (119 B), local MoE models (Q4 files do not fit the runner's 16 GB RAM), 8 B models

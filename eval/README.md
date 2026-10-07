@@ -26,4 +26,10 @@ No real personal data in `cases.jsonl`. Results are committed only as the summar
   reads "skipped: no key"; `retired: true` keeps a row without calling it. Run a subset with
   `python -m eval --only id,id` or the workflow's `only` input. The job summary shows, per
   candidate, F1 / precision / recall, injection leaks, p50 / p95 latency, average tokens in / out,
-  failed calls / retries and the cost per 1 000 pages computed from the measured tokens.
+  failed calls / retries and the cost per 1 000 pages computed from the measured tokens ("n/a" when
+  no page was answered).
+- Hosted candidates run before local ones; an exception in one candidate is recorded as its skip
+  reason and the run goes on. A local model is skipped ("disk") when free disk is below its
+  `size_bytes` + 2 GiB; `cache: false` (Ministral 3 14B) downloads to `MODEL_SCRATCH` and deletes
+  it afterwards, so the Actions cache of `.cache/models` stays near 4 GB (10 GB default per repository, which can now be raised:
+  [GitHub changelog](https://github.blog/changelog/2025-11-20-github-actions-cache-size-can-now-exceed-10-gb-per-repository/)).

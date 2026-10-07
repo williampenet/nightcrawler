@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import statistics
 import sys
 from datetime import date
@@ -66,11 +67,39 @@ def run_candidate(cand: dict, cases: list[dict], task: llm.Task) -> dict:
         binary = os.environ.get("LLAMA_SERVER")
         if not binary:
             return {"skipped": "LLAMA_SERVER not set (local models run in the Model eval workflow)"}
-        weights = llm.ensure_weights(spec, os.environ.get("MODEL_CACHE", ".cache/models"))
-        with llm.LlamaServer(binary, weights) as server:
-            spec.base_url = server.base_url
-            return {"cases": [ask(spec, c, task) for c in cases]}
+        cached = cand.get("cache", True)
+        cache_dir = Path(
+            os.environ.get("MODEL_CACHE", ".cache/models")
+            if cached
+            else os.environ.get("MODEL_SCRATCH", ".cache/scratch-models")
+        )
+        if not (cache_dir / (spec.sha256 or "")[:16] / (spec.file or "")).is_file():
+            if why := low_disk(cache_dir, cand.get("size_bytes") or 0):
+                return {"skipped": why}
+        try:
+            weights = llm.ensure_weights(spec, cache_dir)
+            with llm.LlamaServer(binary, weights) as server:
+                spec.base_url = server.base_url
+                return {"cases": [ask(spec, c, task) for c in cases]}
+        finally:
+            if not cached:  # free the disk for the next candidates; never enters the cache
+                shutil.rmtree(cache_dir, ignore_errors=True)
     return {"cases": [ask(spec, c, task) for c in cases]}
+
+
+DISK_MARGIN_BYTES = 2 * 1024**3
+
+
+def low_disk(directory: Path, size_bytes: int) -> str | None:
+    """Skip reason when the weights (plus a margin) would not fit on the disk, else None."""
+    probe = directory
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    free = shutil.disk_usage(probe).free
+    need = size_bytes + DISK_MARGIN_BYTES
+    if free < need:
+        return f"disk ({free / 1e9:.1f} GB free < {need / 1e9:.1f} GB needed)"
+    return None
 
 
 def ask(spec: llm.ModelSpec, case: dict, task: llm.Task) -> dict:
@@ -125,15 +154,16 @@ def metrics(cand: dict, res: dict, cases: list[dict]) -> dict:
     checked = summarize([score_case(r["checked"], by_id[r["id"]]["expected"]) for r in rows])
     lat = sorted(r["latency_s"] for r in rows if r["latency_s"] is not None)
     # tokens averaged over answered pages, so a failed call does not lower the cost estimate
-    answered = [r for r in rows if r["latency_s"] is not None] or rows
-    tin = sum(r["tokens_in"] for r in answered) / len(answered)
-    tout = sum(r["tokens_out"] for r in answered) / len(answered)
+    answered = [r for r in rows if r["latency_s"] is not None]
+    tin = sum(r["tokens_in"] for r in answered) / len(answered) if answered else 0
+    tout = sum(r["tokens_out"] for r in answered) / len(answered) if answered else 0
     price = cand.get("price_eur_per_mtok")
-    cost = (
-        round((tin * price["in"] + tout * price["out"]) / 1000, 2)
-        if price
-        else (0.0 if cand["provider"] == "local" else None)
-    )
+    if not answered:
+        cost = None  # no page answered: no measured cost (shown as n/a, never €0)
+    elif price:
+        cost = round((tin * price["in"] + tout * price["out"]) / 1000, 2)
+    else:
+        cost = 0.0 if cand["provider"] == "local" else None
     return {
         "id": cand["id"],
         "checked": checked,
@@ -236,18 +266,26 @@ def main(argv: list[str] | None = None) -> int:
 
     cands = yaml.safe_load((ROOT / "models.yaml").read_text("utf-8"))[args.task]
     if args.only:
-        wanted = set(args.only.split(","))
+        wanted = {i.strip() for i in args.only.split(",") if i.strip()}
+        if unknown := sorted(wanted - {c["id"] for c in cands}):
+            log.warning("unknown candidate id(s): %s", ", ".join(unknown))
+            annotate("warning", f"--only: unknown candidate id(s): {', '.join(unknown)}")
         cands = [c for c in cands if c["id"] in wanted]
     cases = load_cases(args.task)
     task = llm.load_tasks(ROOT.parent / "config/models.yaml")[args.task]
 
+    # hosted first: a long or failing local CPU run must not delay or block them
+    order = sorted(cands, key=lambda c: c["provider"] == "local")
     results: dict[str, dict] = {}
-    for cand in cands:
+    for cand in order:
         log.info("candidate %s", cand["id"])
         try:
             res = run_candidate(cand, cases, task)
         except llm.ModelError as exc:
+            # ModelError messages hold only a model id, an HTTP status or an exception type
             res = {"skipped": f"error: {exc}"[:200]}
+        except Exception as exc:  # one candidate never aborts the others
+            res = {"skipped": f"error: {type(exc).__name__}"}
         if "cases" in res:
             res["metrics"] = metrics(cand, res, cases)
             annotate("notice", compact(res["metrics"]))

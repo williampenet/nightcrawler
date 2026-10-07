@@ -49,6 +49,9 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_ATTEMPTS = 3
 BACKOFF_S = 2.0  # 2 s, 4 s; a Retry-After header wins, capped at MAX_WAIT_S
 MAX_WAIT_S = 30.0
+UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+# request fields owned by chat_json; a config `extra` may not set them
+RESERVED_EXTRA = frozenset({"model", "messages", "response_format", "stream"})
 
 
 class ModelError(RuntimeError):
@@ -71,7 +74,17 @@ class ModelSpec:
         if d.get("provider") not in PROVIDERS:
             raise ValueError(f"unknown provider {d.get('provider')!r}")
         known = {k: d[k] for k in cls.__dataclass_fields__ if k in d}
+        if bad := sorted(RESERVED_EXTRA & set(known.get("extra") or {})):
+            raise ValueError(f"extra may not set {', '.join(bad)}")
         return cls(**known)
+
+    def project_id(self) -> str:
+        """Project id for a project-scoped URL ('' = default project); ModelError if malformed."""
+        env = PROVIDERS[self.provider].project_env
+        project = os.environ.get(env or "", "").strip()
+        if project and not UUID_RE.fullmatch(project):
+            raise ModelError(f"{env} is not a project id (UUID)")
+        return project
 
     @property
     def url(self) -> str:
@@ -83,9 +96,7 @@ class ModelSpec:
         else:
             url = p.base_url
         if "{project_id}" in url:
-            project = os.environ.get(p.project_env or "", "").strip()
-            if project and not re.fullmatch(r"[0-9a-fA-F-]{36}", project):
-                raise ModelError(f"{p.project_env} is not a project id")
+            project = self.project_id()
             url = (
                 url.replace("{project_id}", project)
                 if project
@@ -100,6 +111,10 @@ class ModelSpec:
     def available(self) -> tuple[bool, str]:
         if self.key_env and not os.environ.get(self.key_env):
             return False, f"no key ({self.key_env} not set)"
+        try:
+            self.project_id()
+        except ModelError as exc:
+            return False, str(exc)
         return True, "ok"
 
 
@@ -255,6 +270,8 @@ def chat_json(
             raise ModelError(f"{spec.key_env} not set")
         headers["Authorization"] = f"Bearer {key}"
     body = {
+        # first, and without reserved keys, so config can never replace the prompt or schema
+        **{k: v for k, v in spec.extra.items() if k not in RESERVED_EXTRA},
         "model": spec.model,
         "messages": messages,
         "temperature": temperature,
@@ -263,13 +280,16 @@ def chat_json(
             "type": "json_schema",
             "json_schema": {"name": "output", "schema": schema, "strict": True},
         },
-        **spec.extra,
     }
     url = f"{spec.url}/chat/completions"
     timeout = httpx.Timeout(timeout_s, connect=min(timeout_s, 15.0))
     own = client is None
     client = client or httpx.Client()
     try:
+        # POST is not idempotent: a 5xx or a dropped connection may come after the provider has
+        # generated (and billed) the answer, so a retry can be billed twice. At most 2 extra
+        # answers per page: ≤ €0.007 at the dearest candidate (Qwen3.6, €3.63 per 1,000 pages
+        # worst case, ADR-0004): negligible.
         for attempt in range(1, MAX_ATTEMPTS + 1):
             r = None
             t0 = time.monotonic()

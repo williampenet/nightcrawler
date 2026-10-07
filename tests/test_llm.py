@@ -180,8 +180,32 @@ def test_scaleway_request_shape(monkeypatch, caplog):
 def test_scaleway_url_default_project_and_bad_id(monkeypatch):
     assert scw(monkeypatch, project=None).url == "https://api.scaleway.ai/v1"
     assert scw(monkeypatch).url == f"https://api.scaleway.ai/{PROJECT}/v1"
-    with pytest.raises(llm.ModelError, match="not a project id"):
-        _ = scw(monkeypatch, project="x/../evil").url
+    for bad in ("x/../evil", "78e655b5-feb0-417c-bb3f-8c448bd0e8d-", "-" * 36):
+        spec = scw(monkeypatch, project=bad)
+        with pytest.raises(llm.ModelError, match="not a project id"):
+            _ = spec.url
+        assert spec.available() == (False, "SCW_DEFAULT_PROJECT_ID is not a project id (UUID)")
+    assert scw(monkeypatch, project=PROJECT.upper()).available() == (True, "ok")
+
+
+@respx.mock
+def test_extra_cannot_override_prompt_or_schema(monkeypatch):
+    with pytest.raises(ValueError, match="messages, response_format"):
+        scw(monkeypatch, extra={"messages": [], "response_format": {"type": "text"}})
+    # built directly (not from config): reserved keys are dropped, the rest is sent
+    spec = llm.ModelSpec(
+        provider="local",
+        model="small",
+        base_url="http://llm.test/v1",
+        extra={"messages": [{"role": "user", "content": "injected"}], "top_p": 0.9},
+    )
+    route = respx.post("http://llm.test/v1/chat/completions").mock(
+        return_value=reply({"events": []})
+    )
+    llm.chat_json(spec, [{"role": "user", "content": "real"}], SCHEMA)
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["messages"] == [{"role": "user", "content": "real"}] and sent["top_p"] == 0.9
+    assert sent["response_format"]["json_schema"]["schema"] == SCHEMA
 
 
 def test_scaleway_without_key_is_skipped(monkeypatch):
