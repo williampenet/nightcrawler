@@ -19,7 +19,13 @@ from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
 from .sources import gancio, osm, priority, ticketmaster
 from .store import sync
-from .venues import configured_venues, is_excluded, merge
+from .venues import (
+    attach_to_configured,
+    configured_venue_ids,
+    configured_venues,
+    is_excluded,
+    merge,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +64,7 @@ def run(
     ga_events = [ev for ev in ga_events if ev.venue_id not in dropped]
     venues, alias = merge([osm_venues, tm_venues, ga_venues])
     venues += configured_venues(zone.priority_venues, venues)  # "Mes salles" (WIP-64)
+    configured_ids = configured_venue_ids(zone.priority_venues, venues)
     for ev in tm_events + ga_events:
         ev.venue_id = alias.get(ev.venue_id, ev.venue_id)
     by_id = {v.id: v for v in venues}
@@ -91,6 +98,7 @@ def run(
             | {"status": f"error: {type(exc).__name__}", "events": 0, "pages": 0}
             for e in zone.priority_venues
         ]
+    attach_to_configured(pv_events, configured_ids)  # to the venue each name resolved to
     raw.extend(pv_events)
     raw.extend(ga_events)  # after venue sites: on a duplicate, the venue's own page wins
     # venues covered by the ticketing API or an agenda count as readable even if their site is not

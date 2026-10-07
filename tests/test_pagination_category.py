@@ -12,11 +12,11 @@ import pytest
 import respx
 
 from nightcrawler.config import load_zone
-from nightcrawler.events import build_concerts
+from nightcrawler.events import build_concerts, place_tokens
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import listing_jsonld
-from nightcrawler.venues import configured_venues
+from nightcrawler.venues import attach_to_configured, configured_venue_ids, configured_venues
 
 ZONE = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
 OPERA = next(e for e in ZONE.priority_venues if e["name"] == "Opéra Underground")
@@ -220,8 +220,16 @@ def test_configured_name_resolves_like_attribution_wip64b(tz):
     gancio = Venue("gancio:villemorte:1", "L’Épicerie Moderne", 45.67, 4.86, "events_venue")
     assert configured_venues((EPICERIE,), [osm, gancio]) == []  # no config: venue created
     assert (osm.category, osm.latitude) == ("concert_hall", 45.67)  # nothing overridden
+    # with ’ read as a separator the Gancio name is an exact match, and attribution by name
+    # alone would pick it (events_venue): the reader's events go to the resolved venue
+    assert configured_venue_ids((EPICERIE,), [osm, gancio]) == {
+        "L'Épicerie Moderne": "osm:node/523776298"  # music venues first
+    }
     venues = {v.id: v for v in (osm, gancio)}
     events = [_epicerie_event(t, tz) for t in ("THE LEMON TWIGS", "TEMPLES")]
+    by_name = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
+    assert by_name == []  # attributed to the Gancio events_venue: no music rule
+    attach_to_configured(events, configured_venue_ids((EPICERIE,), [osm, gancio]))
     concerts = build_concerts(events, venues, now=_now(tz), window_days=60, tz=tz)
     assert sorted((c.title, c.venue_id, c.reason) for c in concerts) == [
         ("TEMPLES", "osm:node/523776298", "music venue"),
@@ -239,3 +247,31 @@ def test_default_category_is_not_stricter_than_the_place_fallback(tz):
         fallback = build_concerts([ev], {}, now=now, window_days=60, tz=tz)
         configured = build_concerts([ev], {venue.id: venue}, now=now, window_days=60, tz=tz)
         assert [c.reason for c in configured] == [c.reason for c in fallback], title
+
+
+def test_curly_apostrophes_separate_words():
+    straight = place_tokens("L'Épicerie Moderne")
+    assert straight == ("epicerie", "moderne")
+    for curly in ("L’Épicerie Moderne", "L‘Épicerie Moderne", "Lʼ Épicerie Moderne"):
+        assert place_tokens(curly) == straight, curly
+
+
+def test_shorter_known_names_are_decoys_not_matches(tz):
+    building = Venue("osm:way/1", "Opéra de Lyon", 45.7676, 4.8361, "theatre")
+    bar = Venue("osm:node/5", "Underground", 45.75, 4.84, "bar")
+    restaurant = Venue("osm:node/6", "Le Marché", 45.74, 4.83, "restaurant")
+    marche = next(e for e in ZONE.priority_venues if e["name"] == "Le Marché Gare")
+    added = configured_venues((OPERA, marche), [building, bar, restaurant])
+    assert [v.id for v in added] == ["config:operaunderground", "config:marchegare"]
+    assert (bar.category, restaurant.category) == ("bar", "restaurant")
+    known = [building, bar, restaurant, *added]
+    ids = configured_venue_ids((OPERA, marche), known)
+    assert ids == {
+        "Opéra Underground": "config:operaunderground",
+        "Le Marché Gare": "config:marchegare",
+    }
+    ev = _epicerie_event("Quatuor Béla", tz, location="Opéra Underground")
+    attach_to_configured([ev], ids)
+    venues = {v.id: v for v in known}
+    (concert,) = build_concerts([ev], venues, now=_now(tz), window_days=60, tz=tz)
+    assert (concert.venue_id, concert.reason) == ("config:operaunderground", "music venue")

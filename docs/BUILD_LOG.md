@@ -117,6 +117,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-64 | REQUEST_CHANGES: 1 blocking (coordinate-less config venue counted as located → false conflicts) + 5 non-blocking; fixed, plus coordinates_from so Opéra Underground merges with "Opéra de Lyon" listings | PR #50 |
 | 2026-10-07 | agent:reviewer | re-review WIP-64 | APPROVE at b561a3e; 1 non-blocking (warn when coordinates_from finds no venue; "Opéra de Lyon" is present in venues.json of 2026-10-06 22:52, checked by the orchestrator) | PR #50 |
 | 2026-10-07 | agent:dev | fix | WIP-64b: configured venues resolved with the attribution's fuzzy name match (events.best_venue_match), not exact names; live run 08:38 had created `config:epiceriemoderne` (events_venue) next to the OSM concert_hall "L'épicerie moderne Place René Lescot, 69320 Feyzin", Épicerie 9/9 → 1/9; a match keeps its category and coordinates unless `category` is set | PR #51 |
+| 2026-10-07 | agent:reviewer | review WIP-64b | REQUEST_CHANGES: 1 blocking (shorter known name captured a configured venue) + 3 non-blocking (curly apostrophe tokenisation); fixed | PR #51 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

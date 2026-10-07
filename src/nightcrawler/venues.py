@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 from .events import best_venue_match, place_tokens
-from .models import Venue
+from .models import RawEvent, Venue
 
 SAME_PLACE_METERS = 150
 # Identical names from different sources merge further apart: Ticketmaster and OpenStreetMap
@@ -78,13 +78,28 @@ def merge(groups: list[list[Venue]]) -> tuple[list[Venue], dict[str, str]]:
     return merged, alias
 
 
+def _resolve(name: str, known: dict[str, Venue]) -> str | None:
+    """Id of the known venue a configured name designates, or None.
+
+    Same matching as attribution (events.best_venue_match: words in a row, exact name first,
+    then the closest length), with two limits: the known name must contain the configured
+    one (a shorter "Underground" bar is another place), and music venues come first, since
+    the same place may be known twice (OSM "L'épicerie moderne Place René Lescot, 69320
+    Feyzin", concert_hall, and Gancio "L’Épicerie Moderne", events_venue: run of 2026-10-07).
+    """
+    tokens = place_tokens(name)
+    size = len("".join(tokens))
+    keys = {vid: place_tokens(v.name) for vid, v in known.items()}
+    longer = {vid: k for vid, k in keys.items() if len("".join(k)) >= size}
+    music = {vid: k for vid, k in longer.items() if known[vid].is_music_venue}
+    return best_venue_match(tokens, music) or best_venue_match(tokens, longer)
+
+
 def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Venue]:
     """Known venues for "Mes salles" (config `priority_venues`, WIP-64); returns those to add.
 
-    Readers give their events the configured venue name; events.attribute_venue attaches them
-    to the known venue that name matches (events.best_venue_match: words in a row, exact name
-    first, then the closest length). The same matching resolves the configured name here, so
-    "L'Épicerie Moderne" finds the OSM "L'épicerie moderne Place René Lescot, 69320 Feyzin".
+    Each configured venue name is resolved to a known venue (`_resolve`); the readers' events
+    are then attached to it (`attach_to_configured`), not left to attribution by name.
 
     - A match is kept as it is; only an explicit `category` in the config replaces its
       category. Its coordinates are never changed.
@@ -100,15 +115,15 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
     added: list[Venue] = []
     for entry in entries:
         known = {v.id: v for v in [*venues, *added]}
-        keys = {vid: place_tokens(v.name) for vid, v in known.items()}
-        tokens = place_tokens(entry["venue"])
-        if (match := best_venue_match(tokens, keys)) is not None:
+        if (match := _resolve(entry["venue"], known)) is not None:
             if "category" in entry:
                 known[match].category = entry["category"]
             continue
+        tokens = place_tokens(entry["venue"])
         if not tokens:
             continue
         lat, lon = entry.get("latitude"), entry.get("longitude")
+        keys = {vid: place_tokens(v.name) for vid, v in known.items()}
         src_id = best_venue_match(place_tokens(entry.get("coordinates_from") or ""), keys)
         src = known.get(src_id) if src_id else None
         if lat is None and src is not None and src.latitude is not None:
@@ -117,3 +132,18 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
         key = "".join(tokens)
         added.append(Venue(f"config:{key}", entry["venue"], lat, lon, category, sources=["config"]))
     return added
+
+
+def configured_venue_ids(entries: tuple[dict, ...], venues: list[Venue]) -> dict[str, str]:
+    """{configured venue name: id of the venue it resolves to}, once configured_venues ran."""
+    known = {v.id: v for v in venues}
+    resolved = {e["venue"]: _resolve(e["venue"], known) for e in entries}
+    return {name: vid for name, vid in resolved.items() if vid is not None}
+
+
+def attach_to_configured(events: list[RawEvent], resolved: dict[str, str]) -> None:
+    """Readers give their events the configured venue name as location: attach them to the
+    venue that name resolved to, so attribution by name cannot pick another one."""
+    for ev in events:
+        if (vid := resolved.get(ev.location_name or "")) is not None:
+            ev.venue_id, ev.location_name = vid, None

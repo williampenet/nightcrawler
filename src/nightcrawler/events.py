@@ -114,12 +114,16 @@ ADDRESS_RE = re.compile(
     r"|mont[ée]e)\b",
     re.IGNORECASE,
 )
+APOSTROPHES = re.compile("[\u2019\u2018\u02bc]")  # ’ ‘ ʼ
 MIN_PLACE_KEY = 4  # shorter keys are too vague to name a place
 MIN_PARTIAL_KEY = 6  # a partial match ("Bourse du Travail" in a longer name) needs more
 
 
 def place_tokens(name: str) -> tuple[str, ...]:
     """Normalised words of a place name, without accents or generic/room words."""
+    # typographic apostrophes separate words like "'" (L’Épicerie = L'Épicerie); stripping
+    # them as non-ASCII would glue "l" to the next word ("lepicerie")
+    name = APOSTROPHES.sub(" ", name)
     text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     return tuple(t for t in re.split(r"[^a-z0-9]+", text) if t and t not in GENERIC_PLACE_WORDS)
 
