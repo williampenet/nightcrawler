@@ -138,6 +138,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:dev | implement | WIP-67: invalid model answers get a reason code (`truncated` = finish_reason length or JSON cut off, `json`, `schema`; `transport` for ModelError) in the page_llm status row of report.json, codes only in logs; an invalid chunk is split once on a date line near its middle (8-line overlap) and each half asked once, counted against `llm_calls_per_run` and cached; `max_output_tokens` unchanged; null content no longer crashes chat_json | PR #56 |
 | 2026-10-07 | agent:reviewer | review WIP-67 | REQUEST_CHANGES: split half could be 90–97% of the chunk; follow-ups split marker cache, unclosed think, unknown code; fixed | PR #56 |
 | 2026-10-07 | agent:dev | fix | WIP-67 review: each split half at most 75% of the chunk characters (nearest fitting date line, else middle, else no split); split marker cached under the full chunk key (next run: 0 calls for it); unclosed `<think>` counts as `truncated`; missing final brace documented; `unknown` code when none is given | PR #56 |
+| 2026-10-07 | agent:reviewer | re-review WIP-67 (c49fb9c) | APPROVE; follow-ups: chunks under ~32 lines cannot be split, split marker pins a one-off failure until cache expiry, marker counted in `cached` | PR #56 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
