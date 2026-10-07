@@ -152,6 +152,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-70 (81e7cce) | APPROVE; follow-ups: live-region announce, refused key, smoke not committed; 1-2, 4 applied | PR #59 |
 | 2026-10-07 | agent:dev | feature | WIP-72: `lineup` per concert (union of merged performers, else deterministic title split on + / x b2b , & with descriptors and prefixes dropped; Gancio "Name (genre, country)" first paragraph); artist lookup on every act, whole title / "A & B" kept when a known artist; card line "Avec : A, B" from 2 acts. On the 17 published concerts of `tests/fixtures/coverage/` no spurious split (1 act each, "Punk night" = its 2 performers) | [WIP-72](https://linear.app/wip-coding/issue/WIP-72) |
 | 2026-10-07 | agent:dev | fix | WIP-72 review: an "X : Y" title without a known prefix splits only on a hard separator on the right (else left side with 2 acts, else one act, so "Pord : Tournée Rouge & Noir" keeps the per-title artist lookup of main); prices, times, statuses, "DJ set", "N soirées" and a trailing " - 18:00" are no longer acts; 15 title cases + 1 enrich test added, 13 of them fail with the previous lineup.py | PR #61 |
+| 2026-10-07 | agent:reviewer | re-review WIP-72 (a6218db) | REQUEST_CHANGES: trailing " - 12€" / " - 20h30 - 12€" glued to last act; nb: Annulé/Entrée libre parts, PR size | PR #61 |
+| 2026-10-07 | agent:orchestrator | fix WIP-72 re-review | price alternative in STATUS_RE, annulé/entrée libre placeholders, 4 test titles; pytest 416 passed | PR #61 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

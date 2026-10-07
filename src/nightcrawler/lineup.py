@@ -61,7 +61,8 @@ SOFT_RE = re.compile(r"\s*,\s+|\s+&\s+")
 PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 QUOTED_RE = re.compile(r"\s+[\"“«][^\"“”«»]{1,80}[\"”»]\s*$")
 STATUS_RE = re.compile(
-    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?|\d{1,2}\s*[h:]\s*\d{0,2}|\d+(?:[.,]\d+)?\s*€)\s*$",
+    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?"
+    r"|\d{1,2}\s*[h:]\s*\d{0,2}|\d+(?:[.,]\d+)?\s*€)\s*$",
     re.IGNORECASE,
 )
 PAREN_SPAN_RE = re.compile(r"\([^()]*\)")
