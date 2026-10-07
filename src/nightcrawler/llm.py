@@ -2,7 +2,8 @@
 
 Business code never names a model: it calls `run_task(task, messages, schema, check)` with a
 task loaded from `config/models.yaml`. Every provider speaks the OpenAI-compatible chat API
-(llama.cpp `llama-server` locally, Mistral's EU API), so switching model = editing config.
+(llama.cpp `llama-server` locally, Mistral's EU API, Scaleway Generative APIs in Paris), so
+switching model = editing config.
 """
 
 from __future__ import annotations
@@ -25,12 +26,29 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-# provider -> (default base URL, env var holding the API key or None)
-PROVIDERS: dict[str, tuple[str, str | None]] = {
-    "local": ("http://127.0.0.1:8080/v1", None),
-    "mistral": ("https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
+
+@dataclass(frozen=True)
+class Provider:
+    base_url: str  # default; a `{project_id}` placeholder is filled from `project_env`
+    key_env: str | None = None  # env var holding the API key (never logged)
+    project_env: str | None = None
+
+
+PROVIDERS: dict[str, Provider] = {
+    "local": Provider("http://127.0.0.1:8080/v1"),
+    "mistral": Provider("https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
+    # OpenAI-compatible; project-scoped URL `https://api.scaleway.ai/<project id>/v1`, the id is
+    # hidden for the default project (scaleway.com/en/docs/generative-apis/api-cli/
+    # using-generative-apis.md). Key: IAM application limited to GenerativeApisModelAccess.
+    "scaleway": Provider(
+        "https://api.scaleway.ai/{project_id}/v1", "SCW_GENAI_SECRET_KEY", "SCW_DEFAULT_PROJECT_ID"
+    ),
 }
 HF_URL = "https://huggingface.co/{repo}/resolve/{revision}/{file}"
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+MAX_ATTEMPTS = 3
+BACKOFF_S = 2.0  # 2 s, 4 s; a Retry-After header wins, capped at MAX_WAIT_S
+MAX_WAIT_S = 30.0
 
 
 class ModelError(RuntimeError):
@@ -57,19 +75,31 @@ class ModelSpec:
 
     @property
     def url(self) -> str:
+        p = PROVIDERS[self.provider]
         if self.base_url:
-            return self.base_url.rstrip("/")
-        if self.provider == "local" and os.environ.get("LLM_LOCAL_URL"):
-            return os.environ["LLM_LOCAL_URL"].rstrip("/")
-        return PROVIDERS[self.provider][0]
+            url = self.base_url
+        elif self.provider == "local" and os.environ.get("LLM_LOCAL_URL"):
+            url = os.environ["LLM_LOCAL_URL"]
+        else:
+            url = p.base_url
+        if "{project_id}" in url:
+            project = os.environ.get(p.project_env or "", "").strip()
+            if project and not re.fullmatch(r"[0-9a-fA-F-]{36}", project):
+                raise ModelError(f"{p.project_env} is not a project id")
+            url = (
+                url.replace("{project_id}", project)
+                if project
+                else url.replace("/{project_id}", "")
+            )
+        return url.rstrip("/")
 
     @property
     def key_env(self) -> str | None:
-        return PROVIDERS[self.provider][1]
+        return PROVIDERS[self.provider].key_env
 
     def available(self) -> tuple[bool, str]:
         if self.key_env and not os.environ.get(self.key_env):
-            return False, f"{self.key_env} not set"
+            return False, f"no key ({self.key_env} not set)"
         return True, "ok"
 
 
@@ -157,6 +187,26 @@ def validate(value: Any, schema: dict, path: str = "$") -> list[str]:
     return [f"{path}: unsupported schema type {types!r}"]  # fail closed
 
 
+def strict_schema_errors(schema: dict, path: str = "$") -> list[str]:
+    """Strict `json_schema` mode (OpenAI-compatible APIs, Scaleway's structured-outputs guide):
+    every object lists all its properties as required and sets additionalProperties: false;
+    optional fields are expressed as nullable (`["string", "null"]`), never left out."""
+    errors: list[str] = []
+    types = schema.get("type")
+    if types == "object" or (isinstance(types, list) and "object" in types):
+        props = schema.get("properties", {})
+        missing = sorted(set(props) - set(schema.get("required", [])))
+        if missing:
+            errors.append(f"{path}: not required: {', '.join(missing)}")
+        if schema.get("additionalProperties") is not False:
+            errors.append(f"{path}: additionalProperties must be false")
+        for k, sub in props.items():
+            errors += strict_schema_errors(sub, f"{path}.{k}")
+    if "items" in schema:
+        errors += strict_schema_errors(schema["items"], f"{path}[]")
+    return errors
+
+
 # ---------------------------------------------------------------- calls
 
 
@@ -169,6 +219,14 @@ class Answer:
     tokens_in: int = 0
     tokens_out: int = 0
     escalated: bool = False
+    attempts: int = 1
+
+
+def _retry_wait(attempt: int, r: httpx.Response | None) -> float:
+    after = r.headers.get("Retry-After") if r is not None else None
+    if after and after.strip().isdigit():
+        return min(float(after), MAX_WAIT_S)
+    return min(BACKOFF_S * 2 ** (attempt - 1), MAX_WAIT_S)
 
 
 def chat_json(
@@ -180,8 +238,16 @@ def chat_json(
     temperature: float = 0.0,
     timeout_s: float = 120.0,
     client: httpx.Client | None = None,
+    sleep: Callable[[float], None] | None = None,
 ) -> Answer:
-    """One constrained-JSON chat completion. Never raises on a bad answer: errors are listed."""
+    """One constrained-JSON chat completion. Never raises on a bad answer: errors are listed.
+
+    HTTP 429 / 5xx and connection failures are retried (MAX_ATTEMPTS, exponential backoff or
+    Retry-After); a read timeout is not (a slow model stays slow). Logs and errors carry the
+    model id and the status only: never the prompt, the response body or the key.
+    """
+    if bad := strict_schema_errors(schema):
+        raise ModelError(f"schema not usable in strict mode: {'; '.join(bad[:3])}")
     headers = {"Content-Type": "application/json"}
     if spec.key_env:
         key = os.environ.get(spec.key_env)
@@ -199,19 +265,31 @@ def chat_json(
         },
         **spec.extra,
     }
+    url = f"{spec.url}/chat/completions"
+    timeout = httpx.Timeout(timeout_s, connect=min(timeout_s, 15.0))
     own = client is None
     client = client or httpx.Client()
-    t0 = time.monotonic()
     try:
-        r = client.post(
-            f"{spec.url}/chat/completions", json=body, headers=headers, timeout=timeout_s
-        )
-    except httpx.HTTPError as exc:
-        raise ModelError(f"{spec.model}: {type(exc).__name__}") from exc
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            r = None
+            t0 = time.monotonic()
+            try:
+                r = client.post(url, json=body, headers=headers, timeout=timeout)
+            except httpx.TimeoutException as exc:
+                raise ModelError(f"{spec.model}: {type(exc).__name__}") from exc
+            except httpx.TransportError as exc:
+                if attempt == MAX_ATTEMPTS:
+                    raise ModelError(f"{spec.model}: {type(exc).__name__}") from exc
+                log.warning("%s: %s, retrying", spec.model, type(exc).__name__)
+            latency = time.monotonic() - t0  # last attempt only: backoff is not model latency
+            if r is not None and (r.status_code not in RETRY_STATUSES or attempt == MAX_ATTEMPTS):
+                break
+            if r is not None:
+                log.warning("%s: HTTP %s, retrying", spec.model, r.status_code)
+            (sleep or time.sleep)(_retry_wait(attempt, r))
     finally:
         if own:
             client.close()
-    latency = time.monotonic() - t0
     if r.status_code != 200:
         # the body may echo the prompt: keep only the status in logs
         raise ModelError(f"{spec.model}: HTTP {r.status_code}")
@@ -227,6 +305,7 @@ def chat_json(
         latency,
         usage.get("prompt_tokens", 0),
         usage.get("completion_tokens", 0),
+        attempts=attempt,
     )
     try:
         content = payload["choices"][0]["message"]["content"]

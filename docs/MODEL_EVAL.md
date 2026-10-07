@@ -55,6 +55,14 @@ so the code "corrected" good dates into wrong ones (checked F1 below raw F1). As
 model to describe the page layout does not work on flattened text. Reverted; kept the code-side
 time normalisation, which fixed Qwen's schema failures (valid 0.71 → 1.0).
 
+#### Run 3 — WIP-63, stronger candidates: pending run
+
+Added to `eval/models.yaml` (sources in [ADR-0004](adr/0004-model-selection-extract-events.md),
+amendment 2026-10-07): Mistral Small 3.2 24B, Gemma 4 26B-A4B and Qwen3.6 35B-A3B on Scaleway
+Generative APIs (Paris), Ministral 3 14B Q4_K_M locally. The job summary now also reports average
+tokens in / out, failed calls / retries and the cost per 1 000 pages from measured tokens.
+Results: not run yet (needs `SCW_GENAI_SECRET_KEY`).
+
 ### Conclusion (2026-10-05)
 
 - **No candidate reaches the quality bar** (concert F1 ≥ 0.85). Best: Ministral 3 3B, F1 ≈ 0.6,

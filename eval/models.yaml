@@ -1,6 +1,7 @@
 # Candidates compared per task (same fields as config/models.yaml, plus documentation fields).
 # Local candidates run only where LLAMA_SERVER points to a llama.cpp `llama-server` binary
-# (the Model eval workflow); hosted ones only when their API key is set.
+# (the Model eval workflow); hosted ones only when their API key is set ("skipped: no key"
+# otherwise). `retired: true` keeps a row for the record without calling it.
 
 extract_events:
   - id: ministral-3-3b-q4
@@ -29,6 +30,64 @@ extract_events:
     extra:
       chat_template_kwargs: {enable_thinking: false}
 
+  # WIP-63: stronger candidates. Ministral 3 14B, publisher GGUF; revision and SHA-256 read from
+  # huggingface.co/api/models/mistralai/Ministral-3-14B-Instruct-2512-GGUF and the file page at
+  # that revision (2026-10-07), verified again by llm.ensure_weights after the download.
+  # Estimated 25-44 min for the 7 pages on the 4-vCPU runner (above the 4-min p95 bar).
+  - id: ministral-3-14b-q4
+    publisher: Mistral AI (FR)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512
+    params: 13.5B + 0.4B vision encoder (unused)
+    hosting: local CPU (llama.cpp), €0
+    provider: local
+    model: ministral-3-14b-instruct-2512
+    repo: mistralai/Ministral-3-14B-Instruct-2512-GGUF
+    revision: 74fac473c43357d7fb2671713608183cc72496d0
+    file: Ministral-3-14B-Instruct-2512-Q4_K_M.gguf
+    sha256: 824e0f3373e69b84f2cae46fdcb9bd1ebc6ab3bfc7acc125d818b7b8178cc613
+
+  # Scaleway Generative APIs, Paris; ids and EUR prices from
+  # https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-10-07). No training on
+  # inputs (Scaleway data-privacy page). Run only when SCW_GENAI_SECRET_KEY is set.
+  - id: mistral-small-3.2-scaleway
+    publisher: Mistral AI (FR)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506
+    params: 24B
+    hosting: Scaleway Generative APIs (Paris), pay per token
+    provider: scaleway
+    model: mistral-small-3.2-24b-instruct-2506
+    price_eur_per_mtok: {in: 0.15, out: 0.35}
+
+  - id: gemma-4-26b-a4b-scaleway
+    publisher: Google (US)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/google/gemma-4-26B-A4B-it
+    params: 25.2B total / 3.8B active (MoE)
+    hosting: Scaleway Generative APIs (Paris), pay per token
+    provider: scaleway
+    model: gemma-4-26b-a4b-it
+    price_eur_per_mtok: {in: 0.25, out: 0.50}
+    extra:
+      # reasoning off: thinking tokens are billed as output. Scaleway documents
+      # `reasoning_effort` (none/low/medium/high) instead of chat_template_kwargs
+      # (raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/
+      # reference-content/supported-models.mdx, read 2026-10-07)
+      reasoning_effort: none
+
+  - id: qwen3.6-35b-a3b-scaleway
+    publisher: Alibaba Qwen (CN)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
+    params: 35B total / 3B active (MoE)
+    hosting: Scaleway Generative APIs (Paris), pay per token
+    provider: scaleway
+    model: qwen3.6-35b-a3b
+    price_eur_per_mtok: {in: 0.25, out: 1.50}
+    extra:
+      reasoning_effort: none  # thinking off, same source as above
+
   - id: mistral-small-api
     publisher: Mistral AI (FR)
     licence: Apache-2.0 (weights); used here as a hosted EU API
@@ -37,7 +96,11 @@ extract_events:
     provider: mistral
     model: mistral-small-2506         # dated id, not the moving -latest alias
     price_eur_per_mtok: {in: 0.1, out: 0.3}   # list price is USD 0.1 / 0.3; ~EUR at par
-    note: not evaluated — the API key needs a paid Mistral plan (outside the €20 budget)
+    retired: true
+    note: >-
+      retired — deprecated, retirement date 2026-04-30
+      (https://docs.mistral.ai/models/model-cards/mistral-small-3-2-25-06); same weights
+      evaluated on Scaleway (mistral-small-3.2-scaleway)
 
   - id: reference-gold-claude-opus
     publisher: Anthropic (US)

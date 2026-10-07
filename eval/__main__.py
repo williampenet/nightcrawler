@@ -56,6 +56,8 @@ def run_candidate(cand: dict, cases: list[dict], task: llm.Task) -> dict:
                 for c in cases
             ]
         }
+    if cand.get("retired"):
+        return {"skipped": "retired"}
     spec = llm.ModelSpec.from_dict(cand)
     ok, why = spec.available()
     if not ok:
@@ -81,6 +83,7 @@ def ask(spec: llm.ModelSpec, case: dict, task: llm.Task) -> dict:
         "latency_s": None,
         "tokens_in": 0,
         "tokens_out": 0,
+        "attempts": 0,
         "valid": False,
         "errors": [],
     }
@@ -102,6 +105,7 @@ def ask(spec: llm.ModelSpec, case: dict, task: llm.Task) -> dict:
         latency_s=round(a.latency_s, 2),
         tokens_in=a.tokens_in,
         tokens_out=a.tokens_out,
+        attempts=a.attempts,
         errors=a.errors[:3],
         valid=a.data is not None,
     )
@@ -120,8 +124,10 @@ def metrics(cand: dict, res: dict, cases: list[dict]) -> dict:
     raw = summarize([score_case(r["raw"], by_id[r["id"]]["expected"]) for r in rows])
     checked = summarize([score_case(r["checked"], by_id[r["id"]]["expected"]) for r in rows])
     lat = sorted(r["latency_s"] for r in rows if r["latency_s"] is not None)
-    tin = sum(r["tokens_in"] for r in rows) / len(rows)
-    tout = sum(r["tokens_out"] for r in rows) / len(rows)
+    # tokens averaged over answered pages, so a failed call does not lower the cost estimate
+    answered = [r for r in rows if r["latency_s"] is not None] or rows
+    tin = sum(r["tokens_in"] for r in answered) / len(answered)
+    tout = sum(r["tokens_out"] for r in answered) / len(answered)
     price = cand.get("price_eur_per_mtok")
     cost = (
         round((tin * price["in"] + tout * price["out"]) / 1000, 2)
@@ -138,6 +144,9 @@ def metrics(cand: dict, res: dict, cases: list[dict]) -> dict:
         "tokens_in_avg": round(tin),
         "tokens_out_avg": round(tout),
         "cost_eur_per_1000": cost,
+        # transport: pages with no answer (ModelError) and HTTP retries (429 / 5xx)
+        "failed_calls": sum(1 for r in rows if r["latency_s"] is None and r["errors"]),
+        "retries": sum(max(0, r.get("attempts", 0) - 1) for r in rows),
         "per_case": {r["id"]: score_case(r["checked"], by_id[r["id"]]["expected"]) for r in rows},
     }
 
@@ -146,7 +155,8 @@ def table(cands: list[dict], results: dict) -> str:
     head = (
         "| Candidate | Hosting | Licence | Concert F1 | Precision | Recall | Performer recall"
         " | Performer precision | Time acc. | Schema-valid | Injection leaks | p50 / p95 latency"
-        " | Cost / 1 000 pages |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+        " | Tokens in / out (avg / page) | Failed calls / retries | Cost / 1 000 pages |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for c in cands:
@@ -154,7 +164,7 @@ def table(cands: list[dict], results: dict) -> str:
         if "skipped" in r:
             lines.append(
                 f"| {c['id']} | {c.get('hosting', '')} | {c.get('licence', '')} | "
-                f"skipped: {c.get('note') or r['skipped']} |||||||||| "
+                f"skipped: {c.get('note') or r['skipped']} |||||||||||| "
             )
             continue
         m, k = r["metrics"], r["metrics"]["checked"]
@@ -168,7 +178,8 @@ def table(cands: list[dict], results: dict) -> str:
             f"| {c['id']} | {c.get('hosting', '')} | {c.get('licence', '')} | **{k['f1']}** | "
             f"{k['precision']} | {k['recall']} | {k['performer_recall']} | "
             f"{k['performer_precision']} | {k['time_accuracy']} | {m['valid_rate']} | "
-            f"{k['injected_events']} | {lat} | {cost} |"
+            f"{k['injected_events']} | {lat} | {m['tokens_in_avg']} / {m['tokens_out_avg']} | "
+            f"{m['failed_calls']} / {m['retries']} | {cost} |"
         )
     return head + "\n".join(lines) + "\n"
 
@@ -182,8 +193,9 @@ def compact(m: dict) -> str:
         f"{m['id']}: F1 {k['f1']} (raw {m['raw']['f1']}) P {k['precision']} R {k['recall']} "
         f"perf R {k['performer_recall']} P {k['performer_precision']} time {k['time_accuracy']} "
         f"valid {m['valid_rate']} leaks {k['injected_events']} p50 {m['latency_p50_s']}s "
-        f"p95 {m['latency_p95_s']}s in {m['tokens_in_avg']} out {m['tokens_out_avg']} tok | "
-        f"{cases}"
+        f"p95 {m['latency_p95_s']}s in {m['tokens_in_avg']} out {m['tokens_out_avg']} tok "
+        f"cost/1000 {m['cost_eur_per_1000']} EUR failed {m['failed_calls']} "
+        f"retries {m['retries']} | {cases}"
     )
 
 
@@ -217,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m eval")
     ap.add_argument("--task", default="extract_events")
     ap.add_argument("--only", default="", help="comma-separated candidate ids")
+    ap.add_argument("--results-dir", default=str(ROOT / "results"))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -249,8 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(md)
-    out = ROOT / "results"
-    out.mkdir(exist_ok=True)
+    out = Path(args.results_dir)
+    out.mkdir(parents=True, exist_ok=True)
     (out / "latest.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), "utf-8")
 
     # quality gate on the model the product routes to, once its ADR sets a threshold

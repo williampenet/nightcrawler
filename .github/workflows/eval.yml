@@ -9,6 +9,11 @@ on:
     paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
             .github/workflows/eval.yml]
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Candidate ids, comma-separated (empty = all), e.g. the Scaleway ones only'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -69,7 +74,7 @@ jobs:
           chmod +x "$bin"
           echo "LLAMA_SERVER=$bin" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$(dirname "$bin")" >> "$GITHUB_ENV"
-          echo "::notice::llama.cpp $LLAMA_CPP_TAG, $(nproc) CPUs, $(free -g | awk '/Mem/{print $2}') GB RAM"
+          echo "::notice::llama.cpp $LLAMA_CPP_TAG, $(nproc) CPUs, $(free -g | awk '/Mem/{print $2}') GB RAM, $(df -BG --output=avail . | tail -1 | tr -d ' ') free disk"
 
       - name: Cache model weights (SHA-256 verified on use)
         uses: actions/cache@v4
@@ -80,5 +85,10 @@ jobs:
 
       - name: Run the eval
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}  # only this step sees it
-        run: python -m eval
+          # only this step sees the keys; hosted candidates without a key are "skipped: no key"
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          # Scaleway IAM application limited to GenerativeApisModelAccess (README)
+          SCW_GENAI_SECRET_KEY: ${{ secrets.SCW_GENAI_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          ONLY: ${{ inputs.only }}
+        run: python -m eval --only "$ONLY"

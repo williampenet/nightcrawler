@@ -22,3 +22,8 @@ No real personal data in `cases.jsonl`. Results are committed only as the summar
 - Real pages were captured on 2026-10-05 (visible text, lightly trimmed); `today` is fixed in each case
   so the set stays valid over time.
 - `provider: gold` replays the gold labels (the proprietary baseline that wrote them).
+- `provider: scaleway` candidates (WIP-63) run when `SCW_GENAI_SECRET_KEY` is set, otherwise the row
+  reads "skipped: no key"; `retired: true` keeps a row without calling it. Run a subset with
+  `python -m eval --only id,id` or the workflow's `only` input. The job summary shows, per
+  candidate, F1 / precision / recall, injection leaks, p50 / p95 latency, average tokens in / out,
+  failed calls / retries and the cost per 1 000 pages computed from the measured tokens.
