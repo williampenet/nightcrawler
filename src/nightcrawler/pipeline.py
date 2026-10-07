@@ -17,7 +17,7 @@ from .events import build_concerts
 from .http import Fetcher
 from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
-from .sources import gancio, osm, ticketmaster, wp_json
+from .sources import gancio, osm, priority, ticketmaster
 from .store import sync
 from .venues import is_excluded, merge
 
@@ -77,20 +77,20 @@ def run(
         for probe, events in pool.map(task, venues):
             probes[probe.venue_id] = probe
             raw.extend(events)
-    # "Mes salles" readers (WIP-60): the venue's own data, attached by venue name at build time
+    # "Mes salles" readers (WIP-60, WIP-62): the venue's own data, attached by venue name later
     try:
-        wp_events, wp_rows = wp_json.collect(
+        pv_events, pv_rows = priority.collect(
             zone.priority_venues, fetcher, now, tz, zone.window_days
         )
     except Exception as exc:  # optional source: never stop the run
         log.warning("priority venue readers failed: %s", type(exc).__name__)
-        wp_events = []
-        wp_rows = [
+        pv_events = []
+        pv_rows = [
             {"name": e["name"], "venue": e["venue"], "reader": e["reader"]["type"]}
             | {"status": f"error: {type(exc).__name__}", "events": 0, "pages": 0}
             for e in zone.priority_venues
         ]
-    raw.extend(wp_events)
+    raw.extend(pv_events)
     raw.extend(ga_events)  # after venue sites: on a duplicate, the venue's own page wins
     # venues covered by the ticketing API or an agenda count as readable even if their site is not
     for method, evs in (("ticketmaster", tm_events), ("gancio", ga_events)):
@@ -112,8 +112,9 @@ def run(
     # a venue read by its configured reader counts as readable (attached by name above)
     for c in concerts:
         p = probes.get(c.venue_id)
-        if p and p.status != "structured" and any(s.startswith("wp_json:") for s in c.sources):
-            p.status, p.method = "structured", "wp_json"
+        readers = [s.split(":")[0] for s in c.sources if s.split(":")[0] in priority.READERS]
+        if p and p.status != "structured" and readers:
+            p.status, p.method = "structured", readers[0]
     store: dict = {"status": "off"}  # no DATABASE_URL: stateless run (ADR-0001)
     reported: set[str] = set()
     if database_url:  # stable ids, overrides, feedback (ADR-0005, WIP-46)
@@ -158,8 +159,8 @@ def run(
                 "instances": [dict(i) for i in zone.gancio_instances],
             },
             # [{name, venue, reader, status, events, pages}] per configured venue
-            "priority_venues": wp_rows,
-            "website_events": len(raw) - len(tm_events) - len(ga_events) - len(wp_events),
+            "priority_venues": pv_rows,
+            "website_events": len(raw) - len(tm_events) - len(ga_events) - len(pv_events),
             "platforms": platform_stats(probes.values()),
         },
         "raw_events": len(raw),

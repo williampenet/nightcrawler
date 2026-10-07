@@ -111,6 +111,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-06 | agent:reviewer | review WIP-59 | APPROVE + 7 non-blocking (ADR note, server cap, isEmpty, reset test, merge-at-cap test, alias recency, log); applied | PR #47 |
 | 2026-10-06 | agent:dev | build | WIP-60: config-driven WordPress REST reader (`priority_venues`, `wp_json`), Transbordeur endpoint verified (acf.date `%Y%m%d`, 97 items); Périscope has no event-date field, not added | PR #48 |
 | 2026-10-06 | agent:reviewer | review WIP-60 | APPROVE + 7 non-blocking (config int validation, fallback rows, truncation status, publication-order cap to watch, redirect SSRF follow-up ticket, test coupling, unverified size comment); 1-3,6,7 applied | PR #48 |
+| 2026-10-07 | agent:dev | build | WIP-62: generic `listing_jsonld` reader (listing pages → same-origin event links → schema.org Event JSON-LD, `{yyyymm}` month template, include/exclude, detail cap) for Opéra Underground, L'Épicerie Moderne, Marché Gare, Auditorium (scolaires/atelier-* dropped, famille kept); fixtures rebuilt from the 2026-10-07 capture; CLAUDE.md rule "best-fitting solution first" | PR (this) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

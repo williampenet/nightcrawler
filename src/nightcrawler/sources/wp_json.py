@@ -12,20 +12,15 @@ Every value read is untrusted data: titles are reduced to plain text, links must
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, time
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-import httpx
-
 from ..events import in_window
-from ..http import MAX_BYTES, Fetcher, RobotsBlocked
+from ..http import MAX_BYTES, Fetcher
 from ..models import RawEvent
 from ..structured import _text, _url
-
-log = logging.getLogger(__name__)
 
 # Items carry SEO blocks (`yoast_head`), so 100 per page might pass the fetcher's 3 MB cap
 # (unverified: item size not measured, WebFetch truncates long bodies; see `truncated` status).
@@ -126,32 +121,14 @@ def fetch_items(reader: dict, fetcher: Fetcher) -> tuple[list, int, str]:
     return items, max_pages, "page_cap"
 
 
-def collect(
-    entries: tuple[dict, ...],
+def read(
+    reader: dict,
+    venue: str,
     fetcher: Fetcher,
     now: datetime,
     tz: ZoneInfo,
     window_days: int,
-) -> tuple[list[RawEvent], list[dict]]:
-    """Events of every `wp_json` priority venue and one report row per venue:
-    {name, venue, reader, status, events, pages}. A broken endpoint never stops the run."""
-    events: list[RawEvent] = []
-    rows: list[dict] = []
-    for entry in entries:
-        reader = entry["reader"]
-        row = {"name": entry["name"], "venue": entry["venue"], "reader": reader["type"]}
-        if reader["type"] != "wp_json":
-            rows.append(row | {"status": "unsupported reader", "events": 0, "pages": 0})
-            continue
-        try:
-            items, pages, status = fetch_items(reader, fetcher)
-            found = parse(items, reader, entry["venue"], now, tz, window_days)
-        except RobotsBlocked:
-            found, pages, status = [], 0, "robots_blocked"
-        except (httpx.HTTPError, ValueError) as exc:
-            reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
-            found, pages, status = [], 0, f"error: {reason[:200]}"
-        log.info("wp_json %s: %s, %d pages, %d events", entry["name"], status, pages, len(found))
-        events.extend(found)
-        rows.append(row | {"status": status, "events": len(found), "pages": pages})
-    return events, rows
+) -> tuple[list[RawEvent], int, str]:
+    """(events in the window, pages read, status); errors are reported by sources.priority."""
+    items, pages, status = fetch_items(reader, fetcher)
+    return parse(items, reader, venue, now, tz, window_days), pages, status

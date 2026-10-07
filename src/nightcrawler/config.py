@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -64,27 +65,54 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
 
 
 def _priority_venue(entry: dict) -> dict:
-    """Checks a `priority_venues` entry: name, venue, reader {type, url, fields, date_format}."""
-    reader = dict(entry["reader"])
-    fields = {str(k): str(v) for k, v in dict(reader["fields"]).items()}
-    if not str(reader["url"]).startswith("https://"):
-        raise ValueError(f"priority venue {entry['name']}: reader url must be https")
-    if "title" not in fields or "date" not in fields or not reader.get("date_format"):
-        raise ValueError(
-            f"priority venue {entry['name']}: needs fields.title, fields.date, date_format"
-        )
-    # WordPress caps per_page at 100:
-    # https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/
-    for key, top in (("per_page", 100), ("max_pages", None)):
+    """Checks a `priority_venues` entry: name, venue, and a reader of a known type."""
+    name, reader = str(entry["name"]), dict(entry["reader"])
+    if reader.get("type") == "wp_json":
+        _check_wp_json(name, reader)
+    elif reader.get("type") == "listing_jsonld":
+        _check_listing_jsonld(name, reader)
+    else:
+        raise ValueError(f"priority venue {name}: unknown reader type {reader.get('type')!r}")
+    return {"name": name, "venue": str(entry.get("venue") or name), "reader": reader}
+
+
+def _check_ints(name: str, reader: dict, limits: dict[str, int | None]) -> None:
+    for key, top in limits.items():
         n = reader.get(key)
         if n is None:
             continue
         if isinstance(n, bool) or not isinstance(n, int) or n < 1 or (top and n > top):
             limit = f"1..{top}" if top else ">= 1"
-            raise ValueError(f"priority venue {entry['name']}: {key} must be an int in {limit}")
+            raise ValueError(f"priority venue {name}: {key} must be an int in {limit}")
+
+
+def _check_wp_json(name: str, reader: dict) -> None:
+    """reader {url, fields: {title, date, ...}, date_format, per_page?, max_pages?}"""
+    fields = {str(k): str(v) for k, v in dict(reader["fields"]).items()}
+    if not str(reader["url"]).startswith("https://"):
+        raise ValueError(f"priority venue {name}: reader url must be https")
+    if "title" not in fields or "date" not in fields or not reader.get("date_format"):
+        raise ValueError(f"priority venue {name}: needs fields.title, fields.date, date_format")
+    # WordPress caps per_page at 100:
+    # https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/
+    _check_ints(name, reader, {"per_page": 100, "max_pages": None})
     reader["fields"] = fields
-    return {
-        "name": str(entry["name"]),
-        "venue": str(entry.get("venue") or entry["name"]),
-        "reader": reader,
-    }
+
+
+def _check_listing_jsonld(name: str, reader: dict) -> None:
+    """reader {urls: [https, may hold {yyyymm}], include: regex, exclude?: regex, max_details?}"""
+    urls = reader.get("urls")
+    if not isinstance(urls, list) or not urls:
+        raise ValueError(f"priority venue {name}: urls must be a non-empty list")
+    for url in urls:
+        rest = str(url).replace("{yyyymm}", "")
+        if not str(url).startswith("https://") or "{" in rest or "}" in rest:
+            raise ValueError(f"priority venue {name}: url must be https, only {{yyyymm}} allowed")
+    for key in ("include", "exclude"):
+        if key == "exclude" and reader.get(key) is None:
+            continue
+        try:
+            re.compile(str(reader[key]))
+        except (KeyError, re.error) as exc:
+            raise ValueError(f"priority venue {name}: {key} must be a regex") from exc
+    _check_ints(name, reader, {"max_details": None})
