@@ -244,7 +244,7 @@ def test_chunk_size_is_the_evaluated_input_size():
     assert page_llm.Context(task, chunk_chars=99_999).limit == extract.MAX_CHARS  # upper bound
     zone = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
     assert (zone.llm_chunk_chars, zone.llm_chunks_per_page, zone.llm_calls_per_run) == (
-        3200, 5, 40
+        3200, 6, 40
     )  # fmt: skip
 
 
@@ -253,9 +253,9 @@ def test_long_page_is_read_in_chunks_and_its_last_events_found(tz):
     html, expected = _long_page()
     text = extract.page_text(html, 10**6)
     assert len(text) > 10_000  # La Rayonne measured ~10,700
-    chunks, left = page_llm.chunk_text(text, 3200, 5)
+    chunks, left = page_llm.chunk_text(text, 3200, page_llm.DEFAULT_CHUNKS_PER_PAGE)
     n_chunks = len(chunks)
-    assert 4 <= n_chunks <= 5 and not left  # fits the default llm_chunks_per_page
+    assert 4 <= n_chunks < page_llm.DEFAULT_CHUNKS_PER_PAGE and not left  # headroom left
     _site(page=html)
     api = respx.post(API).mock(side_effect=_fake_model)
     ctx = page_llm.Context(_task())
@@ -367,6 +367,12 @@ def test_config_entries_parse_and_petit_bulletin_is_excluded(tmp_path):
     ]  # fmt: skip
     assert all(u.startswith("https://") for e in llm_entries for u in e["reader"]["urls"])
     assert not any("petit-bulletin" in str(e) for e in zone.priority_venues)
+    trinite = next(e for e in llm_entries if e["name"] == "Chapelle de la Trinité")
+    assert trinite["category"] == "music_venue"  # concert titles pass by the venue rule
+    added = configured_venues((trinite,), [])
+    assert [(v.name, v.category, v.is_music_venue) for v in added] == [
+        ("Chapelle de la Trinité", "music_venue", True)
+    ]
     cfg = tmp_path / "zone.yaml"
     cfg.write_text(
         "name: T\nlatitude: 45.7\nlongitude: 4.8\nradius_km: 5\nllm_chunks_per_page: 0\n",

@@ -31,7 +31,7 @@ class Zone:
     # chunk size in characters (the eval's largest page), chunks read per page at most
     llm_calls_per_run: int = 40
     llm_chunk_chars: int = 3200
-    llm_chunks_per_page: int = 5
+    llm_chunks_per_page: int = 6
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """True when the point is within radius_km of the zone centre (haversine)."""
@@ -71,7 +71,7 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         llm_calls_per_run=_int_at_least(data.get("llm_calls_per_run", 40), "llm_calls_per_run", 0),
         llm_chunk_chars=_int_at_least(data.get("llm_chunk_chars", 3200), "llm_chunk_chars", 500),
         llm_chunks_per_page=_int_at_least(
-            data.get("llm_chunks_per_page", 5), "llm_chunks_per_page", 1
+            data.get("llm_chunks_per_page", 6), "llm_chunks_per_page", 1
         ),
     )
     names = [e["venue"] for e in zone.priority_venues]

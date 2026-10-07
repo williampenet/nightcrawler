@@ -42,7 +42,8 @@ llm_calls_per_run: 40  # extract_events calls per run (one per chunk), all venue
 # the largest page of the eval set is 3,234 characters (eval/cases.jsonl): chunks stay within
 # the evaluated input size; models.yaml `max_input_chars` (else 7,000) is an upper bound
 llm_chunk_chars: 3200
-llm_chunks_per_page: 5  # La Rayonne ~10,700 characters (coordinator, 2026-10-07): 4-5 chunks
+# La Rayonne ~10,700 characters (coordinator, 2026-10-07): 4-5 chunks; 6 leaves headroom
+llm_chunks_per_page: 6
 priority_venues:
   - name: Le Transbordeur
     venue: Le Transbordeur
@@ -141,6 +142,11 @@ priority_venues:
     # no known venue of that name in the run (live venues.json read up to "F"): a configured
     # venue without coordinates (unverified: no sourced coordinates found)
     venue: Chapelle de la Trinité
+    # a concert venue (coordinator, 2026-10-07): its concert titles rarely carry music words,
+    # so the venue rule, not the keyword rule, backs the model's is_concert. The listing also
+    # had a dance show, a guided tour and a talk on 2026-10-07 (WebFetch): those are dropped
+    # when the model says is_concert false or an activity / other-show veto matches.
+    category: music_venue
     reader:
       type: page_llm
       # Mapado ticketing page, 30 events with year, "Jeu. 12 nov. 2026 à 20:00"; concerts
