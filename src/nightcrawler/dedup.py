@@ -30,6 +30,7 @@ import unicodedata
 from datetime import datetime
 from urllib.parse import urlsplit
 
+from .lineup import merge_lineup
 from .models import Concert, Venue
 
 # Only listings on the same local calendar day are compared: a show starting at 23:30
@@ -218,6 +219,8 @@ def _merge(group: list[Concert]) -> Concert:
         reason=best.reason,
         links=links,
         ai_extracted=any(c.ai_extracted for c in group),
+        # every act of every merged listing, best source first (WIP-72)
+        lineup=merge_lineup((c.title, c.performers, c.lineup) for c in group),
     )
 
 

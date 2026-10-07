@@ -82,6 +82,8 @@ class RawEvent:
     # page_llm only: the reader's config trusts the model's is_concert at this venue even if the
     # venue is not a music venue (`reader.trust_is_concert`, WIP-68)
     trust_model_concert: bool = False
+    # names the description bills ("Name (genre, country)" lines, Gancio; WIP-72)
+    billed: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -103,6 +105,10 @@ class Concert:
     aliases: list[str] = field(default_factory=list)
     # a listing was read by a language model (page_llm, WIP-66): the page says so (EU AI Act)
     ai_extracted: bool = False
+    # every act of the evening, in billing order (lineup.py, WIP-72). Before merging it holds
+    # the listing's billed names; dedup sets the merged line-up and artists.py may join parts
+    # of it back ("Earth, Wind & Fire")
+    lineup: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

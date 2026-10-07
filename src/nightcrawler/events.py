@@ -275,6 +275,7 @@ def build_concerts(
                 reason=reason,
                 links=make_links(ev.url, ev.ticket_url, ev.source),
                 ai_extracted=ev.source.startswith(AI_SOURCE),
+                lineup=list(ev.billed),  # dedup turns it into the merged line-up
             )
         )
     concerts, dedup_stats = dedupe(found, venues)

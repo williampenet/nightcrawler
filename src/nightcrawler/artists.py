@@ -1,6 +1,6 @@
 """Find who plays each concert and enrich them with public data (ADR-0002).
 
-- performers: from the source, else split from the title
+- performers: every act of the line-up (lineup.py, WIP-72), else split from the title
 - Deezer: exact normalised name match only → id, fans, related artists (co-listening signal)
 - MusicBrainz: style tags for the same name (CC BY-NC-SA, attributed on the page)
 
@@ -18,12 +18,14 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import httpx
 
 from .http import Fetcher
+from .lineup import parse_title
 from .models import Concert
 
 log = logging.getLogger(__name__)
@@ -193,6 +195,53 @@ def _lookup(fetcher: Fetcher, name: str) -> Artist:
     return a
 
 
+def _join(acts: list[str], parts: list[str], whole: str) -> list[str]:
+    """`acts` with `parts` (all present) replaced by `whole` at the first part's place."""
+    keys = {norm(p) for p in parts}
+    first = next(i for i, a in enumerate(acts) if norm(a) in keys)
+    rest = [a for a in acts if norm(a) not in keys]
+    return rest[:first] + [whole] + rest[first:]
+
+
+def _lineup_artists(c: Concert, get: Callable[[str], Artist | None]) -> list[str]:
+    """Artist keys of a line-up of two acts or more; may join split parts back in c.lineup.
+
+    When the line-up was split from the title (no source performers), the whole title and
+    then each "A & B" / "A, B" part are tried first: a known artist of that exact name
+    ("Earth, Wind & Fire", "Simon & Garfunkel") is one act, not several (lineup.py).
+    """
+    acts = list(c.lineup)
+    if not c.performers:
+        whole, groups = parse_title(c.title)
+        flat = [a for g in groups for a in g]
+        candidates = [(whole, flat)] + [
+            (_group_text(whole, g) or " & ".join(g), g) for g in groups if len(g) > 1
+        ]
+        for i, (name, parts) in enumerate(candidates):
+            present = {norm(a) for a in acts}
+            if len(parts) < 2 or not all(norm(p) in present for p in parts):
+                continue
+            if (a := get(name)) and a.identified:
+                acts = _join(acts, parts, name)
+                if i == 0:
+                    break  # the whole title is one artist
+        c.lineup = acts
+    keys: list[str] = []
+    for name in acts[:MAX_PERFORMERS]:
+        a = get(name)
+        if a and a.identified and a.key not in keys:
+            keys.append(a.key)
+    return keys
+
+
+def _group_text(whole: str, parts: list[str]) -> str | None:
+    """The stretch of `whole` from the first part to the last one ("Simon & Garfunkel")."""
+    start, end = whole.find(parts[0]), whole.rfind(parts[-1])
+    if start < 0 or end < start:
+        return None
+    return whole[start : end + len(parts[-1])]
+
+
 def enrich(
     concerts: list[Concert], fetcher: Fetcher, max_lookups: int = MAX_LOOKUPS
 ) -> tuple[dict[str, Artist], dict]:
@@ -211,6 +260,9 @@ def enrich(
         return artists[key]
 
     for c in concerts:
+        if len(c.lineup) >= 2:  # every act of the evening (WIP-72)
+            c.artists = _lineup_artists(c, get)
+            continue
         names, whole = performers_of(c)
         keys: list[str] = []
         if whole and (a := get(whole)) and a.identified:
