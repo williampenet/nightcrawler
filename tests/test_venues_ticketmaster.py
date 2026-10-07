@@ -92,6 +92,27 @@ def test_excluded_venue_names():
     assert not is_excluded(Venue("o:y", "Le Sucre Salé", 45.8, 4.8, "music_venue"), excluded)
 
 
+def test_zone_excludes_the_venues_william_removed():
+    """WIP-71: names as spelled in the live store on 2026-10-07.
+
+    Gancio place 237 and OSM node 6509969997.
+    """
+    from pathlib import Path
+
+    from nightcrawler.config import load_zone
+    from nightcrawler.venues import is_excluded
+
+    zone = load_zone(Path(__file__).parents[1] / "config/zone.yaml")
+    for vid, name in [
+        ("gancio:agenda.villemorte.fr:237", "médiathèque de Meyzieu"),
+        ("osm:node/6509969997", "À Thou Bout d'Chant"),
+        ("osm:x", "A Thou Bout d’Chant"),  # curly apostrophe, no accent
+    ]:
+        assert is_excluded(Venue(vid, name, 45.76, 4.85, "music_venue"), zone.excluded_venues)
+    periscope = Venue("o:z", "Le Périscope", 45.7, 4.8, "music_venue")
+    assert not is_excluded(periscope, zone.excluded_venues)
+
+
 def test_exclusion_applies_before_merge(tmp_path, zone, monkeypatch):
     # OSM "Radiant" and TM "Radiant-Bellevue" 55 m apart would merge under the OSM name;
     # filtering each source first keeps the excluded TM venue (and its events) out
