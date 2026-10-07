@@ -98,6 +98,8 @@ class Concert:
     links: list[dict[str, str]] = field(default_factory=list)
     # ids the merged listings would have alone: the page matches saved ids on them too
     aliases: list[str] = field(default_factory=list)
+    # a listing was read by a language model (page_llm, WIP-66): the page says so (EU AI Act)
+    ai_extracted: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

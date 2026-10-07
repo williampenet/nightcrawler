@@ -17,7 +17,7 @@ from .events import build_concerts
 from .http import Fetcher
 from .models import Probe, RawEvent, Venue
 from .probe import PlatformBudget, probe_venue
-from .sources import gancio, osm, priority, ticketmaster
+from .sources import gancio, osm, page_llm, priority, ticketmaster
 from .store import sync
 from .venues import (
     attach_to_configured,
@@ -40,6 +40,7 @@ def run(
     osm_extract: Path | None = None,
     database_url: str | None = None,
     reference: Path | None = None,
+    llm_ctx: page_llm.Context | None = None,
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
@@ -85,10 +86,11 @@ def run(
         for probe, events in pool.map(task, venues):
             probes[probe.venue_id] = probe
             raw.extend(events)
-    # "Mes salles" readers (WIP-60, WIP-62): the venue's own data, attached by venue name later
+    # "Mes salles" readers (WIP-60, WIP-62, WIP-66): the venue's own data, attached by venue
+    # name later; page_llm readers also need the extract_events task (llm_ctx)
     try:
         pv_events, pv_rows = priority.collect(
-            zone.priority_venues, fetcher, now, tz, zone.window_days
+            zone.priority_venues, fetcher, now, tz, zone.window_days, llm_ctx
         )
     except Exception as exc:  # optional source: never stop the run
         log.warning("priority venue readers failed: %s", type(exc).__name__)
@@ -172,11 +174,16 @@ def run(
             },
             # [{name, venue, reader, status, events, pages}] per configured venue
             "priority_venues": pv_rows,
+            # extract_events calls this run, one per chunk (cache hits excluded)
+            "llm_calls": llm_ctx.budget.used if llm_ctx else 0,
             "website_events": len(raw) - len(tm_events) - len(ga_events) - len(pv_events),
             "platforms": platform_stats(probes.values()),
         },
         "raw_events": len(raw),
         "concerts": len(concerts),
+        "concerts_ai_extracted": sum(c.ai_extracted for c in concerts),
+        # hosts whose robots.txt Crawl-delay widened our request interval this run
+        "crawl_delay_hosts": len(getattr(fetcher, "crawl_delays", {})),
         "dedup": dedup,  # {merged, conflicts, merge_examples, conflict_examples} (WIP-42)
         "venues_with_concerts": len(per_venue),
         "artists": artist_stats,
