@@ -63,6 +63,10 @@ def fetcher():
         ("Pord + Chevignon + Sold out", ["Pord", "Chevignon"]),
         ("Pord, Chevignon (Lyon) / Gratuit", ["Pord", "Chevignon"]),
         ("Pord + Chevignon - 18:00", ["Pord", "Chevignon"]),
+        ("Ana + Bob - 20h30 - 12€", ["Ana", "Bob"]),
+        ("Ana + Bob - 12€", ["Ana", "Bob"]),
+        ("Pord + Chevignon + Annulé", ["Pord", "Chevignon"]),
+        ("Pord + Entrée libre", ["Pord"]),
         ("Pord + DJ set", ["Pord"]),
         ("Pord x 2 soirées", ["Pord"]),
         # known limit: " / " always splits; the artist lookup tries the whole title first

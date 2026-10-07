@@ -39,7 +39,7 @@ PLACEHOLDERS = {
     *("variousartists artistesdivers divers invites invite invitees invitee guests guest".split()),
     *("specialguest specialguests tba tbc dj djs unknown inconnu more friends".split()),
     *("1erepartie 1repartie premierepartie firstpartie".split()),
-    *("complet soldout gratuit prixlibre djset".split()),
+    *("complet soldout gratuit prixlibre djset annule annulee entreelibre".split()),
 }
 # a price, a time or "2 soirées" given as a part: "Pord / 12€ / 20h"
 NOT_ACT_RE = re.compile(
@@ -61,7 +61,7 @@ SOFT_RE = re.compile(r"\s*,\s+|\s+&\s+")
 PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 QUOTED_RE = re.compile(r"\s+[\"“«][^\"“”«»]{1,80}[\"”»]\s*$")
 STATUS_RE = re.compile(
-    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?|\d{1,2}\s*[h:]\s*\d{0,2})\s*$",
+    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?|\d{1,2}\s*[h:]\s*\d{0,2}|\d+(?:[.,]\d+)?\s*€)\s*$",
     re.IGNORECASE,
 )
 PAREN_SPAN_RE = re.compile(r"\([^()]*\)")
