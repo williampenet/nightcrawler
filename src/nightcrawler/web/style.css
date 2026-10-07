@@ -113,4 +113,5 @@ button.linkish {
   background: var(--bg);
   background: color-mix(in srgb, var(--accent) 12%, var(--bg));
 }
+.banner.inline { position: static; margin: 0 0 8px; } /* pending ratings (WIP-70): not stacked over the error banner */
 .banner[hidden] { display: none; }

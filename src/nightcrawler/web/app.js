@@ -374,7 +374,32 @@ function feedbackUrl() {
 function sendFeedback(kind, concertId, keys) {
   if (!feedbackUrl()) return; // no service configured: nothing is queued
   fbSave(FB.enqueue(fbLoad(), FB.makeItem(kind, concertId, keys)));
+  showPending();
   flushFeedback();
+}
+
+// Ratings queued without a key, or with a refused one, used to wait silently (WIP-70): say
+// so above the list. The live region (#pending-live) stays in the page; only the box inside
+// is hidden, and the text is written 50 ms after showing it, as in showBanner, so it is announced.
+let fbRefused = false; // the last send got 401
+let pendingShown = "";
+let pendingTimer = 0;
+function showPending() {
+  const box = document.getElementById("pending-banner");
+  const out = box.querySelector(".banner-text");
+  const text = (feedbackUrl() && FB.pendingBanner(fbLoad().length, Boolean(fbToken()), fbRefused)) || "";
+  if (text === pendingShown) return; // unchanged: not announced again
+  pendingShown = text;
+  clearTimeout(pendingTimer);
+  out.textContent = "";
+  box.hidden = !text;
+  if (text) pendingTimer = setTimeout(() => (out.textContent = text), 50);
+}
+
+function askFeedbackKey() {
+  document.getElementById("taste").open = true;
+  document.getElementById("feedback-row").hidden = false;
+  document.getElementById("feedback-key").focus();
 }
 
 async function flushFeedback() {
@@ -389,10 +414,12 @@ async function flushFeedback() {
     fbBusy = false;
   }
   const pending = fbLoad().length;
+  if (result !== "error") fbRefused = result === "unauthorized"; // a network error tells nothing about the key
   if (result === "unauthorized") fbText = "Clé refusée";
   else if (result === "sent") fbText = "Avis envoyés au service";
   else fbText = pending ? `${pending} avis en attente` : "";
   showSyncStatus();
+  showPending();
 }
 
 let fbText = "";
@@ -885,10 +912,14 @@ function setupControls() {
     key.value = fbToken();
     key.addEventListener("change", () => {
       fbStore(() => localStorage.setItem(FB.TOKEN_KEY, key.value.trim()));
+      fbRefused = false; // a new key: unknown until the flush answers
       flushFeedback();
       showWhere();
       startSync();
+      showPending(); // a cleared key brings the warning back at once
     });
+    document.getElementById("pending-key").addEventListener("click", askFeedbackKey);
+    showPending();
   }
   showWhere();
   document.getElementById("lb-import").addEventListener("click", () =>
