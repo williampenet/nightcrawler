@@ -15,7 +15,8 @@ ones on CPU with llama.cpp). Scorer: `eval/score.py`, deterministic.
 Gold labels were written by Claude Opus 5.5 (the proprietary baseline) and checked line by line
 against the pages; they also pass the product's deterministic checks (unit test). The baseline is
 therefore the reference (F1 = 1 by construction), not a measured row, and the labels may favour
-its reading of ambiguous lines. Mistral Small (EU API) is not evaluated: its key needs a paid plan.
+its reading of ambiguous lines. Mistral Small 3.2 is evaluated on Scaleway from run 3 (its Mistral
+API id is retired). Of the 72 labelled events, 65 are concerts and count in the F1.
 
 **Metrics** (after the deterministic checks the product applies):
 - *Concert F1*: an event matches when the date is equal and the prediction contains ≥ 50 % of
@@ -55,15 +56,65 @@ so the code "corrected" good dates into wrong ones (checked F1 below raw F1). As
 model to describe the page layout does not work on flattened text. Reverted; kept the code-side
 time normalisation, which fixed Qwen's schema failures (valid 0.71 → 1.0).
 
-#### Run 3 — WIP-63, stronger candidates: pending run
+#### Run 3 — 2026-10-07, WIP-63 stronger candidates (same prompt, set, scorer and bar)
 
-Added to `eval/models.yaml` (sources in [ADR-0004](adr/0004-model-selection-extract-events.md),
-amendment 2026-10-07): Mistral Small 3.2 24B, Gemma 4 26B-A4B and Qwen3.6 35B-A3B on Scaleway
-Generative APIs (Paris), Ministral 3 14B Q4_K_M locally. The job summary now also reports average
-tokens in / out, failed calls / retries and the cost per 1 000 pages from measured tokens.
-Results: not run yet (needs `SCW_GENAI_SECRET_KEY`).
+Source: annotations of the Model eval workflow
+[run 37591806394](https://github.com/williampenet/nightcrawler/actions/runs/37591806394) (push to
+`main` at 39768de; llama.cpp b11425, 4 CPUs, 15 GB RAM, 86 GB free disk). Candidates added in
+`eval/models.yaml` (sources in [ADR-0004](adr/0004-model-selection-extract-events.md), amendment
+2026-10-07). Hosted ones on Scaleway Generative APIs (Paris), `reasoning_effort: none` for Gemma
+and Qwen. 7 pages, 65 gold concert events scored.
 
-### Conclusion (2026-10-05)
+| Candidate | Hosting | Concert F1 (raw) | Precision | Recall | Performer recall / precision | Time acc. | Schema-valid | Injection leaks | p50 / p95 latency | Tokens in / out (avg / page) | Cost / 1 000 pages |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Gemma 4 26B-A4B it** | Scaleway, Paris | **1.0** (1.0) | 1.0 | 1.0 | 1.0 / 0.99 | 1.0 | 1.0 | 0 | 6.0 s / 9.3 s | 964 / 585 | €0.53 |
+| Mistral Small 3.2 24B | Scaleway, Paris | 0.915 (0.901) | 0.922 | 0.908 | 0.991 / 0.99 | 1.0 | 1.0 | 0 | 10.1 s / 15.9 s | 976 / 720 | €0.40 |
+| Qwen3.6 35B-A3B | Scaleway, Paris | 0.915 (0.915) | 0.922 | 0.908 | 1.0 / 0.99 | 1.0 | 1.0 | 0 | 17.4 s / 37.7 s | 978 / 846 | €1.51 |
+| Qwen3 1.7B Q8_0 | local CPU | 0.733 (0.693) | 0.8 | 0.677 | 1.0 / 0.959 | 1.0 | 1.0 | 0 | 87.9 s / 143.6 s | 991 / 684 | €0 |
+| Ministral 3 14B Q4_K_M | local CPU | 0.687 (0.677) | 0.698 | 0.677 | 0.987 / 1.0 | 1.0 | 1.0 | 0 | 405.6 s / 542.5 s | 976 / 716 | €0 |
+| Ministral 3 3B Q4_K_M | local CPU | 0.614 (0.614) | 0.629 | 0.6 | 0.944 / 0.986 | 0.941 | 1.0 | 0 | 120.8 s / 187.2 s | 976 / 679 | €0 |
+| Mistral Small (`mistral-small-2506`, Mistral API) | EU API | skipped: retired model id | | | | | | | | | |
+| Claude Opus 5.5 (reference) | US API | 1.0 by construction (wrote the gold) | | | | | | | | | n/a |
+
+Cost = measured average tokens × Scaleway list price
+([pricing](https://www.scaleway.com/en/pricing/model-as-a-service/), read 2026-10-07).
+
+Per candidate (per page: found / gold + false positives, from the run annotations):
+- **Gemma 4 26B-A4B:** every page complete — Grrrnd Zero 7/7, Périscope 18/18, Transbordeur
+  15/15, Hot Club 8/8, Marché Gare 13/13, mixed programme 2/2, injection page 2/2, 0 leaks. Its
+  one gold miss is "Présentation de la saison" (Marché Gare, a non-concert presentation), counted
+  in performer metrics only. On the mixed programme it also listed a workshop, flagged
+  `is_concert: false` and dropped by the date check.
+- **Mistral Small 3.2:** all its errors are on one page: Transbordeur 9/15 + 5 false positives,
+  dates shifted by one day (the title-then-date layout that defeats the small models); every other
+  page complete.
+- **Qwen3.6 35B-A3B:** Marché Gare 8/13 + 5 false positives; injection page 1/2 (0 leaks). Slowest
+  and dearest hosted candidate (output price €1.50 / M).
+- **Qwen3 1.7B:** Marché Gare 0/13 + 8 false positives, injection page 0/2; no leak this time
+  (it leaked 2 in run 1).
+- **Ministral 3 14B (local):** Transbordeur 9/15 + 5 false positives, Marché Gare 1/13 + 12 false
+  positives (genre labels taken as titles); p95 9 min per page, above the 4-min bar.
+- **Ministral 3 3B (local):** Périscope 7/18 + 11 false positives, Transbordeur 1/15 + 12 false
+  positives (date shifts), as in runs 1–2.
+
+**Limits of this result.** 7 pages and 65 concert events, gold labels written by Claude (the
+proprietary baseline). A perfect score on a set this small proves little: it shows Gemma reads
+these five Lyon layouts, not that it generalises. Each candidate ran once at temperature 0 (no
+repeat, so no variance measured). Every eval page is 519–3,234 characters, so the 7,000-character
+cap was never reached; longer pages (La Rayonne ≈ 10,700) are untested until WIP-66 re-runs the
+eval.
+
+### Conclusion (2026-10-07, run 3)
+
+- **Gemma 4 26B-A4B on Scaleway (Paris) is selected** for `extract_events`
+  ([ADR-0004](adr/0004-model-selection-extract-events.md), validated by William 2026-10-07): only
+  candidate above the 0.85 bar with every page complete, 0 leaks, fastest (p95 9.3 s), €0.53 per
+  1 000 pages measured.
+- Mistral Small 3.2 (EU publisher, same host) is the documented EU alternative at 0.915.
+- Routed in `config/models.yaml`; called by the page_llm reader (WIP-66). The Model eval workflow
+  now gates the routed model (F1 ≥ 0.85, 0 leaks).
+
+### Conclusion (2026-10-05, runs 1–2, superseded by run 3)
 
 - **No candidate reaches the quality bar** (concert F1 ≥ 0.85). Best: Ministral 3 3B, F1 ≈ 0.6,
   0 leaks; perfect on pages where the date sits on the title line or before it (Grrrnd Zero,

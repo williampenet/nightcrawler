@@ -160,3 +160,23 @@ def test_uncached_weights_are_removed_after_the_run(env, monkeypatch):
     with pytest.raises(runner.llm.ModelError):
         runner.run_candidate(cand["ministral-3-14b-q4"], [], None)
     assert not scratch.exists()
+
+
+@respx.mock
+def test_routed_model_below_the_bar_fails_the_eval(env, monkeypatch, capsys):
+    """config/models.yaml sets min_quality for extract_events: the routed Gemma is gated."""
+    monkeypatch.setenv("SCW_GENAI_SECRET_KEY", "k")
+    respx.post("https://api.scaleway.ai/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": json.dumps({"events": []})}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 10},
+            },
+        )
+    )
+    code, _, _ = run(env, ["gemma-4-26b-a4b-scaleway"])
+    assert code == 1
+    assert "::error::gemma-4-26b-a4b-scaleway: F1 0.0 < 0.85" in capsys.readouterr().out
+    # a non-routed candidate with the same answers is reported, never gated
+    assert run(env, ["mistral-small-3.2-scaleway"])[0] == 0

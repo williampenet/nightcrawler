@@ -118,6 +118,12 @@ class ModelSpec:
         return True, "ok"
 
 
+# Page text sent per call when a task sets no `limits.max_input_chars` (extract.page_text cap
+# since WIP-33). The eval pages are all shorter (519-3,234 chars, eval/cases.jsonl), so a larger
+# value is untested: raise it only with an eval on longer pages (WIP-66).
+DEFAULT_MAX_INPUT_CHARS = 7000
+
+
 @dataclass
 class Task:
     name: str
@@ -128,6 +134,13 @@ class Task:
     timeout_s: float = 120.0
     temperature: float = 0.0
     min_quality: float | None = None
+    max_input_chars: int = DEFAULT_MAX_INPUT_CHARS  # read by callers that build the input text
+
+
+def _positive_int(value: Any, what: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{what} must be a positive integer, got {value!r}")
+    return value
 
 
 def load_tasks(path: str | Path = "config/models.yaml") -> dict[str, Task]:
@@ -135,6 +148,7 @@ def load_tasks(path: str | Path = "config/models.yaml") -> dict[str, Task]:
     tasks = {}
     for name, t in (data.get("tasks") or {}).items():
         limits = t.get("limits") or {}
+        max_input = limits.get("max_input_chars", DEFAULT_MAX_INPUT_CHARS)
         tasks[name] = Task(
             name=name,
             primary=ModelSpec.from_dict(t["primary"]),
@@ -144,6 +158,7 @@ def load_tasks(path: str | Path = "config/models.yaml") -> dict[str, Task]:
             timeout_s=float(limits.get("timeout_ms", 120_000)) / 1000,
             temperature=float(t.get("temperature", 0.0)),
             min_quality=t.get("min_quality"),
+            max_input_chars=_positive_int(max_input, f"{name}: limits.max_input_chars"),
         )
     return tasks
 

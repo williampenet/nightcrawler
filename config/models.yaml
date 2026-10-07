@@ -4,15 +4,22 @@
 tasks:
   extract_events:
     adr: docs/adr/0004-model-selection-extract-events.md
-    # ADR-0004: best candidate, below the quality bar: not called by the pipeline yet.
+    # ADR-0004 (accepted 2026-10-07): routed; called by the page_llm reader (WIP-66).
+    # Same request as eval candidate `gemma-4-26b-a4b-scaleway` (eval/models.yaml), run 3 F1 1.0.
     primary:
-      provider: local                 # llama.cpp llama-server on CPU, in the Pipeline workflow
-      model: ministral-3-3b-instruct-2512
-      repo: mistralai/Ministral-3-3B-Instruct-2512-GGUF
-      revision: eb599d408350ea2bb60452cb86be7c7b2fc28227
-      file: Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
-      sha256: 9ed150d4367e68df0ac8e1540f6ddc65b42d0ee26378329d1ecbca60f93fc5f8
+      provider: scaleway              # Generative APIs, Paris; key SCW_GENAI_SECRET_KEY
+      model: gemma-4-26b-a4b-it       # served as google/gemma-4-26b-a4b-it:bf16 (supported-models page)
+      extra:
+        reasoning_effort: none        # thinking off: thinking tokens are billed as output
+    # No fallback: Gemma's output was schema-valid on 7/7 pages (ADR-0004, Escalation).
     temperature: 0.0
+    # CI gate in the Model eval workflow (eval/__main__.py): F1 of the routed model >= the bar
+    # and 0 injected events, else the run fails.
+    min_quality: 0.85
     limits:
       max_output_tokens: 2048
+      # Shared with every candidate by the eval runner: kept at 10 min for the local CPU ones.
       timeout_ms: 600000
+      # Page text cap read by extract.page_text callers. Not raised without an eval: the eval
+      # pages are <= 3,234 chars, La Rayonne's agenda is ~10,700 (WIP-66 re-runs the eval).
+      max_input_chars: 7000
