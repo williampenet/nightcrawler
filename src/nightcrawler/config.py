@@ -27,6 +27,11 @@ class Zone:
     excluded_venues: tuple[str, ...] = field(default=())
     # "Mes salles" read by a configured reader (WIP-60): ({"name", "venue", "reader"}, ...)
     priority_venues: tuple[dict, ...] = field(default=())
+    # page_llm readers (WIP-66): run-wide cap on extract_events calls (one call per chunk),
+    # chunk size in characters (the eval's largest page), chunks read per page at most
+    llm_calls_per_run: int = 40
+    llm_chunk_chars: int = 3200
+    llm_chunks_per_page: int = 6
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """True when the point is within radius_km of the zone centre (haversine)."""
@@ -63,6 +68,11 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         ),
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
+        llm_calls_per_run=_int_at_least(data.get("llm_calls_per_run", 40), "llm_calls_per_run", 0),
+        llm_chunk_chars=_int_at_least(data.get("llm_chunk_chars", 3200), "llm_chunk_chars", 500),
+        llm_chunks_per_page=_int_at_least(
+            data.get("llm_chunks_per_page", 6), "llm_chunks_per_page", 1
+        ),
     )
     names = [e["venue"] for e in zone.priority_venues]
     if dupes := sorted({n for n in names if names.count(n) > 1}):
@@ -80,6 +90,8 @@ def _priority_venue(entry: dict) -> dict:
         _check_wp_json(name, reader)
     elif reader.get("type") == "listing_jsonld":
         _check_listing_jsonld(name, reader)
+    elif reader.get("type") == "page_llm":
+        _check_page_llm(name, reader)
     else:
         raise ValueError(f"priority venue {name}: unknown reader type {reader.get('type')!r}")
     out = {"name": name, "venue": str(entry.get("venue") or name), "reader": reader}
@@ -144,6 +156,26 @@ def _check_listing_jsonld(name: str, reader: dict) -> None:
         except (KeyError, re.error) as exc:
             raise ValueError(f"priority venue {name}: {key} must be a regex") from exc
     _check_ints(name, reader, {"max_details": None})
+    _check_paginate(name, reader)
+
+
+def _check_page_llm(name: str, reader: dict) -> None:
+    """reader {urls: [https], paginate?} (WIP-66)"""
+    urls = reader.get("urls")
+    if not isinstance(urls, list) or not urls:
+        raise ValueError(f"priority venue {name}: urls must be a non-empty list")
+    if not all(isinstance(u, str) and u.startswith("https://") for u in urls):
+        raise ValueError(f"priority venue {name}: urls must be https")
+    _check_paginate(name, reader)
+
+
+def _int_at_least(value, key: str, low: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < low:
+        raise ValueError(f"{key} must be an int >= {low}")
+    return value
+
+
+def _check_paginate(name: str, reader: dict) -> None:
     if (pager := reader.get("paginate")) is not None:
         ok = isinstance(pager, dict) and isinstance(pager.get("param"), str) and pager["param"]
         start, top = (pager.get(k) if ok else None for k in ("start", "max"))

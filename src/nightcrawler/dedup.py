@@ -64,7 +64,8 @@ GENERIC_PERFORMERS = {
     *("specialguests tba tbc dj djs unknown inconnu".split()),
 }
 # Which listing's title wins: the venue's own site, then agendas, platforms, ticketing.
-SOURCE_RANK = (("gancio:", 1), ("platform:", 2), ("ticketmaster", 3))
+# model-read listings (page_llm, WIP-66) come last: any deterministic listing wins
+SOURCE_RANK = (("gancio:", 1), ("platform:", 2), ("ticketmaster", 3), ("page_llm:", 4))
 
 
 def _ascii(text: str) -> str:
@@ -216,6 +217,7 @@ def _merge(group: list[Concert]) -> Concert:
         sources=list(dict.fromkeys(s for c in group for s in c.sources)),
         reason=best.reason,
         links=links,
+        ai_extracted=any(c.ai_extracted for c in group),
     )
 
 

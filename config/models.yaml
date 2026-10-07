@@ -21,7 +21,7 @@ tasks:
       max_output_tokens: 2048
       # Shared with every candidate by the eval runner: kept at 10 min for the local CPU ones.
       timeout_ms: 600000
-      # Page text cap; will be read by the page_llm reader (WIP-66), which passes it to
-      # extract.page_text (nothing reads it yet). Not raised without an eval: the eval
-      # pages are <= 3,234 chars, La Rayonne's agenda is ~10,700 (WIP-66 re-runs the eval).
+      # Upper bound on one model call's page text. The page_llm reader (WIP-66) splits long
+      # pages into chunks of llm_chunk_chars (3,200, config/zone.yaml) so every call stays
+      # within the evaluated input size (eval pages <= 3,234 chars).
       max_input_chars: 7000

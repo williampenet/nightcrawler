@@ -133,8 +133,9 @@ show invalid or mostly ungrounded answers.
 
 **Input cap:** `limits.max_input_chars: 7000` (page text cut at a line boundary). Not raised here:
 the eval pages are all ≤ 3,234 characters, and La Rayonne's agenda text is ≈ 10,700 characters
-(measured by the orchestrator in Chrome, 2026-10-07). WIP-66 adds the reader and re-runs the eval
-with larger pages before changing it.
+(measured by the orchestrator in Chrome, 2026-10-07). Instead of raising the cap, the page_llm
+reader (WIP-66, PR #54) splits long pages into chunks of at most 3,200 characters
+(`llm_chunk_chars`), so every call stays within the evaluated input size; no eval re-run needed.
 
 **Alternatives considered for hosting (William asked, 2026-10-07):**
 - **Run Gemma locally on the GitHub runner:** feasibility **unverified**, now measured. Google

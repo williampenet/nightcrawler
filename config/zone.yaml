@@ -34,7 +34,16 @@ excluded_venues:
 # venue), with the configured coordinates or those of the venue `coordinates_from` names.
 # `venue_id` (optional) attaches the events to that venue id directly, no name matching;
 # if the run does not know it, the name is used and the status row says so.
+# page_llm (WIP-66): no structured data; the page text of `urls` (and `paginate` pages) goes
+# to the extract_events task (config/models.yaml), in chunks of at most `llm_chunk_chars`
+# (cut before a date line, 8 lines overlapping). Hosts' robots.txt Crawl-delay is honoured.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
+llm_calls_per_run: 40  # extract_events calls per run (one per chunk), all venues together
+# the largest page of the eval set is 3,234 characters (eval/cases.jsonl): chunks stay within
+# the evaluated input size; models.yaml `max_input_chars` (else 7,000) is an upper bound
+llm_chunk_chars: 3200
+# La Rayonne ~10,700 characters (coordinator, 2026-10-07): 4-5 chunks; 6 leaves headroom
+llm_chunks_per_page: 6
 priority_venues:
   - name: Le Transbordeur
     venue: Le Transbordeur
@@ -109,6 +118,52 @@ priority_venues:
       include: ^/fr/saison-\d{4}-\d{2}/[a-z-]+/[^/]+$
       exclude: ^/fr/saison-\d{4}-\d{2}/(scolaires|atelier-[a-z-]+)/
       max_details: 80
-  # Le Périscope: not added. Its WP REST types `kelkii_concert` and `periscope_event`
-  # ("Cafés culturels") carry no event date field, only the publication date and dates in
-  # free text (checked 2026-10-06: /wp-json/wp/v2/types, /wp-json/wp/v2/periscope_event).
+  # page_llm venues: URLs answered WebFetch on 2026-10-07; robots.txt read the same day.
+  - name: La Rayonne
+    venue: La Rayonne
+    venue_id: osm:node/11268760933  # live concerts.json, 2026-10-07
+    reader:
+      type: page_llm
+      # ~70 events on one page, "jeu. 08 octobre - à partir de 19h - Didier Super Metal" (no
+      # year); concerts mixed with workshops. robots.txt: `User-agent: *`, `Crawl-delay: 10`.
+      # Bare domain: www.larayonne.org has a TLS name mismatch (WIP-56).
+      urls: [https://larayonne.org/agenda/]
+  - name: Le Périscope
+    # WP REST types `kelkii_concert` / `periscope_event` carry no event date field
+    # (checked 2026-10-06), so the concerts page is read by the model.
+    venue: Le Périscope
+    venue_id: osm:node/6875303994  # live concerts.json, 2026-10-07
+    reader:
+      type: page_llm
+      # 21 items, "Louis Sclavis Shunkan Trio Mercredi 07 oct" (no year), no pagination.
+      # robots.txt: `User-agent: *`, empty Disallow (all allowed).
+      urls: [https://www.periscope-lyon.com/concerts/]
+  - name: Chapelle de la Trinité
+    # no known venue of that name in the run (live venues.json read up to "F"): a configured
+    # venue without coordinates (unverified: no sourced coordinates found)
+    venue: Chapelle de la Trinité
+    # a concert venue (coordinator, 2026-10-07): its concert titles rarely carry music words,
+    # so the venue rule, not the keyword rule, backs the model's is_concert. The listing also
+    # had a dance show, a guided tour and a talk on 2026-10-07 (WebFetch): those are dropped
+    # when the model says is_concert false or an activity / other-show veto matches.
+    category: music_venue
+    reader:
+      type: page_llm
+      # Mapado ticketing page, 30 events with year, "Jeu. 12 nov. 2026 à 20:00"; concerts
+      # mixed with talks and guided tours. robots.txt disallows /api/ (not used) and payment
+      # paths; the listing is allowed.
+      urls: [https://trinitelyon.mapado.com/]
+  - name: Les Subsistances
+    venue: Les Subsistances
+    # fr.wikipedia.org/wiki/Les_Subsistances (Géoportail link): 8 bis quai Saint-Vincent
+    latitude: 45.768234
+    longitude: 4.816856
+    reader:
+      type: page_llm
+      # "29 résultats", mostly dance and theatre, a few DJ sets. robots.txt disallows only
+      # /wp-admin/.
+      urls: [https://www.les-subs.com/agenda/]
+  # Petit Bulletin (agenda aggregator): excluded on purpose. Its robots.txt
+  # (https://www.petit-bulletin.fr/robots.txt, read 2026-10-07) fully disallows AI crawlers
+  # (ClaudeBot, GPTBot, CCBot). NightcrawlerBot is not named, but feeding its pages to a
+  # language model goes against that stated intent, so it is not read (review of WIP-66).
