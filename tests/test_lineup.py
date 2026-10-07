@@ -49,7 +49,24 @@ def fetcher():
         ("DJ Krush (live)", ["DJ Krush"]),
         ("Concert : Earth", ["Earth"]),
         ("Soirée Bruits Blancs : Pord x Comte Zero b2b Ana", ["Pord", "Comte Zero", "Ana"]),
-        ("Drone Night: Earth, Boris (complet)", ["Earth", "Boris"]),
+        ("Nuit noise : Pord + Comte Zero", ["Pord", "Comte Zero"]),
+        ("Pord & Ana : tournée d'adieu", ["Pord", "Ana"]),
+        # "X : A, B" without a hard separator stays one act: often "Artist : tour name"
+        ("Drone Night: Earth, Boris (complet)", ["Drone Night: Earth, Boris"]),
+        ("Pord : Tournée Rouge & Noir", ["Pord : Tournée Rouge & Noir"]),
+        ("Hania Rani : Ghosts, live", ["Hania Rani : Ghosts, live"]),
+        # prices, times, statuses and placeholders are not acts (review of PR #61)
+        ("Pord / 12€ / 20h", ["Pord"]),
+        ("Concert : Pord / 19h30", ["Pord"]),
+        ("Pord, 20h30, 12€", ["Pord"]),
+        ("Pord + Chevignon + Complet", ["Pord", "Chevignon"]),
+        ("Pord + Chevignon + Sold out", ["Pord", "Chevignon"]),
+        ("Pord, Chevignon (Lyon) / Gratuit", ["Pord", "Chevignon"]),
+        ("Pord + Chevignon - 18:00", ["Pord", "Chevignon"]),
+        ("Pord + DJ set", ["Pord"]),
+        ("Pord x 2 soirées", ["Pord"]),
+        # known limit: " / " always splits; the artist lookup tries the whole title first
+        ("AC / DC tribute", ["AC", "DC tribute"]),
         # one act: an "Artist : album" title, a subtitle, a capital X inside a name
         ("Earth : Full Upon Her Burning Lips", ["Earth : Full Upon Her Burning Lips"]),
         ("Philippe Katerine - Aux anges", ["Philippe Katerine - Aux anges"]),
@@ -246,6 +263,29 @@ def test_identification_runs_on_every_act(tz):
     assert c.lineup == ["Tomoyuki Aoki", "Harutaka Mochizuki"]
     # whole title first (unknown), then each act: 3 searches, no more
     assert route.call_count == 1 and stats["candidates"] == 3
+
+
+@respx.mock
+def test_artist_and_tour_name_title_still_finds_the_artist(tz):
+    """One-act line-up: enrich() takes the per-title path of main (performers_of)."""
+    _deezer("Pord", 7)
+    _deezer("Hania Rani", 8)
+    respx.get(DEEZER_SEARCH).respond(json={"data": []})
+    respx.get(url__regex=r"https://api\.deezer\.com/artist/\d+/related").respond(json={"data": []})
+    respx.get(MB_SEARCH).respond(json={"artists": []})
+    events = [
+        RawEvent(
+            title=t,
+            start=datetime.fromisoformat(f"2026-10-1{i}T20:00:00+02:00"),
+            source="json-ld",
+            venue_id=MARQUISE.id,
+        )
+        for i, t in enumerate(["Pord : Tournée Rouge & Noir", "Hania Rani : Ghosts, live"])
+    ]
+    pord, hania = build(events, tz)
+    enrich([pord, hania], fetcher())
+    assert len(pord.lineup) == 1 and pord.artists == ["pord"]
+    assert len(hania.lineup) == 1 and hania.artists == ["haniarani"]
 
 
 def test_lookup_cap_still_applies(tz):

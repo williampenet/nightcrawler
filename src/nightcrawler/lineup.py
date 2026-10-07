@@ -9,10 +9,14 @@ duplicates. A listing without performers gives the acts split from its title:
   performer ("Simon & Garfunkel"). The artist lookup (artists.py) later joins the parts back
   when the whole title or the "A & B" part is a known artist ("Earth, Wind & Fire");
 - trailing descriptors are dropped: "(avant-garde/free rock, Japon)", "(Us)", "(complet)",
-  a quoted show name ('Leïla Martial & Elie Dufour "Karma Bazar"'), " - Sold out";
+  a quoted show name ('Leïla Martial & Elie Dufour "Karma Bazar"'), " - Sold out", " - 18:00";
+- parts that are a price ("12€"), a time ("20h30"), a status or a placeholder ("Complet",
+  "Gratuit", "DJ set", "2 soirées") are not acts;
 - prefixes "Concert :", "Live :", "Release party :", "Soirée <name> :" are dropped. Any other
-  "X : Y" title splits only on the side that holds two acts or more ("Drone Night: Earth,
-  Boris"), else stays one act ("Earth : Full Upon Her Burning Lips").
+  "X : Y" title is more likely "Artist : tour name" ("Pord : Tournée Rouge & Noir"): it splits
+  only on the right side when a hard separator gives two acts ("Nuit noise : Pord + Ana"),
+  or on the left side when it holds two acts, else stays one act (artists.py then looks up
+  each side, as for any one-act title).
 
 Gancio descriptions add names when the first paragraph is only "Name (genre, country)"
 lines (description_acts). Everything here is deterministic: no model reads the titles.
@@ -35,7 +39,12 @@ PLACEHOLDERS = {
     *("variousartists artistesdivers divers invites invite invitees invitee guests guest".split()),
     *("specialguest specialguests tba tbc dj djs unknown inconnu more friends".split()),
     *("1erepartie 1repartie premierepartie firstpartie".split()),
+    *("complet soldout gratuit prixlibre djset".split()),
 }
+# a price, a time or "2 soirées" given as a part: "Pord / 12€ / 20h"
+NOT_ACT_RE = re.compile(
+    r"^(?:\d+(?:[.,]\d+)?\s*€|\d{1,2}\s*[h:]\s*\d{0,2}|\d+\s*soir[ée]es?)$", re.IGNORECASE
+)
 
 PREFIX_RE = re.compile(
     r"^\s*(?:concert|live|showcase|release party|soir[ée]e(?:\s+[^:]{1,40}?)?)\s*:\s*",
@@ -52,7 +61,8 @@ SOFT_RE = re.compile(r"\s*,\s+|\s+&\s+")
 PAREN_RE = re.compile(r"\s*\([^()]*\)\s*$")
 QUOTED_RE = re.compile(r"\s+[\"“«][^\"“”«»]{1,80}[\"”»]\s*$")
 STATUS_RE = re.compile(
-    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?)\s*$", re.IGNORECASE
+    r"\s+[-–—]\s+(?:sold[- ]?out|complet|annul[ée]e?|report[ée]e?|\d{1,2}\s*[h:]\s*\d{0,2})\s*$",
+    re.IGNORECASE,
 )
 PAREN_SPAN_RE = re.compile(r"\([^()]*\)")
 # Gancio first paragraph: "Tomoyuki Aoki & Harutaka Mochizuki (avant-garde/free rock, Japon)"
@@ -90,7 +100,8 @@ def _strip(text: str) -> str:
 
 def _valid(name: str) -> bool:
     key = act_key(name)
-    return MIN_ACT <= len(name) <= MAX_ACT and bool(key) and key not in PLACEHOLDERS
+    ok = MIN_ACT <= len(name) <= MAX_ACT and bool(key) and key not in PLACEHOLDERS
+    return ok and not NOT_ACT_RE.match(name)
 
 
 def _groups(text: str, keep: frozenset[str]) -> list[list[str]]:
@@ -115,11 +126,13 @@ def parse_title(title: str, keep: Iterable[str] = ()) -> tuple[str, list[list[st
     text = PREFIX_RE.sub("", BRACKETS_RE.sub(" ", title))
     text = _strip(text)
     if COLON_RE.search(text):
-        sides = COLON_RE.split(text, maxsplit=1)
-        for side in reversed(sides):  # the acts usually follow the event name
-            groups = _groups(side, keep)
-            if sum(map(len, groups)) >= 2:
-                return _strip(side), groups
+        left, right = COLON_RE.split(text, maxsplit=1)
+        groups = _groups(right, keep)
+        if len(groups) >= 2:  # "Event name : A + B"; a soft split may be a tour name
+            return _strip(right), groups
+        groups = _groups(left, keep)
+        if sum(map(len, groups)) >= 2:  # "A & B : tour name"
+            return _strip(left), groups
         whole = text
         return whole, ([[whole]] if _valid(whole) else [])
     return text, _groups(text, keep)
