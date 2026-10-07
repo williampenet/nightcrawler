@@ -14,6 +14,7 @@ import pytest
 import respx
 
 from nightcrawler import extract, llm
+from nightcrawler.cli import main
 from nightcrawler.config import _priority_venue, load_zone
 from nightcrawler.events import build_concerts
 from nightcrawler.http import Fetcher
@@ -341,3 +342,50 @@ def test_aggregator_events_go_through_venue_attribution(tz, monkeypatch):
     assert [(c.title, c.venue_id, c.ai_extracted) for c in concerts] == [
         ("Wu Lyf", "osm:node/523776298", True)
     ]
+
+
+@respx.mock
+def test_capture_writes_the_text_the_model_would_get(tz):
+    _site()
+    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    now = datetime(2026, 10, 7, 9, tzinfo=tz)
+    other = {"name": "T", "venue": "T", "reader": {"type": "wp_json"}}
+    pages, errors = page_llm.capture((ENTRY, other), fetcher, now, 7000)
+    assert errors == []
+    assert [(p["id"], p["venue"], p["url"]) for p in pages] == [
+        ("larayonne-p1-c1", "La Rayonne", URL)
+    ]
+    assert pages[0]["text"] == extract.page_text(PAGE)
+    assert pages[0]["captured"] == "2026-10-07T09:00:00+02:00"
+
+
+@respx.mock
+def test_capture_of_a_long_page_gives_the_chunks_the_model_gets(tz):
+    html, _ = _long_page()
+    _site(page=html)
+    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    now = datetime(2026, 10, 7, 9, tzinfo=tz)
+    pages, _ = page_llm.capture((ENTRY,), fetcher, now, extract.MAX_CHARS)
+    chunks, _ = page_llm.chunk_text(extract.page_text(html, 10**6), extract.MAX_CHARS, 4)
+    assert [p["text"] for p in pages] == chunks and len(chunks) >= 2
+    assert [p["id"] for p in pages][-1] == f"larayonne-p1-c{len(chunks)}"
+    assert "Tambours du Bronx" in pages[-1]["text"]
+
+
+@respx.mock
+def test_capture_command_writes_one_file_per_page(tmp_path, monkeypatch):
+    monkeypatch.delenv("SCW_GENAI_SECRET_KEY")  # capturing needs no key and calls no model
+    _site()
+    api = respx.post(API)
+    zone = tmp_path / "zone.yaml"
+    zone.write_text(
+        "name: T\nlatitude: 45.75\nlongitude: 4.83\nradius_km: 15\npriority_venues:\n"
+        f"  - name: La Rayonne\n    reader: {{type: page_llm, urls: ['{URL}']}}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "captures"
+    args = ["capture-pages", "--zone", str(zone), "--models", str(tmp_path / "none.yaml")]
+    assert main([*args, "--out", str(out)]) == 0
+    data = json.loads((out / "larayonne-p1-c1.json").read_text(encoding="utf-8"))
+    assert set(data) == {"id", "venue", "url", "captured", "text"}
+    assert "FAKEAR" in data["text"] and not api.called

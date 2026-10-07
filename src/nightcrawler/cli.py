@@ -36,6 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     r.add_argument("--models", default="config/models.yaml")
     r.add_argument("--llm-cache", default=".cache/llm")
+    c = sub.add_parser("capture-pages", help="save the page text of every page_llm venue (eval)")
+    c.add_argument("--zone", default="config/zone.yaml")
+    c.add_argument("--models", default="config/models.yaml")
+    c.add_argument("--out", required=True)
     sub.add_parser("store", help="create the Scaleway event store if needed and migrate it")
     sub.add_parser("deploy-feedback", help="package and deploy the feedback function (Scaleway)")
     o = sub.add_parser("osm-extract-plan", help="print shell variables for the CI OSM extract step")
@@ -46,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         return store_command()
     if args.cmd == "deploy-feedback":
         return deploy_feedback_command()
+    if args.cmd == "capture-pages":
+        return capture_command(args.zone, args.models, Path(args.out))
 
     if args.cmd == "osm-extract-plan":
         zone = load_zone(args.zone)
@@ -202,6 +208,31 @@ def deploy_feedback_command() -> int:
         "paste this URL into config/app.yaml feedback_url",
     )
     return 0 if ok else 1
+
+
+def capture_command(zone_path: str, models_path: str, out: Path) -> int:
+    """CI (Capture eval pages): one JSON file per page_llm chunk, as the model gets it,
+    {id, venue, url, captured, text}. Public pages, kept verbatim like eval/cases.jsonl."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    zone = load_zone(zone_path)
+    task = page_llm.Context.from_config(models_path, None, 0).task
+    fetcher = Fetcher(cache_dir=None)  # fresh pages, same robots.txt and rate limits
+    now = datetime.now(ZoneInfo(zone.timezone))
+    limit = page_llm.max_chars(task)
+    pages, errors = page_llm.capture(
+        zone.priority_venues, fetcher, now, limit, zone.llm_chunks_per_page
+    )
+    out.mkdir(parents=True, exist_ok=True)
+    for page in pages:  # ids are [a-z0-9]+-pN-cK (extract.norm): safe file names
+        text = json.dumps(page, ensure_ascii=False, indent=1) + "\n"
+        (out / f"{page['id']}.json").write_text(text, encoding="utf-8")
+    for line in errors:
+        annotate("warning", f"Capture: {line}")
+    annotate("notice", f"Captured {len(pages)} pages; {len(errors)} venues failed")
+    return 0
 
 
 PUBLIC_KEYS = {"spotify_client_id", "feedback_url"}  # only these settings reach the public page

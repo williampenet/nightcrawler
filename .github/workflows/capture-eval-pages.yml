@@ -1,0 +1,79 @@
+name: Capture eval pages
+
+# Saves the page text of every `page_llm` venue (config/zone.yaml, WIP-66) to the branch
+# `eval-captures`, as the extract_events model gets it, to grow the eval set
+# (eval/cases.jsonl keeps verbatim page text the same way; the pages are public).
+# No model is called. Only the `commit` job can write, and only to `eval-captures`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/capture-eval-pages.yml
+      - config/zone.yaml  # holds priority_venues; a path filter cannot target one key
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-eval-pages
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install .
+      # same fetcher as the pipeline: robots.txt, Crawl-delay, 1 request / s per host
+      - run: python -m nightcrawler capture-pages --out captures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: captures
+          path: captures
+          if-no-files-found: error
+          retention-days: 7
+
+  commit:
+    needs: capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write  # this job only: push to eval-captures
+    steps:
+      - uses: actions/checkout@v4  # main; credentials kept for the push below
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: captures
+          path: ${{ runner.temp }}/captures
+      - name: Commit to eval-captures
+        env:
+          CAPTURES: ${{ runner.temp }}/captures
+          TREE: ${{ runner.temp }}/eval-captures
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth 1 origin eval-captures; then
+            git worktree add -B eval-captures "$TREE" FETCH_HEAD
+          else
+            git worktree add --orphan -b eval-captures "$TREE"  # first run
+          fi
+          mkdir -p "$TREE/captures"
+          cp "$CAPTURES"/*.json "$TREE/captures/"
+          cd "$TREE"
+          git add captures
+          if git diff --cached --quiet; then
+            echo "::notice::Capture: no page changed"
+            exit 0
+          fi
+          git commit -q -m "Capture eval pages ($(date -u +%Y-%m-%dT%H:%MZ), run ${GITHUB_RUN_ID})"
+          git push origin HEAD:refs/heads/eval-captures

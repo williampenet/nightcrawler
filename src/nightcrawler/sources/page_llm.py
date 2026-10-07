@@ -381,3 +381,39 @@ def _answer(text: str, today: date, venue: str, ctx: Context) -> tuple[dict | No
     if answer.data is not None:
         ctx.cache.put(key, answer.data, answer.model)
     return answer.data, "asked"
+
+
+def capture(
+    entries: tuple[dict, ...],
+    fetcher: Fetcher,
+    now: datetime,
+    limit: int,
+    chunks_per_page: int = DEFAULT_CHUNKS_PER_PAGE,
+) -> tuple[list[dict], list[str]]:
+    """The chunks of every page_llm page, exactly as the model gets them, for the eval set:
+    ([{id, venue, url, captured, text}], [error lines]); id = <name>-p<page>-c<chunk>.
+    One broken venue never stops it. No model is called."""
+    out: list[dict] = []
+    errors: list[str] = []
+    for entry in entries:
+        if entry["reader"]["type"] != SOURCE:
+            continue
+        try:
+            pages, _ = fetch_pages(entry["reader"], fetcher)
+        except (RobotsBlocked, httpx.HTTPError, ValueError) as exc:
+            errors.append(f"{entry['name']}: {type(exc).__name__}")
+            continue
+        for n, (url, html) in enumerate(pages, start=1):
+            text = extract.page_text(html, FULL_TEXT_CHARS)
+            chunks, _ = chunk_text(text, limit, chunks_per_page)
+            for k, chunk in enumerate(chunks, start=1):
+                out.append(
+                    {
+                        "id": f"{extract.norm(entry['name'])}-p{n}-c{k}",
+                        "venue": entry["name"],
+                        "url": url,
+                        "captured": now.isoformat(timespec="seconds"),
+                        "text": chunk,
+                    }
+                )
+    return out, errors
