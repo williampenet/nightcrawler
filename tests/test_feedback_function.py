@@ -412,11 +412,6 @@ def test_pg_profile_on_real_postgres(monkeypatch):
         conn.execute("UPDATE profile SET data = %s, version = 2", (json.dumps({"liked": []}),))
     row = pg.get()
     assert row["data"] == {"liked": []} and row["version"] == 2 and row["updated_at"]
-    with psycopg.connect(url, autocommit=True) as conn:
-        conn.execute(
-            "INSERT INTO profile_writes SELECT now() FROM generate_series(1, %s)",
-            (handler.PROFILE_RATE_LIMIT,),
-        )
     taste = {"liked": [], "taste_text": "drone", "taste_text_at": 50}
     assert pg.put(taste, 2) == (True, {"version": 3})
     assert pg.put({"liked": []}, 3) == (True, {"version": 4})  # field absent: text kept
@@ -425,6 +420,11 @@ def test_pg_profile_on_real_postgres(monkeypatch):
     assert pg.get()["data"]["taste_text"] == ""
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute("UPDATE profile SET version = 2")
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO profile_writes SELECT now() FROM generate_series(1, %s)",
+            (handler.PROFILE_RATE_LIMIT,),
+        )
     with pytest.raises(handler.RateLimited):
         pg.put({}, 2)
     assert pg.get()["version"] == 2
