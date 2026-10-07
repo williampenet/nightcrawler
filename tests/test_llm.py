@@ -138,3 +138,140 @@ def test_non_json_response_is_a_model_error():
     )
     with pytest.raises(llm.ModelError):
         llm.chat_json(task().primary, [], SCHEMA)
+
+
+# ---------------------------------------------------------------- Scaleway provider (WIP-63)
+
+SCW_KEY = "scw-secret-key-for-tests"
+PROJECT = "78e655b5-feb0-417c-bb3f-8c448bd0e8da"  # example id from Scaleway's docs
+SCW_URL = f"https://api.scaleway.ai/{PROJECT}/v1/chat/completions"
+
+
+def scw(monkeypatch, project=PROJECT, **kw):
+    monkeypatch.setenv("SCW_GENAI_SECRET_KEY", SCW_KEY)
+    if project:
+        monkeypatch.setenv("SCW_DEFAULT_PROJECT_ID", project)
+    else:
+        monkeypatch.delenv("SCW_DEFAULT_PROJECT_ID", raising=False)
+    d = {"provider": "scaleway", "model": "mistral-small-3.2-24b-instruct-2506", **kw}
+    return llm.ModelSpec.from_dict(d)
+
+
+@respx.mock
+def test_scaleway_request_shape(monkeypatch, caplog):
+    caplog.set_level("DEBUG")
+    spec = scw(monkeypatch, extra={"reasoning_effort": "none"})
+    route = respx.post(SCW_URL).mock(return_value=reply({"events": [EVENT]}))
+    msgs = [{"role": "user", "content": "page text"}]
+    a = llm.chat_json(spec, msgs, SCHEMA, max_tokens=2048)
+    assert a.data == {"events": [EVENT]}
+    assert (a.tokens_in, a.tokens_out, a.attempts) == (100, 20, 1)
+    req = route.calls[0].request
+    assert req.headers["Authorization"] == f"Bearer {SCW_KEY}"
+    sent = json.loads(req.content)
+    assert sent["model"] == "mistral-small-3.2-24b-instruct-2506"
+    assert sent["max_tokens"] == 2048 and sent["reasoning_effort"] == "none"
+    fmt = sent["response_format"]
+    assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
+    assert fmt["json_schema"]["schema"] == SCHEMA
+    assert SCW_KEY not in caplog.text and "page text" not in caplog.text
+
+
+def test_scaleway_url_default_project_and_bad_id(monkeypatch):
+    assert scw(monkeypatch, project=None).url == "https://api.scaleway.ai/v1"
+    assert scw(monkeypatch).url == f"https://api.scaleway.ai/{PROJECT}/v1"
+    for bad in ("x/../evil", "78e655b5-feb0-417c-bb3f-8c448bd0e8d-", "-" * 36):
+        spec = scw(monkeypatch, project=bad)
+        with pytest.raises(llm.ModelError, match="not a project id"):
+            _ = spec.url
+        assert spec.available() == (False, "SCW_DEFAULT_PROJECT_ID is not a project id (UUID)")
+    assert scw(monkeypatch, project=PROJECT.upper()).available() == (True, "ok")
+
+
+@respx.mock
+def test_extra_cannot_override_prompt_or_schema(monkeypatch):
+    with pytest.raises(ValueError, match="messages, response_format"):
+        scw(monkeypatch, extra={"messages": [], "response_format": {"type": "text"}})
+    # built directly (not from config): reserved keys are dropped, the rest is sent
+    spec = llm.ModelSpec(
+        provider="local",
+        model="small",
+        base_url="http://llm.test/v1",
+        extra={"messages": [{"role": "user", "content": "injected"}], "top_p": 0.9},
+    )
+    route = respx.post("http://llm.test/v1/chat/completions").mock(
+        return_value=reply({"events": []})
+    )
+    llm.chat_json(spec, [{"role": "user", "content": "real"}], SCHEMA)
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["messages"] == [{"role": "user", "content": "real"}] and sent["top_p"] == 0.9
+    assert sent["response_format"]["json_schema"]["schema"] == SCHEMA
+
+
+def test_scaleway_without_key_is_skipped(monkeypatch):
+    monkeypatch.delenv("SCW_GENAI_SECRET_KEY", raising=False)
+    spec = llm.ModelSpec.from_dict({"provider": "scaleway", "model": "m"})
+    assert spec.available() == (False, "no key (SCW_GENAI_SECRET_KEY not set)")
+    with pytest.raises(llm.ModelError, match="not set"):
+        llm.chat_json(spec, [], SCHEMA)
+
+
+@respx.mock
+def test_retries_on_429_and_5xx_then_succeeds(monkeypatch, caplog):
+    spec = scw(monkeypatch)
+    route = respx.post(SCW_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "7"}, text="slow down: page text"),
+            httpx.Response(503),
+            reply({"events": []}),
+        ]
+    )
+    waits = []
+    a = llm.chat_json(spec, [], SCHEMA, sleep=waits.append)
+    assert a.data == {"events": []} and a.attempts == 3 and route.call_count == 3
+    assert waits == [7.0, 4.0]  # Retry-After wins, else 2 s * 2^(attempt-1)
+    assert "page text" not in caplog.text and SCW_KEY not in caplog.text
+
+
+@respx.mock
+def test_retries_are_bounded(monkeypatch):
+    spec = scw(monkeypatch)
+    route = respx.post(SCW_URL).mock(return_value=httpx.Response(502))
+    with pytest.raises(llm.ModelError, match="HTTP 502"):
+        llm.chat_json(spec, [], SCHEMA, sleep=lambda s: None)
+    assert route.call_count == llm.MAX_ATTEMPTS
+
+
+@respx.mock
+def test_client_error_is_not_retried_and_hides_body(monkeypatch):
+    spec = scw(monkeypatch)
+    route = respx.post(SCW_URL).mock(return_value=httpx.Response(401, text=f"bad key {SCW_KEY}"))
+    with pytest.raises(llm.ModelError) as exc:
+        llm.chat_json(spec, [], SCHEMA, sleep=lambda s: None)
+    assert route.call_count == 1 and str(exc.value).endswith("HTTP 401")
+    assert SCW_KEY not in str(exc.value)
+
+
+@respx.mock
+def test_timeout_is_not_retried_but_connect_error_is(monkeypatch):
+    spec = scw(monkeypatch)
+    slow = respx.post(SCW_URL).mock(side_effect=httpx.ReadTimeout("t"))
+    with pytest.raises(llm.ModelError, match="ReadTimeout"):
+        llm.chat_json(spec, [], SCHEMA, sleep=lambda s: None)
+    assert slow.call_count == 1
+    flaky = respx.post(SCW_URL).mock(side_effect=[httpx.ConnectError("c"), reply({"events": []})])
+    assert llm.chat_json(spec, [], SCHEMA, sleep=lambda s: None).attempts == 2
+    assert flaky is slow and flaky.call_count == 1 + 2  # respx reuses the route
+
+
+def test_strict_schema_requires_every_property():
+    assert llm.strict_schema_errors(SCHEMA) == []
+    loose = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}, "b": {"type": ["string", "null"]}},
+        "required": ["a"],
+    }
+    errors = llm.strict_schema_errors(loose)
+    assert "$: not required: b" in errors and "$: additionalProperties must be false" in errors
+    with pytest.raises(llm.ModelError, match="strict mode"):
+        llm.chat_json(task().primary, [], loose)
