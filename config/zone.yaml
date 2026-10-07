@@ -28,7 +28,8 @@ excluded_venues:
 # per URL) until a page brings no new link (WIP-64).
 # Optional per venue (WIP-64): `category` (e.g. music_venue: its events pass the venue-based
 # concert rule) and `latitude`/`longitude`. A known venue with the same name takes the
-# category; without one, a configured venue is created (venues.configured_venues).
+# category; without one, a configured venue is created (venues.configured_venues), with
+# the configured coordinates or those of the known venue named in `coordinates_from`.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
 priority_venues:
   - name: Le Transbordeur
@@ -50,10 +51,12 @@ priority_venues:
       max_pages: 5
   - name: Opéra Underground
     # no OSM venue of that name (run of 2026-10-07 08:10): a configured music venue, so its
-    # concerts are not left to the keyword rule. No coordinates: some dates are held outside
-    # the Opéra building. The JSON-LD location is always "Opéra de Lyon".
+    # concerts are not left to the keyword rule. It plays in the Opéra building (the JSON-LD
+    # location is always "Opéra de Lyon"): same coordinates as the OSM "Opéra de Lyon", so
+    # the same show listed there (Ticketmaster...) merges within dedup's 300 m.
     venue: Opéra Underground
     category: music_venue
+    coordinates_from: Opéra de Lyon
     reader:
       type: listing_jsonld
       # 11-12 links per page; detail JSON-LD is an array, one http://schema.org/Event per

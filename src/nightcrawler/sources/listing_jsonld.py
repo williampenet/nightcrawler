@@ -118,6 +118,9 @@ def read(
             continue
         for n in range(pager["start"], pager["start"] + pager["max"]):
             found, error = _listing_links(fetcher, with_param(url, pager["param"], n), url, reader)
+            if error and error != "HTTP 404":  # 404: past the last page, not an error
+                listing_errors += 1
+                first_error = first_error or error
             new = [link for link in found if link not in links]
             pages += not error
             if not new:  # past the last page (error, empty, or page 1 served again)

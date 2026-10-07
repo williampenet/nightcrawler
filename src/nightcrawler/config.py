@@ -49,7 +49,7 @@ class Zone:
 
 def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    return Zone(
+    zone = Zone(
         name=str(data["name"]),
         latitude=float(data["latitude"]),
         longitude=float(data["longitude"]),
@@ -64,6 +64,10 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
     )
+    for entry in zone.priority_venues:
+        if "latitude" in entry and not zone.contains(entry["latitude"], entry["longitude"]):
+            raise ValueError(f"priority venue {entry['name']}: coordinates outside the zone")
+    return zone
 
 
 def _priority_venue(entry: dict) -> dict:
@@ -86,6 +90,10 @@ def _priority_venue(entry: dict) -> dict:
         if not all(isinstance(c, int | float) and not isinstance(c, bool) for c in coords):
             raise ValueError(f"priority venue {name}: latitude and longitude must be numbers")
         out["latitude"], out["longitude"] = float(coords[0]), float(coords[1])
+    if (source := entry.get("coordinates_from")) is not None:
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError(f"priority venue {name}: coordinates_from must be a venue name")
+        out["coordinates_from"] = source
     return out
 
 

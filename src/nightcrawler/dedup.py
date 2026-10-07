@@ -261,7 +261,11 @@ def dedupe(concerts: list[Concert], venues: dict[str, Venue]) -> tuple[list[Conc
         for n, i in enumerate(idx):
             for j in idx[n + 1 :]:
                 a, b = concerts[i], concerts[j]
-                located = a.venue_id in venues and b.venue_id in venues  # not a bare place name
+                # not a bare place name, nor a configured venue without coordinates
+                located = all(
+                    venues.get(x) is not None and venues[x].latitude is not None
+                    for x in (a.venue_id, b.venue_id)
+                )
                 if located and not near(a, b, venues) and alike(i, j):
                     far_pairs.append((i, j))
     conflicts = sorted({tuple(sorted((group_of[i], group_of[j]))) for i, j in far_pairs})

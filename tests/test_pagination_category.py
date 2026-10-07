@@ -74,7 +74,8 @@ def test_pagination_cap_and_listing_errors_are_reported(tz):
     respx.get("https://v.example/agenda/202610?p=1").respond(200, html='<a href="/e/2">x</a>')
     respx.get("https://v.example/agenda/202610").respond(200, html='<a href="/e/1">x</a>')
     respx.get("https://v.example/agenda/202611").respond(404)  # month not published yet
-    respx.get("https://v.example/agenda/202612").respond(404)
+    respx.get("https://v.example/agenda/202612?p=1").respond(500)  # a later page breaks
+    respx.get("https://v.example/agenda/202612").respond(200, html='<a href="/e/3">x</a>')
     respx.get(url__regex=r"https://v\.example/e/\d$").respond(200, html=EMPTY)
     reader = {
         "urls": ["https://v.example/agenda/{yyyymm}"],
@@ -85,12 +86,14 @@ def test_pagination_cap_and_listing_errors_are_reported(tz):
     assert status == (
         "page_cap: https://v.example/agenda/202610; no_events; listing errors: 2 (HTTP 404)"
     )
-    assert pages == 4
+    # 202611 (404) and 202612?p=1 (500) are the two errors
+    assert pages == 6  # 202610, its ?p=1, 202612, then /e/1 /e/2 /e/3
 
 
 def test_configured_venue_is_created_when_no_known_venue_matches(tz):
     building = Venue("osm:way/1", "Opéra de Lyon", 45.7676, 4.8361, "theatre")
-    added = configured_venues((OPERA,), [building])
+    no_coords = {k: v for k, v in OPERA.items() if k != "coordinates_from"}
+    added = configured_venues((no_coords,), [building])
     assert [(v.id, v.name, v.category, v.latitude, v.sources) for v in added] == [
         ("config:operaunderground", "Opéra Underground", "music_venue", None, ["config"])
     ]
@@ -108,11 +111,43 @@ def test_configured_venue_is_created_when_no_known_venue_matches(tz):
     assert build_concerts([ev], venues, now=_now(tz), window_days=60, tz=tz) == []
     venues |= {v.id: v for v in added}
     tm = RawEvent("ADELAIDE FERRIERE", ev.start, "ticketmaster", building.id)
-    concerts = build_concerts([ev, tm], venues, now=_now(tz), window_days=60, tz=tz)
+    stats: dict = {}
+    concerts = build_concerts([ev, tm], venues, now=_now(tz), window_days=60, tz=tz, stats=stats)
     assert [(c.venue_id, c.reason, c.sources) for c in concerts] == [
         ("config:operaunderground", "music venue", ["listing_jsonld:www.opera-lyon.com"]),
         ("osm:way/1", "ticketing category: music", ["ticketmaster"]),  # no coordinates: apart
     ]
+    assert stats["conflicts"] == 0  # a venue without coordinates is not "far away" either
+
+
+def _ferriere(tz):
+    start = datetime(2026, 10, 15, 20, tzinfo=tz)
+    source = "listing_jsonld:www.opera-lyon.com"
+    return RawEvent("Adélaïde Ferrière", start, source, source, location_name="Opéra Underground")
+
+
+def test_coordinates_from_merges_with_the_building_listing(tz):
+    building = Venue("osm:way/1", "Opéra de Lyon", 45.7676, 4.8361, "theatre")
+    (venue,) = configured_venues((OPERA,), [building])  # the real config entry
+    assert (venue.latitude, venue.longitude) == (45.7676, 4.8361)
+    ev = _ferriere(tz)
+    tm = RawEvent("ADELAIDE FERRIERE", ev.start, "ticketmaster", building.id)
+    venues = {v.id: v for v in (building, venue)}
+    stats: dict = {}
+    concerts = build_concerts([ev, tm], venues, now=_now(tz), window_days=60, tz=tz, stats=stats)
+    assert [(c.title, c.sources) for c in concerts] == [
+        ("Adélaïde Ferrière", ["listing_jsonld:www.opera-lyon.com", "ticketmaster"])
+    ]
+    assert (stats["merged"], stats["conflicts"]) == (1, 0)
+
+
+def test_coordinates_from_missing_or_overridden():
+    other = Venue("osm:node/9", "Le Sonic", 45.74, 4.82, "music_venue")
+    (missing,) = configured_venues((OPERA,), [other])  # no "Opéra de Lyon" known
+    assert missing.latitude is None and missing.longitude is None
+    explicit = OPERA | {"latitude": 45.76, "longitude": 4.83}
+    (venue,) = configured_venues((explicit,), [other])
+    assert (venue.latitude, venue.longitude) == (45.76, 4.83)
 
 
 def test_known_venue_with_the_same_name_takes_the_category():
@@ -135,6 +170,8 @@ READER = "{type: listing_jsonld, urls: ['https://v.example/'], include: x"
         ("category: stadium", "", "unknown category"),
         ("latitude: 45.7", "", "latitude and longitude"),
         ("{latitude: 45.7, longitude: east}", "", "latitude and longitude"),
+        ("{latitude: 48.85, longitude: 2.35}", "", "outside the zone"),  # Paris
+        ("coordinates_from: ''", "", "coordinates_from"),
         ("", ", paginate: {param: page, start: -1, max: 2}", "paginate"),
         ("", ", paginate: {start: 1, max: 2}", "paginate"),
         ("", ", paginate: {param: page, start: 1, max: 0}", "paginate"),
@@ -144,7 +181,7 @@ def test_zone_config_checks_category_coordinates_and_paginate(tmp_path, venue, r
     lines = [f"    {f}\n" for f in venue.strip("{}").split(", ") if f]
     path = tmp_path / "zone.yaml"
     path.write_text(
-        "name: T\nlatitude: 45\nlongitude: 4\nradius_km: 1\npriority_venues:\n  - name: V\n"
+        "name: T\nlatitude: 45.7\nlongitude: 4.8\nradius_km: 15\npriority_venues:\n  - name: V\n"
         + "".join(lines)
         + f"    reader: {READER}{reader}}}\n"
     )
@@ -155,6 +192,7 @@ def test_zone_config_checks_category_coordinates_and_paginate(tmp_path, venue, r
 def test_zone_config_opera_and_pagination_entries():
     readers = {e["name"]: e["reader"] for e in ZONE.priority_venues}
     assert OPERA["category"] == "music_venue" and "latitude" not in OPERA
+    assert OPERA["coordinates_from"] == "Opéra de Lyon"
     assert readers["Opéra Underground"]["paginate"] == {"param": "page", "start": 2, "max": 5}
     # the Épicerie and Marché Gare "Afficher plus" links are ?page=1: pages count from 0
     for name in ("L'Épicerie Moderne", "Le Marché Gare"):

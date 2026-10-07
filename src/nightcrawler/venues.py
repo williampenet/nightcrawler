@@ -86,7 +86,10 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
     match attribute_venue prefers) takes the configured `category`, if any. Without one, a
     venue `config:<key>` is created rather than leaving the events to a `place:` venue with no
     category: configured category (default events_venue, which gives no music rule) and
-    coordinates (optional; without them it is compared with other venues by id only).
+    coordinates: `latitude`/`longitude`, else those of the known venue named in
+    `coordinates_from` (Opéra Underground plays in the "Opéra de Lyon" building, so the same
+    show listed there merges within dedup's 300 m), else none: the venue is then compared
+    with other venues by id only.
     """
     added: list[Venue] = []
     for entry in entries:
@@ -96,6 +99,10 @@ def configured_venues(entries: tuple[dict, ...], venues: list[Venue]) -> list[Ve
             v.category = entry.get("category", v.category)
         if key and not same:
             lat, lon = entry.get("latitude"), entry.get("longitude")
+            src_key = place_key(entry.get("coordinates_from") or "")
+            src = next((v for v in venues if src_key and place_key(v.name) == src_key), None)
+            if lat is None and src is not None and src.latitude is not None:
+                lat, lon = src.latitude, src.longitude
             category = entry.get("category", "events_venue")
             added.append(
                 Venue(f"config:{key}", entry["venue"], lat, lon, category, sources=["config"])
