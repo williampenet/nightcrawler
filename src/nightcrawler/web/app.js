@@ -752,9 +752,13 @@ function concertRow(c, match, showDate) {
   const body = el("div", null, "body");
   body.append(el("strong", c.title));
   body.append(el("span", c.venue_name + (showDate && t !== "00:00" ? ` · ${t}` : ""), "venue"));
-  const names = (c.artists || []).map((k) => DATA.artists[k] && DATA.artists[k].name).filter(Boolean);
-  const perf = names.length ? names : c.performers || [];
-  if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
+  const avec = S.lineupText(c); // every act of the evening (WIP-72)
+  if (avec) body.append(el("span", avec, "performers lineup"));
+  else {
+    const names = (c.artists || []).map((k) => DATA.artists[k] && DATA.artists[k].name).filter(Boolean);
+    const perf = names.length ? names : c.performers || [];
+    if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
+  }
   if (match.reason) {
     const why = el("span", null, "why");
     why.append(el("span", match.reason));

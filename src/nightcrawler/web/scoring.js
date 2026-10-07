@@ -366,7 +366,17 @@
     return kept.slice(-MAX_IDS);
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  // "Avec : A, B, C" when the concert bills two acts or more (WIP-72), else null.
+  // The caller sets it with textContent: the names come from third-party pages.
+  function lineupText(c) {
+    const acts = (Array.isArray(c && c.lineup) ? c.lineup : [])
+      .filter((a) => typeof a === "string")
+      .map((a) => a.trim())
+      .filter(Boolean);
+    return acts.length >= 2 ? `Avec : ${acts.join(", ")}` : null;
+  }
+
+  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

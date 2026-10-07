@@ -23,6 +23,7 @@ import httpx
 from ..config import Zone
 from ..events import concert_reason, in_window
 from ..http import Fetcher, RobotsBlocked
+from ..lineup import description_acts
 from ..models import RawEvent, Venue
 from ..structured import _text
 
@@ -155,6 +156,8 @@ def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> int:
         fetched += 1
         if isinstance(detail, dict):
             ev.description = _text(detail.get("description"))
+            # "Name (genre, country)" lines of the first paragraph join the line-up (WIP-72)
+            ev.billed = description_acts(detail.get("description"))
     return fetched
 
 
