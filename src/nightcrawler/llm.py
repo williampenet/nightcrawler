@@ -251,6 +251,10 @@ class Answer:
     tokens_out: int = 0
     escalated: bool = False
     attempts: int = 1
+    # why `data` is None (WIP-67): "truncated" (finish_reason "length", or output cut off:
+    # see _cut_off), "json" (not parseable) or "schema" (fails validation). A code only,
+    # never the output.
+    reason: str | None = None
 
 
 def _retry_wait(attempt: int, r: httpx.Response | None) -> float:
@@ -344,24 +348,65 @@ def chat_json(
         attempts=attempt,
     )
     try:
-        content = payload["choices"][0]["message"]["content"]
+        choice = payload["choices"][0]
+    except (KeyError, IndexError, TypeError):
+        choice = None
+    finish = choice.get("finish_reason") if isinstance(choice, dict) else None
+    content = None
+    try:
+        content = choice["message"]["content"]
         data = _parse_json(content)
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         answer.errors = [f"unparsable output: {type(exc).__name__}"]
+        cut = finish == "length" or (isinstance(content, str) and _cut_off(content))
+        answer.reason = "truncated" if cut else "json"
         return answer
     answer.errors = validate(data, schema)
     answer.data = data if not answer.errors else None
+    if answer.errors:
+        answer.reason = "truncated" if finish == "length" else "schema"
     return answer
+
+
+def _unwrap(content: str) -> str:
+    # some chat templates still wrap constrained output in a fence or a think block
+    text = re.sub(r"^<think>.*?</think>\s*", "", content.strip(), flags=re.S)
+    return re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
+
+
+def _cut_off(content: str) -> bool:
+    """True when the output looks cut short (most often by max_tokens), not complete but
+    malformed: a `<think>` block never closed, or JSON that ends inside a string or with a
+    bracket left open. A JSON answer missing only its final brace (`{"events": [...]`) is
+    counted as cut short too: from the text alone it cannot be told apart from one."""
+    head = content.lstrip()
+    if head.startswith("<think>") and "</think>" not in head:
+        return True
+    text = _unwrap(content)
+    depth, in_str, esc = 0, False, False
+    for c in text:
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+    return text[:1] in ("{", "[") and (in_str or depth > 0)
 
 
 def _parse_json(content: str) -> Any:
     import json
 
-    text = content.strip()
-    # some chat templates still wrap constrained output in a fence or a think block
-    text = re.sub(r"^<think>.*?</think>\s*", "", text, flags=re.S)
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
-    return json.loads(text)
+    if not isinstance(content, str):  # e.g. null content when the answer was cut
+        raise TypeError("content is not a string")
+    return json.loads(_unwrap(content))
 
 
 def run_task(

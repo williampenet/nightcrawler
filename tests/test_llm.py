@@ -64,6 +64,39 @@ def test_invalid_output_is_reported_not_repaired():
     assert a.data is None and a.errors
 
 
+FULL = json.dumps({"events": [EVENT, EVENT]})
+
+
+@pytest.mark.parametrize(
+    ("content", "finish", "reason"),
+    [
+        (FULL[: len(FULL) // 2], None, "truncated"),  # cut inside a string: JSON cut off
+        (FULL[:-2], "stop", "truncated"),  # brackets left open
+        ("```json\n" + FULL[:40], None, "truncated"),  # fenced and cut
+        (FULL[:-2], "length", "truncated"),
+        (None, "length", "truncated"),  # some providers send no content when cut
+        ({"events": [EVENT, EVENT]}, "length", None),  # complete despite the limit: valid
+        ({"events": [{"title": "x"}]}, "length", "truncated"),  # cut events fail the schema
+        ("<think>the page lists", None, "truncated"),  # think block never closed
+        ("<think>ok</think>" + FULL[:-1], None, "truncated"),  # only the final brace missing
+        ("not json", "stop", "json"),
+        ('{"events": [] ]', None, "json"),  # complete but malformed
+        ({"events": [{"title": "x"}]}, "stop", "schema"),
+        ({"events": [EVENT]}, "stop", None),
+    ],
+)
+@respx.mock
+def test_invalid_answer_reason_codes(content, finish, reason):
+    """WIP-67: why an answer was invalid, as a code (never the output itself)."""
+    text = content if isinstance(content, str) or content is None else json.dumps(content)
+    choice = {"message": {"content": text}, "finish_reason": finish}
+    respx.post("http://llm.test/v1/chat/completions").respond(200, json={"choices": [choice]})
+    a = llm.chat_json(task().primary, [], SCHEMA)
+    assert a.reason == reason
+    assert (a.data is None) == (reason is not None)
+    assert not any(EVENT["title"] in e for e in a.errors)  # no model output in the errors
+
+
 @respx.mock
 def test_http_error_never_echoes_body():
     respx.post("http://llm.test/v1/chat/completions").mock(

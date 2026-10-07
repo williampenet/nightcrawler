@@ -7,6 +7,7 @@ so the real path runs (task router, schema validation, grounding checks).
 import dataclasses
 import functools
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -434,3 +435,143 @@ def test_dance_show_at_a_non_music_venue_needs_music_words(tz):
     assert [(c.title, c.reason) for c in concerts] == [
         ("DJ Fantastik", "model: concert, music keywords")
     ]
+
+
+# ---------------------------------------------------------------- invalid answers (WIP-67)
+
+
+def _truncated(request: httpx.Request) -> httpx.Response:
+    """A real answer cut at max_tokens: finish_reason "length", JSON left open."""
+    content = _fake_model(request).json()["choices"][0]["message"]["content"]
+    choice = {"message": {"content": content[: len(content) // 2]}, "finish_reason": "length"}
+    return httpx.Response(200, json={"choices": [choice], "usage": {}})
+
+
+def _schema_invalid(request: httpx.Request) -> httpx.Response:
+    return _completion({"events": [{"title": "cut"}]})
+
+
+def _model_failing_on(bad: dict[str, Callable]) -> Callable:
+    """_fake_model, except for the chunk texts in `bad`, answered by their failure."""
+
+    def model(request: httpx.Request) -> httpx.Response:
+        text = "\n".join(_chunk_of(request))
+        return bad[text](request) if text in bad else _fake_model(request)
+
+    return model
+
+
+def _long_chunks() -> tuple[str, list[tuple[str, str]], list[str]]:
+    html, expected = _long_page()
+    chunks, _ = page_llm.chunk_text(
+        extract.page_text(html, 10**6), 3200, page_llm.DEFAULT_CHUNKS_PER_PAGE
+    )
+    return html, expected, chunks
+
+
+def test_split_chunk_cuts_on_a_date_line_near_the_middle_with_overlap():
+    _, _, chunks = _long_chunks()
+    text = chunks[1]
+    first, second = page_llm.split_chunk(text)
+    lines, a, b = text.split("\n"), first.split("\n"), second.split("\n")
+    n = page_llm.OVERLAP_LINES
+    assert a[-n:] == b[:n] and a + b[n:] == lines  # nothing lost, BEFORE lines repeated
+    assert page_llm.is_date_line(b[n])  # the second half starts at a date
+    assert abs(len(a) - len(lines) / 2) <= 5  # near the middle (1 event per 5 lines)
+    assert max(len(first), len(second)) < 0.7 * len(text)
+    assert page_llm.split_chunk("\n".join(["x"] * (n + 1))) is None  # too short to split
+    no_date = "\n".join(f"line {i}" for i in range(40))
+    first, second = page_llm.split_chunk(no_date)
+    assert first.split("\n")[-1] == "line 19"  # no date line: the middle line
+
+
+@respx.mock
+def test_invalid_chunk_is_split_and_every_event_found(tz, tmp_path, caplog):
+    html, expected, chunks = _long_chunks()
+    _site(page=html)
+    api = respx.post(API).mock(side_effect=_model_failing_on({chunks[1]: _truncated}))
+    ctx = page_llm.Context(_task(), page_llm.ExtractionCache(tmp_path))
+    with caplog.at_level("DEBUG"):
+        events, _, status = _read(tz, ctx, days=120)
+    assert [(e.title, e.start.date().isoformat()) for e in events] == expected
+    n = len(chunks)
+    assert api.call_count == ctx.budget.used == n + 2  # each half counts against the cap
+    assert status.startswith(f"ok; chunks {n}, model {n + 2}, cached 0")
+    assert status.endswith("; invalid answer: truncated 1; split 1")
+    assert "invalid answer (truncated)" in caplog.text
+    assert "Artiste" not in caplog.text and "events" not in caplog.text  # codes only
+    # halves are cached like any chunk; the full chunk has a split marker: no call at all
+    again = page_llm.Context(_task(), page_llm.ExtractionCache(tmp_path))
+    events, _, status = _read(tz, again, days=120)
+    assert [(e.title, e.start.date().isoformat()) for e in events] == expected
+    assert again.budget.used == 0 and api.call_count == n + 2  # 0 calls for that chunk
+    assert status == (
+        f"ok; chunks {n}, model 0, cached {n + 2}, ungrounded 0, not concert 0; split 1"
+    )  # no invalid answer this time: the marker is not one
+
+
+def test_split_halves_are_each_at_most_three_quarters_of_the_chunk():
+    _, _, chunks = _long_chunks()
+    for text in chunks:
+        parts = page_llm.split_chunk(text)
+        if parts:
+            assert max(map(len, parts)) <= page_llm.MAX_HALF * len(text)
+    # short chunk (36 lines), its only date line near n/4: cutting there would leave a second
+    # half of 3/4 + the 8-line overlap, so the middle line is used instead
+    lines = [f"Ligne de description numéro {i:02d}" for i in range(36)]
+    lines[9] = "sam. 10 octobre"
+    text = "\n".join(lines)
+    first, second = page_llm.split_chunk(text)
+    assert max(len(first), len(second)) <= 0.75 * len(text)
+    assert len(first.split("\n")) == 18  # the middle, not the date line
+    # too short for any cut to shrink both halves enough: no split
+    assert page_llm.split_chunk("\n".join(lines[:14])) is None
+
+
+def test_unknown_reason_when_the_answer_gives_none(monkeypatch):
+    answer = llm.Answer(None, ["x"], "m", 0.0)  # no reason set
+    monkeypatch.setattr(extract, "extract_events", lambda *a, **k: {"answer": answer})
+    ctx = page_llm.Context(_task())
+    assert page_llm._answer("t", datetime(*NOW).date(), "V", ctx) == (None, "asked", "unknown")
+
+
+@respx.mock
+def test_a_half_that_fails_again_is_left_out_and_not_split_again(tz):
+    html, expected, chunks = _long_chunks()
+    first, second = page_llm.split_chunk(chunks[1])
+    bad = {chunks[1]: _schema_invalid, first: _truncated}
+    _site(page=html)
+    api = respx.post(API).mock(side_effect=_model_failing_on(bad))
+    ctx = page_llm.Context(_task())
+    events, _, status = _read(tz, ctx, days=120)
+    n = len(chunks)
+    assert api.call_count == n + 2  # one split level only: the failed half is not split
+    assert status.startswith(f"ok; chunks {n}")
+    assert "; invalid answer: schema 1, truncated 1; split 1" in status
+    found = {(e.title, e.start.date().isoformat()) for e in events}
+    lost = set(expected) - found
+    assert lost and found < set(expected)  # the run goes on: other chunks and half kept
+    assert all(title in first.split("\n") for title, _ in lost)  # only the failed half's
+
+
+@respx.mock
+def test_split_halves_respect_the_run_wide_cap(tz):
+    html, _, chunks = _long_chunks()
+    _site(page=html)
+    api = respx.post(API).mock(side_effect=_model_failing_on({chunks[0]: _truncated}))
+    ctx = page_llm.Context(_task(), budget=page_llm.CallBudget(2))
+    events, _, status = _read(tz, ctx)
+    assert api.call_count == ctx.budget.used == 2  # full chunk + first half; second capped
+    assert "llm_cap" in status and "split 1" in status and "truncated 1" in status
+    assert events  # the first half's concerts are kept
+
+
+@respx.mock
+def test_transport_error_is_not_split(tz):
+    html, _, _ = _long_chunks()
+    _site(page=html)
+    api = respx.post(API).respond(400)  # not retried, raises ModelError
+    events, _, status = _read(tz, page_llm.Context(_task()))
+    assert api.call_count == 1 and events == []
+    assert status.startswith("error: ModelError (transport); chunks 0, model 0")
+    assert "split" not in status and "invalid answer" not in status
