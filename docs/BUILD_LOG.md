@@ -120,6 +120,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-64b | REQUEST_CHANGES: 1 blocking (shorter known name captured a configured venue) + 3 non-blocking (curly apostrophe tokenisation); fixed | PR #51 |
 | 2026-10-07 | agent:reviewer | re-review WIP-64b (c331e1f) | REQUEST_CHANGES: 2 blocking (apostrophe fix made the Gancio duplicate the exact match for platform/probe events; music-first resolution could pick a longer music venue); fixed with exact-first resolution, explicit venue_id, apostrophe handling in venues._norm | PR #51 |
 | 2026-10-07 | agent:reviewer | re-review WIP-64b (d6f7b96) | REQUEST_CHANGES: 1 blocking (page venue beat an exact far-away match); fixed with a 300 m limit | PR #51 |
+| 2026-10-07 | agent:reviewer | re-review WIP-64b (e60f02f) | APPROVE: page-venue rule limited to 300 m, unique priority venue names; to confirm on next run: Épicerie back to 9/9, Opéra Underground coordinates | PR #51 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
