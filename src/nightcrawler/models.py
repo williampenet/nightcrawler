@@ -79,6 +79,9 @@ class RawEvent:
     types: list[str] = field(default_factory=list)  # schema.org types, e.g. ["MusicEvent"]
     location_name: str | None = None
     tags: list[str] = field(default_factory=list)  # lower-case source tags (e.g. Gancio)
+    # page_llm only: the reader's config trusts the model's is_concert at this venue even if the
+    # venue is not a music venue (`reader.trust_is_concert`, WIP-68)
+    trust_model_concert: bool = False
 
 
 @dataclass

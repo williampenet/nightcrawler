@@ -19,7 +19,7 @@ from nightcrawler import extract, llm
 from nightcrawler.config import _priority_venue, load_zone
 from nightcrawler.events import build_concerts
 from nightcrawler.http import Fetcher
-from nightcrawler.models import Venue
+from nightcrawler.models import RawEvent, Venue
 from nightcrawler.sources import page_llm, priority
 from nightcrawler.venues import attach_to_configured, configured_venue_ids, configured_venues
 
@@ -435,6 +435,54 @@ def test_dance_show_at_a_non_music_venue_needs_music_words(tz):
     assert [(c.title, c.reason) for c in concerts] == [
         ("DJ Fantastik", "model: concert, music keywords")
     ]
+
+
+@respx.mock
+def test_trusted_reader_keeps_artist_only_titles_but_not_other_sources(tz):
+    # WIP-68: La Rayonne is an arts_centre (mixed agenda). Its page_llm reader trusts the model's
+    # is_concert, so "LADANIVA" is kept; an untagged Gancio talk at the same venue keeps the
+    # strict rule (the venue category is unchanged) and is dropped.
+    trusted = _priority_venue(
+        {"name": "Les Subsistances", "venue": "Les Subsistances", "latitude": 45.768234,
+         "longitude": 4.816856,
+         "reader": {"type": "page_llm", "urls": [SUBS_URL], "trust_is_concert": True}}
+    )  # fmt: skip
+    page = """<html><body><ul>
+<li>LADANIVA</li><li>jeu. 26 novembre</li><li>19:00</li>
+</ul></body></html>"""
+    _site(page, "www.les-subs.com", SUBS_URL)
+    answer = {"events": [
+        {"title": "LADANIVA", "date": "2026-11-26", "time": "19:00", "performers": ["LADANIVA"],
+         "is_concert": True},
+    ]}  # fmt: skip
+    respx.post(API).mock(return_value=_completion(answer))
+    events, _, _ = _read(tz, page_llm.Context(_task()), trusted)
+    assert [e.trust_model_concert for e in events] == [True]
+    venues = configured_venues((trusted,), [])
+    assert [v.category for v in venues] == ["events_venue"]  # category untouched
+    ids, _ = configured_venue_ids((trusted,), venues)
+    attach_to_configured(events, ids)
+    talk = RawEvent(
+        title="Rencontre avec une autrice",
+        start=datetime(2026, 11, 27, 19, tzinfo=tz),
+        source="gancio:agenda.example",
+        venue_id=venues[0].id,
+    )
+    now = datetime(*NOW, tzinfo=tz)
+    concerts = build_concerts(
+        events + [talk], {v.id: v for v in venues}, now=now, window_days=60, tz=tz
+    )
+    assert [(c.title, c.reason) for c in concerts] == [
+        ("LADANIVA", "model: concert, trusted programme")
+    ]
+
+
+def test_trust_is_concert_must_be_a_bool():
+    with pytest.raises(ValueError, match="trust_is_concert"):
+        _priority_venue(
+            {"name": "X", "venue": "X", "latitude": 45.76, "longitude": 4.83,
+             "reader": {"type": "page_llm", "urls": [SUBS_URL], "trust_is_concert": "yes"}}
+        )  # fmt: skip
 
 
 # ---------------------------------------------------------------- invalid answers (WIP-67)

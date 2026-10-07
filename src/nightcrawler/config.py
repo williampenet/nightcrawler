@@ -166,6 +166,8 @@ def _check_page_llm(name: str, reader: dict) -> None:
         raise ValueError(f"priority venue {name}: urls must be a non-empty list")
     if not all(isinstance(u, str) and u.startswith("https://") for u in urls):
         raise ValueError(f"priority venue {name}: urls must be https")
+    if "trust_is_concert" in reader and not isinstance(reader["trust_is_concert"], bool):
+        raise ValueError(f"priority venue {name}: trust_is_concert must be true or false")
     _check_paginate(name, reader)
 
 
