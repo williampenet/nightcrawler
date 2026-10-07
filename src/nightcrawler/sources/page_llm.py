@@ -28,8 +28,16 @@ model is never named here: `extract.extract_events` goes through the task router
 - Cost: the model's raw answer is cached on disk per chunk (`ExtractionCache.key`): an
   unchanged chunk costs no tokens. Grounding is re-run on every read. At most
   `llm_calls_per_run` chunks per run are sent to the model (cache hits are free).
-- No key, or a model error: the venue gets a `skipped: no key` / `error: <Type>` status and
-  the run goes on.
+- An invalid answer (WIP-67) is counted by reason in the status, `invalid answer: truncated
+  1, json 0, ...`: `truncated` (finish_reason "length" or JSON cut off), `json` (not
+  parseable), `schema` (fails validation). Codes only, never page text or model output. The
+  chunk is then split once in two on a date line near its middle (`split_chunk`, same
+  `OVERLAP_LINES` overlap) and each half is asked once, through the same cache and run-wide
+  cap; a half that fails again is counted and left out (never a second split). A smaller
+  input also means a shorter answer, so a `truncated` chunk is fixed without raising
+  `max_output_tokens` (which would need an eval).
+- No key, or a model error: the venue gets a `skipped: no key` / `error: <Type> (transport)`
+  status and the run goes on (llm.chat_json already retried transient failures).
 """
 
 from __future__ import annotations
@@ -129,6 +137,21 @@ def chunk_text(
             break
         start = max(cut - overlap, start + 1)
     return chunks, False
+
+
+def split_chunk(text: str, overlap: int = OVERLAP_LINES) -> tuple[str, str] | None:
+    """Two halves of a chunk whose answer was invalid (WIP-67), or None when it is too short.
+
+    Cut before the date-looking line nearest the middle (within the middle half), else at the
+    middle line; the second half starts `overlap` lines before the cut, like chunk_text."""
+    lines = text.split("\n")
+    n, mid = len(lines), len(lines) // 2
+    lo, hi = max(overlap + 1, n // 4), min(n - 1, (3 * n) // 4)
+    dated = [i for i in range(lo, hi + 1) if is_date_line(lines[i])]
+    cut = min(dated, key=lambda i: (abs(i - mid), i)) if dated else mid
+    if cut <= overlap or cut >= n:
+        return None
+    return "\n".join(lines[:cut]), "\n".join(lines[cut - overlap :])
 
 
 class CallBudget:
@@ -306,7 +329,8 @@ def read(
     source = f"{SOURCE}:{host}"
     today = now.astimezone(tz).date()
     events: list[RawEvent] = []
-    asked = cached = ungrounded = not_concert = chunk_count = 0
+    asked = cached = ungrounded = not_concert = chunk_count = splits = 0
+    invalid: dict[str, int] = {}  # reason code -> invalid answers (WIP-67)
     seen: set[tuple[str, str]] = set()  # (date, normalised title): chunks overlap
     error = ""
     capped = False
@@ -318,65 +342,83 @@ def read(
         )
         if left:
             notes.append(f"chunk_cap: {url}")  # the end of the page is not read
-        for text in chunks:
-            data, how = _answer(text, today, venue, ctx)
-            if how == "llm_cap":
-                notes.append("llm_cap")  # run-wide cap: the rest waits for a later run
-                capped = True
-                break
-            if how.startswith("error"):
-                error = how
-                log.warning("page_llm %s: %s", host, how)  # never the message body
-                break
-            chunk_count += 1
-            asked += how == "asked"
-            cached += how == "cached"
-            if data is None:
-                notes.append("invalid answer")
-                continue
-            kept, rejected = extract.check_events(data, text, today)  # against this chunk
-            ungrounded += len(rejected)
-            for ev in kept:
-                key = (ev["date"], extract.norm(ev["title"]))
-                if key in seen:
+        for chunk in chunks:
+            todo = [(chunk, False)]  # (text, is a half of a split chunk)
+            while todo and not (error or capped):
+                text, half = todo.pop(0)
+                data, how, reason = _answer(text, today, venue, ctx)
+                if how == "llm_cap":
+                    notes.append("llm_cap")  # run-wide cap: the rest waits for a later run
+                    capped = True
+                    break
+                if how.startswith("error"):
+                    error = how
+                    log.warning("page_llm %s: %s", host, how)  # never the message body
+                    break
+                chunk_count += not half
+                asked += how == "asked"
+                cached += how == "cached"
+                if data is None:
+                    invalid[reason] = invalid.get(reason, 0) + 1
+                    log.warning("page_llm %s: invalid answer (%s)", host, reason)  # code only
+                    if not half and (halves := split_chunk(text)):
+                        splits += 1
+                        todo = [(h, True) for h in halves]  # one split level, never more
                     continue
-                seen.add(key)
-                if not ev["is_concert"]:
-                    not_concert += 1
-                    continue
-                raw = RawEvent(
-                    title=ev["title"],
-                    start=_start(ev, tz),
-                    source=source,
-                    venue_id=source,
-                    url=url,
-                    performers=ev["performers"],
-                    location_name=venue,
-                )
-                if in_window(raw, now, window_days):
-                    events.append(raw)
+                kept, rejected = extract.check_events(data, text, today)  # against this text
+                ungrounded += len(rejected)
+                for ev in kept:
+                    key = (ev["date"], extract.norm(ev["title"]))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if not ev["is_concert"]:
+                        not_concert += 1
+                        continue
+                    raw = RawEvent(
+                        title=ev["title"],
+                        start=_start(ev, tz),
+                        source=source,
+                        venue_id=source,
+                        url=url,
+                        performers=ev["performers"],
+                        location_name=venue,
+                    )
+                    if in_window(raw, now, window_days):
+                        events.append(raw)
+            if error or capped:
+                break
     counts = (
         f"chunks {chunk_count}, model {asked}, cached {cached}, ungrounded {ungrounded}, "
         f"not concert {not_concert}"
     )
+    if invalid:
+        reasons = ", ".join(f"{r} {n}" for r, n in sorted(invalid.items()))
+        notes.append(f"invalid answer: {reasons}")
+    if splits:
+        notes.append(f"split {splits}")
     status = "; ".join([error or "ok", counts, *notes])
     return events, len(pages), status
 
 
-def _answer(text: str, today: date, venue: str, ctx: Context) -> tuple[dict | None, str]:
-    """(raw model data or None, how): "cached", "asked", "llm_cap" or "error: <Type>".
+def _answer(
+    text: str, today: date, venue: str, ctx: Context
+) -> tuple[dict | None, str, str | None]:
+    """(raw model data or None, how, reason). how: "cached", "asked", "llm_cap" or
+    "error: <Type> (transport)"; reason: why an asked answer is invalid (llm.Answer.reason).
     Only answers with no error at all are cached: one that failed a check (mostly
     ungrounded events) is asked again next run."""
     key = ctx.cache.key(text, ctx.task, venue)
     if (data := ctx.cache.get(key)) is not None:
-        return data, "cached"
+        return data, "cached", None
     if not ctx.budget.take():
-        return None, "llm_cap"
+        return None, "llm_cap", None
     try:
         result = extract.extract_events(text, today, venue, ctx.task, ctx.client)
     except llm.ModelError as exc:
-        return None, f"error: {type(exc).__name__}"
+        return None, f"error: {type(exc).__name__} (transport)", "transport"
     answer = result["answer"]
     if answer.data is not None and not answer.errors:
         ctx.cache.put(key, answer.data, answer.model)
-    return answer.data, "asked"
+    reason = (answer.reason or "json") if answer.data is None else None
+    return answer.data, "asked", reason
