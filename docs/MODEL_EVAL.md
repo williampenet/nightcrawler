@@ -60,7 +60,8 @@ time normalisation, which fixed Qwen's schema failures (valid 0.71 → 1.0).
 
 Source: annotations of the Model eval workflow
 [run 37591806394](https://github.com/williampenet/nightcrawler/actions/runs/37591806394) (push to
-`main` at 39768de; llama.cpp b11425, 4 CPUs, 15 GB RAM, 86 GB free disk). Candidates added in
+`main` at 39768de; llama.cpp b11425, 4 CPUs, 15 GiB RAM as reported by `free -g` (≈ 16.1 GB),
+86 GB free disk). Candidates added in
 `eval/models.yaml` (sources in [ADR-0004](adr/0004-model-selection-extract-events.md), amendment
 2026-10-07). Hosted ones on Scaleway Generative APIs (Paris), `reasoning_effort: none` for Gemma
 and Qwen. 7 pages, 65 gold concert events scored.
@@ -112,7 +113,11 @@ eval.
   1 000 pages measured.
 - Mistral Small 3.2 (EU publisher, same host) is the documented EU alternative at 0.915.
 - Routed in `config/models.yaml`; called by the page_llm reader (WIP-66). The Model eval workflow
-  now gates the routed model (F1 ≥ 0.85, 0 leaks).
+  now gates the routed model (F1 ≥ 0.85, 0 leaks, and it must have been measured), on every
+  model-config change and weekly (`--only routed`, < €0.01 per run).
+- **Next run:** Gemma 4 26B-A4B itself on the runner's CPU (`gemma-4-26b-a4b-qat-q4-local`,
+  Google's QAT Q4_0 GGUF, 13.4 GiB against ≈ 16 GB of RAM). Local feasibility is unverified
+  until then. If it reaches the bar within the 4-min p95, ADR-0004 is revisited.
 
 ### Conclusion (2026-10-05, runs 1–2, superseded by run 3)
 

@@ -65,7 +65,8 @@ the serverless endpoint. Any effect of fp8 on quality is not assumed: the eval m
 as served.
 
 Set aside (research notes): EuroLLM 9B (4 k context), Qwen3.8 27B (output price €2.7–3.3 / M),
-Mistral Small 4 (119 B), local MoE models (Q4 files do not fit the runner's 16 GB RAM), 8 B models
+Mistral Small 4 (119 B), local MoE models (Q4 files thought too large for the runner's 16 GB RAM;
+revised after review: Gemma 4 26B-A4B QAT Q4_0 is 13.4 GiB and is now measured, see Decision), 8 B models
 (cheap to add later via OVHcloud or Mistral if the 24 B results are close).
 
 ## Evaluation summary
@@ -93,9 +94,15 @@ measure of generalisation. All eval pages are ≤ 3,234 characters (the input ca
 `extract_events`, `reasoning_effort: none`, temperature 0. Validated by William on 2026-10-07
 (chat, 11:47). Routed in `config/models.yaml`; called by the page_llm reader (WIP-66).
 
+**Scaleway for now.** The same model run locally (Google's QAT Q4_0 GGUF, candidate
+`gemma-4-26b-a4b-qat-q4-local`) is being measured by the next Model eval run. Revisit this
+decision if it reaches the quality bar (F1 ≥ 0.85, 0 leaks) with acceptable latency (the 4-min p95
+bar above): it would cost €0 and send nothing outside the runner.
+
 Rationale (run 3 above):
 - **Only candidate with every page complete:** F1 1.0, schema-valid on 7/7 pages, 0 injection
-  leaks. The 2–3 B and 14 B local models stay at 0.61–0.73, below the 0.85 bar.
+  leaks. The local candidates measured so far (Qwen3 1.7B, Ministral 3 3B and 14B) stay at
+  0.61–0.73, below the 0.85 bar.
 - **Fastest and cheap:** p95 9.3 s per page (bar: 4 min); €0.53 per 1 000 pages from measured
   tokens (964 in / 585 out per page at €0.25 / €0.50 per M,
   [pricing](https://www.scaleway.com/en/pricing/model-as-a-service/)), well inside the ~€20 / month
@@ -130,10 +137,16 @@ the eval pages are all ≤ 3,234 characters, and La Rayonne's agenda text is ≈
 with larger pages before changing it.
 
 **Alternatives considered for hosting (William asked, 2026-10-07):**
-- **Run Gemma locally on the GitHub runner:** impractical. The Q4_0 GGUF is 14.6 GB (ggml-org
-  repo, not a publisher file, so it would also fall outside the supply-chain rule below) against
-  15 GB of RAM measured on the runner (run 37591806394 annotation). Figures from the orchestrator,
-  2026-10-07.
+- **Run Gemma locally on the GitHub runner:** feasibility **unverified**, now measured. Google
+  publishes a GGUF itself: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf`, file
+  `gemma-4-26B_q4_0-it.gguf`, 14,439,363,584 bytes (13.4 GiB), Apache 2.0, revision `d1c082be…`
+  ([HF API](https://huggingface.co/api/models/google/gemma-4-26B-A4B-it-qat-q4_0-gguf?blobs=true),
+  read 2026-10-07), so it meets the supply-chain rule below. The runner's "15 GB" of RAM (run
+  37591806394 annotation) comes from `free -g`, which reports GiB: ≈ 16.1 GB, against a 13.4 GiB
+  file. Memory is tight but not ruled out. An earlier version of this ADR called it impractical on
+  a third-party 14.6 GB file and a GB/GiB mix-up (corrected after review). The file is an eval
+  candidate (revision and SHA-256 pinned, kept out of the Actions cache); an out-of-memory error, a
+  skip or a p95 above 4 min is a measurement too.
 - **Fine-tune or use custom weights on Scaleway:** not possible on the serverless endpoint. Own
   models need a Dedicated Deployment ("supports both open-source models and your own uploaded
   proprietary models"), and fine-tuning itself "may need to use a separate training environment"
@@ -150,21 +163,27 @@ but not called), recorded in `docs/MODEL_EVAL.md` runs 1–2.
 ## Security & compliance
 - **Data (re-checked 2026-10-07 for the decision):** the routed model receives only the public
   text of a venue's agenda page (scripts, comments and hidden templates removed, capped at
-  `max_input_chars`), the date and the venue name. No user data, taste profile, rating or
-  identifier is ever part of the `extract_events` input, so no personal data goes to the
-  provider. Local models send nothing anywhere. If the Mistral API is ever used, William first
+  `max_input_chars`), the date and the venue name: public page text, which may include incidental
+  public contact details (a venue's or promoter's e-mail or phone printed on the page); EU
+  processor, no training. No user data, taste profile, rating or identifier is ever part of the
+  `extract_events` input. Local models send nothing anywhere. If the Mistral API is ever used, William first
   turns off training on the Mistral account (an account setting, not code).
 - **Model supply chain:** local models from official publisher repos only; GGUF (no pickle);
   revision and SHA-256 pinned in config and verified after every download (`llm.ensure_weights`);
   llama.cpp from its official GitHub release, tag pinned. The routed model is hosted: no weights
   are downloaded; it is pinned by its Scaleway model id (`gemma-4-26b-a4b-it`, catalogued as
   `google/gemma-4-26b-a4b-it:bf16`). Scaleway does not publish a weight revision for serverless
-  models, so a silent provider-side update cannot be excluded (**unverified**); the Model eval
-  workflow re-runs on every model-config change and gates the routed model (F1 ≥ 0.85, 0 leaks,
-  `min_quality` in `config/models.yaml`).
+  models, so a silent provider-side update cannot be excluded (**unverified**). It is caught
+  within a week: the Model eval workflow runs every Monday on the routed model only
+  (`--only routed`, < €0.01 per run: 7 pages × 964 in / 585 out tokens ≈ €0.004), as well as on
+  every model-config change, and gates it. The gate fails the run when the candidate with the
+  routed provider, model and `extra` is below F1 0.85, leaks an injected event, or was not
+  measured at all (skipped, no key, error) (`min_quality` in `config/models.yaml`).
 - **Prompt injection:** page text is wrapped as data (markers stripped from the page) with an
-  explicit instruction; output is constrained by a JSON schema (grammar-constrained decoding)
-  and re-validated. The only effect of the output is listing an event that links to the venue's
+  explicit instruction; the request asks for strict `json_schema` structured output
+  (`response_format`, OpenAI-compatible, on Scaleway and llama-server alike) and the answer is
+  re-validated against the schema in code (`llm.validate`), never repaired. How the provider
+  enforces the schema is not assumed. The only effect of the output is listing an event that links to the venue's
   own page — no other action. Resistance is *measured*, not guaranteed: the eval has an
   injection page and reports leaked events; the chosen model must leak 0 (CI gate).
 - **Made-up events:** each event must pass deterministic checks or it is dropped — date in
@@ -184,8 +203,11 @@ but not called), recorded in `docs/MODEL_EVAL.md` runs 1–2.
   the misuse case the stored content would be public page text.
 - **Logs:** `llm.chat_json` logs and errors carry the model id and HTTP status only, never the
   prompt, the page text or the response body (unit test `test_http_error_never_echoes_body`).
-- **Transparency (EU AI Act):** concerts extracted by a model are labelled "extrait par IA" in
-  the page (WIP-34).
+- **Transparency (EU AI Act):** the label is built in WIP-66, together with the reader: PR #54
+  adds a "Lu par IA" badge on concerts read by the model. No concert comes from the model before
+  that. The page footer (`src/nightcrawler/web/index.html`) already says that some venues'
+  agendas are read by an AI model (Gemma 4, Scaleway Paris) and labelled, and that the ranking is
+  rule-based, without AI. It is correct once #54 lands and harmless before.
 
 ## Consequences
 - Switching model = editing `config/models.yaml` and re-running `python -m eval` (e.g. to Mistral
@@ -193,18 +215,23 @@ but not called), recorded in `docs/MODEL_EVAL.md` runs 1–2.
 - The pipeline depends on an external API for HTML-only venues: when Scaleway is down or the key
   is missing, those pages are skipped for that run (`llm.ModelError`), structured sources are
   unaffected (`run_task` raises `ModelError` on transport failures; the skip is WIP-66's to build).
-- The Model eval workflow fails when the routed model drops below the bar or leaks; a Scaleway
-  outage during that run also fails it (F1 0), which is visible and re-runnable.
+- The Model eval workflow fails when the routed model drops below the bar, leaks, or is not
+  measured; a Scaleway outage or a missing key during that run also fails it, which is visible and
+  re-runnable. The PR CI job runs the eval offline on the gold row only, so it never calls a model.
 - Re-evaluate when a smaller EU model appears, when quality drops on new venues, or before
   raising `max_input_chars` (WIP-66).
 
 ## Cost impact
 - **Routed model, measured:** €0.53 per 1 000 pages (run 3: 964 tokens in / 585 out per page at
   €0.25 / €0.50 per M). At ~1 000 pages / month: ≈ €0.53 / month; pages are cached by content
-  hash, so unchanged pages are not re-sent. Longer pages (up to 7,000 chars) cost more per page:
-  the €1.63 worst-case estimate above (2.5 k in / 2 k out) stays the ceiling at this volume.
+  hash, so unchanged pages are not re-sent. Longer pages (up to 7,000 chars) cost more per page;
+  the €1.63 worst-case estimate above (2.5 k in / 2 k out) is the expected ceiling at this
+  volume, but it is **unverified**: no measured page came near 7,000 characters and the page
+  count per month is an estimate.
 - **Eval:** one run of the three hosted candidates ≈ 7 × (1 549 + 1 696 + 1 824) ≈ 35 k tokens
   (run 3 averages), so the one-time 1 M free tokens cover ≈ 28 runs; beyond that, cents per run.
-- Local candidates: €0 (public repo, free Actions minutes).
+  Weekly routed-only run: ≈ 11 k tokens, < €0.01 (≈ €0.02 / month).
+- Local candidates: €0 (public repo, free Actions minutes). The full Model eval job timeout goes
+  from 150 to 240 min for the local Gemma candidate.
 - Baseline at the same volume: roughly €30–60 / month — above the whole project budget.
 - Rejected: a Scaleway dedicated deployment, from €0.93 / h ≈ €679 / month (Alternatives above).

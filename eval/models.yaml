@@ -54,6 +54,28 @@ extract_events:
     # Kept out of the Actions cache (10 GB per repo): downloaded to a scratch dir, deleted after.
     cache: false
 
+  # WIP-63 review: the routed Gemma run locally, to measure whether CPU is viable (ADR-0004).
+  # Publisher GGUF (Google, quantisation-aware trained Q4_0); revision, size and SHA-256 read from
+  # huggingface.co/api/models/google/gemma-4-26B-A4B-it-qat-q4_0-gguf?blobs=true and the file page
+  # at that revision (2026-10-07), verified again by llm.ensure_weights after the download.
+  # 14,439,363,584 bytes = 13.4 GiB against ~16 GB (15 GiB) of runner RAM: memory is tight, so a
+  # failure or a very slow run is a result too. No thinking switch is sent; whether llama.cpp's
+  # chat template for this file enables thinking is unverified (tokens out are reported).
+  - id: gemma-4-26b-a4b-qat-q4-local
+    publisher: Google (US)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+    params: 25.2B total / 3.8B active (MoE)
+    hosting: local CPU (llama.cpp), €0
+    provider: local
+    model: gemma-4-26b-a4b-it-qat-q4_0
+    repo: google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+    revision: d1c082be9cf3c8a514acf63b8761f4b41935842e
+    file: gemma-4-26B_q4_0-it.gguf
+    sha256: 3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d
+    size_bytes: 14439363584  # same source
+    cache: false  # above the 10 GB Actions cache: scratch dir, deleted after the run
+
   # Scaleway Generative APIs, Paris; ids and EUR prices from
   # https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-10-07). No training on
   # inputs (Scaleway data-privacy page). Run only when SCW_GENAI_SECRET_KEY is set.

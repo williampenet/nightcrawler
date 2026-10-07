@@ -255,24 +255,73 @@ def misses(res: dict, cases: list[dict]) -> str:
     return "\n".join(out) or "no misses"
 
 
+ROUTED = "routed"  # `--only routed`: the candidate config/models.yaml routes the task to
+
+
+def routed_candidate(cands: list[dict], task: llm.Task) -> dict | None:
+    """The eval candidate that sends exactly the routed request (provider, model and extra)."""
+    p = task.primary
+    for c in cands:
+        if (c.get("provider"), c.get("model"), c.get("extra") or {}) == (
+            p.provider,
+            p.model,
+            p.extra or {},
+        ) and not c.get("retired"):
+            return c
+    return None
+
+
+def gate(task: llm.Task, routed: dict | None, cands: list[dict], results: dict) -> int:
+    """Quality gate on the routed model (task.min_quality): 1 when it fails or was not measured."""
+    if task.min_quality is None:
+        return 0
+    if routed is None:
+        annotate("error", f"task {task.name}: no eval candidate matches the routed model")
+        return 1
+    if routed["id"] not in {c["id"] for c in cands}:
+        return 0  # --only left the routed model out: nothing to gate in this run
+    m = results.get(routed["id"], {}).get("metrics")
+    if not m:
+        why = results.get(routed["id"], {}).get("skipped", "no result")
+        annotate("error", f"{routed['id']} (routed): not measured ({why})")
+        return 1
+    if m["checked"]["f1"] < task.min_quality:
+        annotate("error", f"{routed['id']}: F1 {m['checked']['f1']} < {task.min_quality}")
+        return 1
+    if m["checked"]["injected_events"]:
+        annotate("error", f"{routed['id']}: {m['checked']['injected_events']} injected event(s)")
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m eval")
     ap.add_argument("--task", default="extract_events")
-    ap.add_argument("--only", default="", help="comma-separated candidate ids")
+    ap.add_argument(
+        "--only", default="", help=f"comma-separated candidate ids; '{ROUTED}' = the routed one"
+    )
     ap.add_argument("--results-dir", default=str(ROOT / "results"))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     cands = yaml.safe_load((ROOT / "models.yaml").read_text("utf-8"))[args.task]
+    task = llm.load_tasks(ROOT.parent / "config/models.yaml")[args.task]
+    routed = routed_candidate(cands, task)
     if args.only:
         wanted = {i.strip() for i in args.only.split(",") if i.strip()}
+        if ROUTED in wanted:
+            wanted.discard(ROUTED)
+            if routed:
+                wanted.add(routed["id"])
+            else:
+                annotate("error", f"--only {ROUTED}: no candidate matches the routed model")
+                return 1
         if unknown := sorted(wanted - {c["id"] for c in cands}):
             log.warning("unknown candidate id(s): %s", ", ".join(unknown))
             annotate("warning", f"--only: unknown candidate id(s): {', '.join(unknown)}")
         cands = [c for c in cands if c["id"] in wanted]
     cases = load_cases(args.task)
-    task = llm.load_tasks(ROOT.parent / "config/models.yaml")[args.task]
 
     # hosted first: a long or failing local CPU run must not delay or block them
     order = sorted(cands, key=lambda c: c["provider"] == "local")
@@ -305,16 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     (out / "latest.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), "utf-8")
 
     # quality gate on the model the product routes to, once its ADR sets a threshold
-    if task.min_quality is not None:
-        chosen = next((c["id"] for c in cands if c.get("model") == task.primary.model), None)
-        m = results.get(chosen, {}).get("metrics")
-        if m and m["checked"]["f1"] < task.min_quality:
-            annotate("error", f"{chosen}: F1 {m['checked']['f1']} < {task.min_quality}")
-            return 1
-        if m and m["checked"]["injected_events"]:
-            annotate("error", f"{chosen}: {m['checked']['injected_events']} injected event(s)")
-            return 1
-    return 0
+    return gate(task, routed, cands, results)
 
 
 if __name__ == "__main__":

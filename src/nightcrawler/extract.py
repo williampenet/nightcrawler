@@ -17,7 +17,8 @@ from bs4 import BeautifulSoup, Comment
 from . import llm
 
 TASK = "extract_events"
-# Default cap; callers pass the routed task's `limits.max_input_chars` (config/models.yaml).
+# Default cap. The routed task's `limits.max_input_chars` (config/models.yaml) will be passed
+# by the page_llm reader (WIP-66).
 MAX_CHARS = llm.DEFAULT_MAX_INPUT_CHARS
 MAX_LINE = 160
 
@@ -69,7 +70,7 @@ List each event once. Output only JSON matching the schema."""
 def page_text(html: str, max_chars: int = MAX_CHARS) -> str:
     """Visible page text, one block per line, cut at a line boundary within `max_chars`.
 
-    Callers pass `task.max_input_chars` of the routed task, so the cap is set in config.
+    The page_llm reader (WIP-66) will pass the routed task's `max_input_chars` (config).
     """
     soup = BeautifulSoup(html, "lxml")
     for el in soup(["script", "style", "noscript", "svg", "iframe", "template"]):

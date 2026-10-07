@@ -108,12 +108,15 @@ def test_load_tasks_reads_repo_config():
 
 
 def test_routed_model_is_the_evaluated_candidate():
-    """The routed request (model + extra) is exactly the eval candidate whose scores are cited."""
+    """The routed request (provider, model, extra) is the eval candidate whose scores are cited."""
+    from eval.__main__ import routed_candidate
+
     cands = yaml.safe_load(Path("eval/models.yaml").read_text("utf-8"))["extract_events"]
-    cand = next(c for c in cands if c["id"] == "gemma-4-26b-a4b-scaleway")
     t = llm.load_tasks("config/models.yaml")["extract_events"]
-    assert (t.primary.provider, t.primary.model) == (cand["provider"], cand["model"])
-    assert t.primary.extra == cand["extra"]
+    assert routed_candidate(cands, t)["id"] == "gemma-4-26b-a4b-scaleway"
+    # same model id, other provider or other extra: not the routed request
+    t.primary.extra = {}
+    assert routed_candidate(cands, t) is None
 
 
 def _write_task(tmp_path, limits):
@@ -130,9 +133,8 @@ def _write_task(tmp_path, limits):
 def test_max_input_chars_defaults_and_is_read(tmp_path):
     assert llm.load_tasks(_write_task(tmp_path, {}))["t"].max_input_chars == 7000
     assert llm.load_tasks(_write_task(tmp_path, None))["t"].max_input_chars == 7000
-    assert llm.load_tasks(_write_task(tmp_path, {"max_input_chars": 12000}))[
-        "t"
-    ].max_input_chars == (12000)
+    custom = llm.load_tasks(_write_task(tmp_path, {"max_input_chars": 12000}))["t"]
+    assert custom.max_input_chars == 12000
 
 
 @pytest.mark.parametrize("bad", [0, -1, "7000", 7000.5, True, None])
@@ -142,13 +144,15 @@ def test_max_input_chars_rejects_non_positive_int(tmp_path, bad):
 
 
 def test_page_text_honours_task_max_input_chars(tmp_path):
-    html = "<body>" + "".join(f"<p>line {i:04d}</p>" for i in range(3000)) + "</body>"
+    # 37-char lines: a 500 cap falls inside line 14 (13 x 38 = 494), so a mid-line cut would show
+    lines = [f"concert {i:04d} " + "x" * 24 for i in range(3000)]
+    html = "<body>" + "".join(f"<p>{line}</p>" for line in lines) + "</body>"
     task = llm.load_tasks(_write_task(tmp_path, {"max_input_chars": 500}))["t"]
     text = page_text(html, task.max_input_chars)
-    assert 490 <= len(text) <= 500
-    assert all(len(line) == 9 for line in text.split("\n"))  # cut at a line boundary only
+    assert text == "\n".join(lines[:13])  # whole lines only, as many as fit
     routed = llm.load_tasks("config/models.yaml")["extract_events"]
-    assert len(page_text(html, routed.max_input_chars)) <= 7000
+    long_text = page_text(html, routed.max_input_chars)
+    assert 7000 - 38 < len(long_text) <= 7000 and long_text == "\n".join(lines[:184])
 
 
 @respx.mock

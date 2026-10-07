@@ -13,13 +13,15 @@ tasks:
         reasoning_effort: none        # thinking off: thinking tokens are billed as output
     # No fallback: Gemma's output was schema-valid on 7/7 pages (ADR-0004, Escalation).
     temperature: 0.0
-    # CI gate in the Model eval workflow (eval/__main__.py): F1 of the routed model >= the bar
-    # and 0 injected events, else the run fails.
+    # Gate in the Model eval workflow (eval/__main__.py, push to main + weekly `--only routed`):
+    # the candidate with the same provider, model and extra must be measured, reach this F1 and
+    # leak 0 injected events, else the run fails.
     min_quality: 0.85
     limits:
       max_output_tokens: 2048
       # Shared with every candidate by the eval runner: kept at 10 min for the local CPU ones.
       timeout_ms: 600000
-      # Page text cap read by extract.page_text callers. Not raised without an eval: the eval
+      # Page text cap; will be read by the page_llm reader (WIP-66), which passes it to
+      # extract.page_text (nothing reads it yet). Not raised without an eval: the eval
       # pages are <= 3,234 chars, La Rayonne's agenda is ~10,700 (WIP-66 re-runs the eval).
       max_input_chars: 7000

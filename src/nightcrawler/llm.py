@@ -134,7 +134,8 @@ class Task:
     timeout_s: float = 120.0
     temperature: float = 0.0
     min_quality: float | None = None
-    max_input_chars: int = DEFAULT_MAX_INPUT_CHARS  # read by callers that build the input text
+    # input text cap; will be read by the page_llm reader (WIP-66) when it calls extract.page_text
+    max_input_chars: int = DEFAULT_MAX_INPUT_CHARS
 
 
 def _positive_int(value: Any, what: str) -> int:
