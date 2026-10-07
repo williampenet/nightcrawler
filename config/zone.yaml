@@ -24,6 +24,12 @@ excluded_venues:
 # listing_jsonld: listing page(s) -> event links on the same host whose path matches `include`
 # and not `exclude` -> schema.org Event JSON-LD of each detail page, at most `max_details`
 # pages; `{yyyymm}` in a URL is read for every month of the run window (WIP-62).
+# `paginate: {param, start, max}` also reads param=start, start+1... (at most `max` more pages
+# per URL) until a page brings no new link (WIP-64).
+# Optional per venue (WIP-64): `category` (e.g. music_venue: its events pass the venue-based
+# concert rule) and `latitude`/`longitude`. A known venue with the same name takes the
+# category; without one, a configured venue is created (venues.configured_venues), with
+# the configured coordinates or those of the known venue named in `coordinates_from`.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
 priority_venues:
   - name: Le Transbordeur
@@ -44,24 +50,31 @@ priority_venues:
       per_page: 50
       max_pages: 5
   - name: Opéra Underground
-    venue: Opéra Underground  # OSM venue without a website; JSON-LD says "Opéra de Lyon"
+    # no OSM venue of that name (run of 2026-10-07 08:10): a configured music venue, so its
+    # concerts are not left to the keyword rule. It plays in the Opéra building (the JSON-LD
+    # location is always "Opéra de Lyon"): same coordinates as the OSM "Opéra de Lyon", so
+    # the same show listed there (Ticketmaster...) merges within dedup's 300 m.
+    venue: Opéra Underground
+    category: music_venue
+    coordinates_from: Opéra de Lyon
     reader:
       type: listing_jsonld
-      # 11-12 links; detail JSON-LD is an array, one http://schema.org/Event per performance.
-      # The season is in the URL: update it each season.
+      # 11-12 links per page; detail JSON-LD is an array, one http://schema.org/Event per
+      # performance. Server-side pages: &page=2 brings 13 new links (&p=2 and &offset=12
+      # serve page 1 again; measured 2026-10-07). The season is in the URL: update it yearly.
       urls:
         - https://www.opera-lyon.com/programmation-reservations/saison-2026-2027?tag%5B0%5D=opera-underground
       include: ^/fr/programmation/[^/]+/opera-underground/[^/]+$
-      max_details: 30
+      paginate: {param: page, start: 2, max: 5}
+      max_details: 60
   - name: L'Épicerie Moderne
     venue: L'Épicerie Moderne
     reader:
       type: listing_jsonld
-      # 24 links on /agenda, "Afficher plus" = ?page=1; one Event object per detail page.
-      # "...scolaire" slugs are school sessions, not open to the public.
-      urls:
-        - https://epiceriemoderne.com/agenda
-        - https://epiceriemoderne.com/agenda?page=1
+      # 24 links on /agenda, "Afficher plus" = ?page=1 (pages count from 0); one Event object
+      # per detail page. "...scolaire" slugs are school sessions, not open to the public.
+      urls: [https://epiceriemoderne.com/agenda]
+      paginate: {param: page, start: 1, max: 3}
       include: ^/agenda/20\d\d-\d\d-\d\d-
       exclude: scolaire
       max_details: 60
@@ -70,8 +83,10 @@ priority_venues:
     reader:
       type: listing_jsonld
       # bare domain: www.marchegare.fr has a TLS name mismatch. 25 links, one Event per page;
-      # workshops are listed too and left to the concert filter.
+      # workshops are listed too and left to the concert filter. "Afficher plus" links to
+      # ?page=1 (seen through WebFetch on 2026-10-07; whether it holds new links: unverified).
       urls: [https://marchegare.fr/agenda]
+      paginate: {param: page, start: 1, max: 3}
       include: ^/agenda/[a-z0-9-]+$
       max_details: 60
   - name: Auditorium de Lyon

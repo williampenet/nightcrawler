@@ -6,6 +6,8 @@ Underground). Which listing URLs, which links count as events, and how many deta
 read are set per venue under `priority_venues` in `config/zone.yaml` (WIP-62).
 
 - A URL may hold `{yyyymm}`: it is read once per month of the run window.
+- `paginate: {param, start, max}` also reads `param=start`, `start+1`... (at most `max`
+  more pages per listing URL, existing query kept) until a page brings no new link.
 - Links are kept when they stay on the listing's host and their path matches `include` and
   not `exclude` (regexes); at most `max_details` detail pages are read, in listing order.
 - The JSON-LD reader is `structured.jsonld_events` (top-level object, `@graph`, arrays,
@@ -20,7 +22,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
-from urllib.parse import urldefrag, urljoin, urlsplit
+from urllib.parse import parse_qsl, urldefrag, urlencode, urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -68,6 +70,24 @@ def event_links(
     return list(dict.fromkeys(links))
 
 
+def with_param(url: str, key: str, value: int) -> str:
+    """The URL with `key=value` in its query, other parameters kept as they are."""
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != key]
+    return urlunsplit(parts._replace(query=urlencode([*query, (key, str(value))])))
+
+
+def _listing_links(fetcher: Fetcher, url: str, origin: str, reader: dict) -> tuple[list, str]:
+    """(event links of one listing page, "" or the error)."""
+    try:
+        resp = fetcher.get(url)
+    except httpx.HTTPError as exc:
+        return [], type(exc).__name__
+    if resp.status != 200:
+        return [], f"HTTP {resp.status}"
+    return event_links(resp.text, resp.url, reader["include"], reader.get("exclude"), origin), ""
+
+
 def read(
     reader: dict,
     venue: str,
@@ -82,24 +102,36 @@ def read(
     host = urlsplit(urls[0]).netloc.lower()
     source = f"listing_jsonld:{host}"
     cap = int(reader.get("max_details", DEFAULT_MAX_DETAILS))
+    pager = reader.get("paginate")
     links: list[str] = []
+    notes: list[str] = []
     pages, listing_errors, first_error = 0, 0, ""
     for url in urls:  # robots.txt refusing a listing page fails the venue (robots_blocked)
-        try:
-            resp = fetcher.get(url)
-            error = "" if resp.status == 200 else f"HTTP {resp.status}"
-        except httpx.HTTPError as exc:
-            error = type(exc).__name__
+        found, error = _listing_links(fetcher, url, url, reader)
         if error:  # e.g. a month not published yet: the other pages still count
             listing_errors += 1
             first_error = first_error or error
             continue
         pages += 1
-        links += event_links(resp.text, resp.url, reader["include"], reader.get("exclude"), url)
+        links += [link for link in found if link not in links]
+        if not pager:
+            continue
+        for n in range(pager["start"], pager["start"] + pager["max"]):
+            found, error = _listing_links(fetcher, with_param(url, pager["param"], n), url, reader)
+            if error and error != "HTTP 404":  # 404: past the last page, not an error
+                listing_errors += 1
+                first_error = first_error or error
+            new = [link for link in found if link not in links]
+            pages += not error
+            if not new:  # past the last page (error, empty, or page 1 served again)
+                break
+            links += new
+        else:
+            notes.append(f"page_cap: {url}")  # the last page allowed still brought new links
     if not pages:
         raise ValueError(f"no listing page read ({first_error})")
-    links = list(dict.fromkeys(links))
-    notes = [f"detail_cap: {cap} of {len(links)} links"] if len(links) > cap else []
+    if len(links) > cap:
+        notes.append(f"detail_cap: {cap} of {len(links)} links")
     if not links:
         notes.append("no_links")  # the include regex matches nothing: site changed?
     events: list[RawEvent] = []

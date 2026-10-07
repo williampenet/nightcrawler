@@ -21,8 +21,8 @@ MIXED_CATEGORIES = {
 class Venue:
     id: str  # stable id, e.g. "osm:node/123" or "tm:KovZ..."
     name: str
-    latitude: float
-    longitude: float
+    latitude: float | None  # None only for a configured venue without coordinates (WIP-64)
+    longitude: float | None
     category: str
     website: str | None = None
     address: str | None = None

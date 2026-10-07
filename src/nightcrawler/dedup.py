@@ -158,7 +158,9 @@ def near(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
     if a.venue_id == b.venue_id:
         return True
     va, vb = venues.get(a.venue_id), venues.get(b.venue_id)
-    return va is not None and vb is not None and distance_m(va, vb) <= MAX_DISTANCE_M
+    if va is None or vb is None or None in (va.latitude, vb.latitude):
+        return False  # unknown place, or a configured venue without coordinates
+    return distance_m(va, vb) <= MAX_DISTANCE_M
 
 
 def same_concert_across_runs(a: Concert, b: Concert, venues: dict[str, Venue]) -> bool:
@@ -259,7 +261,11 @@ def dedupe(concerts: list[Concert], venues: dict[str, Venue]) -> tuple[list[Conc
         for n, i in enumerate(idx):
             for j in idx[n + 1 :]:
                 a, b = concerts[i], concerts[j]
-                located = a.venue_id in venues and b.venue_id in venues  # not a bare place name
+                # not a bare place name, nor a configured venue without coordinates
+                located = all(
+                    venues.get(x) is not None and venues[x].latitude is not None
+                    for x in (a.venue_id, b.venue_id)
+                )
                 if located and not near(a, b, venues) and alike(i, j):
                     far_pairs.append((i, j))
     conflicts = sorted({tuple(sorted((group_of[i], group_of[j]))) for i, j in far_pairs})

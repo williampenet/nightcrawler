@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from .models import MIXED_CATEGORIES, MUSIC_CATEGORIES
+
 
 @dataclass(frozen=True)
 class Zone:
@@ -47,7 +49,7 @@ class Zone:
 
 def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    return Zone(
+    zone = Zone(
         name=str(data["name"]),
         latitude=float(data["latitude"]),
         longitude=float(data["longitude"]),
@@ -62,6 +64,10 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
     )
+    for entry in zone.priority_venues:
+        if "latitude" in entry and not zone.contains(entry["latitude"], entry["longitude"]):
+            raise ValueError(f"priority venue {entry['name']}: coordinates outside the zone")
+    return zone
 
 
 def _priority_venue(entry: dict) -> dict:
@@ -73,7 +79,22 @@ def _priority_venue(entry: dict) -> dict:
         _check_listing_jsonld(name, reader)
     else:
         raise ValueError(f"priority venue {name}: unknown reader type {reader.get('type')!r}")
-    return {"name": name, "venue": str(entry.get("venue") or name), "reader": reader}
+    out = {"name": name, "venue": str(entry.get("venue") or name), "reader": reader}
+    # optional, used when building venues (venues.priority_venues, WIP-64)
+    if (category := entry.get("category")) is not None:
+        if category not in MUSIC_CATEGORIES | MIXED_CATEGORIES:
+            raise ValueError(f"priority venue {name}: unknown category {category!r}")
+        out["category"] = category
+    coords = [entry.get("latitude"), entry.get("longitude")]
+    if coords != [None, None]:
+        if not all(isinstance(c, int | float) and not isinstance(c, bool) for c in coords):
+            raise ValueError(f"priority venue {name}: latitude and longitude must be numbers")
+        out["latitude"], out["longitude"] = float(coords[0]), float(coords[1])
+    if (source := entry.get("coordinates_from")) is not None:
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError(f"priority venue {name}: coordinates_from must be a venue name")
+        out["coordinates_from"] = source
+    return out
 
 
 def _check_ints(name: str, reader: dict, limits: dict[str, int | None]) -> None:
@@ -116,3 +137,9 @@ def _check_listing_jsonld(name: str, reader: dict) -> None:
         except (KeyError, re.error) as exc:
             raise ValueError(f"priority venue {name}: {key} must be a regex") from exc
     _check_ints(name, reader, {"max_details": None})
+    if (pager := reader.get("paginate")) is not None:
+        ok = isinstance(pager, dict) and isinstance(pager.get("param"), str) and pager["param"]
+        start, top = (pager.get(k) if ok else None for k in ("start", "max"))
+        ints = all(isinstance(n, int) and not isinstance(n, bool) for n in (start, top))
+        if not (ok and ints and start >= 0 and top >= 1):
+            raise ValueError(f"priority venue {name}: paginate needs param, start >= 0, max >= 1")
