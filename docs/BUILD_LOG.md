@@ -115,6 +115,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:reviewer | review WIP-62 | APPROVE + 7 non-blocking (redirect host as origin, silent zero-link ok, per-page exception isolation, redirect SSRF exposure → WIP-61, unanchored regexes, broad alias, rule in PR); 1-3, 5, 6 applied | PR #49 |
 | 2026-10-07 | agent:dev | build | WIP-64: listing pagination (`paginate: {param, start, max}`, stops on a page without new links; Opéra `&page=2`, Épicerie and Marché Gare `?page=1`) and configured venues (`category`, optional coordinates; created as `config:<key>` when no known venue has the name) so Opéra Underground concerts pass the venue rule | PR #50 |
 | 2026-10-07 | agent:reviewer | review WIP-64 | REQUEST_CHANGES: 1 blocking (coordinate-less config venue counted as located → false conflicts) + 5 non-blocking; fixed, plus coordinates_from so Opéra Underground merges with "Opéra de Lyon" listings | PR #50 |
+| 2026-10-07 | agent:reviewer | re-review WIP-64 | APPROVE at b561a3e; 1 non-blocking (warn when coordinates_from finds no venue; "Opéra de Lyon" is present in venues.json of 2026-10-06 22:52, checked by the orchestrator) | PR #50 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
