@@ -94,11 +94,13 @@
     return "sent";
   }
 
-  // Warning while ratings wait for a send key (WIP-70), or null. Only the count is shown
-  // ("avis" is the same in singular and plural).
-  function pendingBanner(queueLength, hasToken) {
+  // Warning while ratings wait for a send key or the key was refused (WIP-70), or null.
+  // Only the count is shown ("avis" is the same in singular and plural).
+  function pendingBanner(queueLength, hasToken, refused = false) {
     const n = Number.isInteger(queueLength) && queueLength > 0 ? queueLength : 0;
-    if (!n || hasToken) return null;
+    if (!n) return null;
+    if (hasToken && refused) return `${n} avis en attente : clé d'envoi refusée`;
+    if (hasToken) return null;
     return `${n} avis en attente d'envoi : saisis ta clé d'envoi`;
   }
 
