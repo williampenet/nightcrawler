@@ -233,6 +233,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:reviewer | re-review WIP-81 (d459314) | APPROVE: simulation (400 runs) gate 1 passes 0.90 for a better judge, 0.06 for a run-4-like one, 0.00 weak/random; recall check ≥ 0.94; nit (non-vacuity assertion in the leakage test) applied | PR #76 |
 | 2026-10-09 | agent:orchestrator | merge | PR #76 WIP-81 | PR #76 |
 | 2026-10-09 | agent:orchestrator | measure | [Judge eval run 37848873088](https://github.com/williampenet/nightcrawler/actions/runs/37848873088) (run 5): gate 1 fails (nn precision 36 % at the cross-validated 80 % cut, recall 90 %, bar 40 %); gate 2 passes narrowly (30 → 31.5 → 36 %); nearest vs random within noise; nothing routed; options (more ratings + LoRA cost study) put to William | [WIP-81](https://linear.app/wip-coding/issue/WIP-81) |
+| 2026-10-09 | agent:reviewer | review run 5 (798159b) | APPROVE: all figures match run 37848873088; gate 1 fails (29/81 = 36 %), gate 2 passes on unrounded counts (+5.5–6.1 points); nits applied: re-measuring is beyond the rule, gate 2 rests on one seed, "about 2 in 3 picks not liked" | PR #77 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

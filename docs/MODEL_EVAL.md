@@ -386,10 +386,15 @@ cut-off, `nn` gives precision 31 % (23–41 %) on 100 picks, recall 93 %.
   on one half lands at "discovery ≥ 30" and overshoots to 90 % recall on the other.
 - **Gate 2 passes, narrowly:** precision at that cut-off rises with the share of ratings, 1/3
   mean 30 % ≤ 2/3 mean 31.5 % ≤ all 36 %, +6 points (threshold +5), inside the ±12-point noise
-  stated in the ADR.
+  stated in the ADR; the 2/3 mean rests on one low seed (nn@2/3#1, 27 %), so the middle of the
+  curve is weak.
 - Nearest ratings vs random ones (all ratings): precision at the cut-off 36 % vs 33 %, default
   picks 44 % vs 41 %, pairwise 77 % vs 76 %: within noise.
 
-Nothing routed. Options put to William (2026-10-09): keep rating and re-measure, and in parallel a
-cost study for fine-tuning (LoRA) on his ratings.
+In plain words: to reach 80 % recall the judge must also keep its `discovery` verdicts, and then
+about 2 of every 3 rated concerts it picks are not to William's taste (29 liked of 81).
+
+Nothing routed. The rule prescribes the fine-tuning (LoRA) study after a gate 1 failure. Also put
+to William (2026-10-09), beyond the rule: keep rating and re-measure, since gate 1 is missed by
+4 points within its interval and gate 2 suggests ratings help.
 
