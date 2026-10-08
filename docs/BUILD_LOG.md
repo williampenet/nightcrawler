@@ -194,8 +194,10 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | fix review WIP-77 | test: gemma's first pair raises, its second is partly valid, annotation stays error; the unconditional-warning mutation now fails it (checked locally) | PR #68 |
 | 2026-10-08 | agent:reviewer | re-review WIP-77 (f188abc) | APPROVE: the test fails under the unconditional-warning mutation; code previously verified | PR #68 |
 | 2026-10-08 | agent:orchestrator | merge | PR #68 WIP-77 (33f1cc2) | PR #68 |
-| 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37745152264](https://github.com/williampenet/nightcrawler/actions/runs/37745152264): written taste still 0 chars in the store (William had filled it at 09:38: likely not synced, asked him); same inputs as run 1b, up to 5 points of run-to-run variation; best Mistral Small 3.2 + examples 49 % recall, pairwise 63 %; recorded as run 1c | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
+| 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37745152264](https://github.com/williampenet/nightcrawler/actions/runs/37745152264): written taste still 0 chars in the store (William had filled it at 09:38: likely not synced, asked him); same inputs as run 1b, run-to-run variation up to 5 points on recall, 4 on pairwise, 15 on precision (11–12 picks); best Mistral Small 3.2 + examples 49 % recall, pairwise 63 %; recorded as run 1c | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
 | 2026-10-08 | agent:orchestrator | fix | WIP-78: the judge eval makes no model call while the written taste is empty (notice, exit 0; `--allow-empty-taste` to force) | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
+| 2026-10-08 | agent:reviewer | review WIP-78 (3a6032e) | REQUEST_CHANGES: run 1c table and guard verified (test fails without the guard); "up to 5 points" held for recall/pairwise only, precision moved up to 15 points | PR #69 |
+| 2026-10-08 | agent:orchestrator | fix review WIP-78 | variation stated per metric (recall 5, pairwise 4, precision 15 on 11–12 picks) in MODEL_EVAL, ADR-0006 and BUILD_LOG | PR #69 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

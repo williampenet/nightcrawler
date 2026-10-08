@@ -242,9 +242,9 @@ his browser without syncing (**unverified**, being checked with him). Same site 
 | Qwen3.5 397B-A17B | profile | 8 % | 60 % on 5 | 58 % | 100 % | 2.4 | 0.65 |
 | Qwen3.5 397B-A17B | profile+examples | 13 % | 38 % on 8 | 54 % | 100 % | 3.9 | 0.87 |
 
-Same inputs as run 1b: the differences between 1b and 1c (up to 5 points on recall and pairwise,
-e.g. Qwen3.5 with examples recall 18 % → 13 %, Gemma profile pairwise 61 % → 57 %; Qwen3 235B with examples precision 29 % → 35 %, on
-17–20 picks) are a direct measure of run-to-run variation at temperature 0 on this hosted API.
+Same inputs as run 1b: the differences between 1b and 1c (up to 5 points on recall, e.g. Qwen3.5
+with examples 18 % → 13 %; up to 4 on pairwise, Gemma profile 61 % → 57 %; up to 15 on precision,
+Qwen3 235B profile 18 % → 33 % on 11–12 picks) are a direct measure of run-to-run variation at temperature 0 on this hosted API.
 Mistral Small 3.2 with examples is the best pair on recall in all three runs (49–51 %), still far
 from the 80 % gate. Since WIP-78 the runner makes no model call while the written taste is empty.
 

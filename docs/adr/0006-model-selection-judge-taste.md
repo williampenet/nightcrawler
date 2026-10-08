@@ -162,7 +162,8 @@ pairs, including the one run 1 missed, still no written taste) confirms it: reca
 rule-based score pairwise 48 %, former watch 6 of 13 rated picks liked (46 %). Run 1c
 ([37745152264](https://github.com/williampenet/nightcrawler/actions/runs/37745152264)) read the
 written taste as empty again (not synced from William's device, **unverified**); same reading,
-and it measures run-to-run variation on unchanged inputs (up to 5 points). Since then the
+and it measures run-to-run variation on unchanged inputs (up to 5 points on recall, 4 on pairwise, 15 on precision with 11–12
+picks). Since then the
 runner makes no call while the written taste is empty. Details:
 [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste in the event store.
 
