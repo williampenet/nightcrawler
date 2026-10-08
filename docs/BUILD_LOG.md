@@ -186,6 +186,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37740875208](https://github.com/williampenet/nightcrawler/actions/runs/37740875208): all 10 pairs, 100 labels (23/77), written taste still 0 chars; recall 8–49 %, best Mistral Small 3.2 + examples (49 %, pairwise 62 %); references: rule-based pairwise 48 %, former watch 6/13 rated picks liked; recorded as run 1b | [WIP-76](https://linear.app/wip-coding/issue/WIP-76) |
 | 2026-10-08 | agent:reviewer | review WIP-76 run 1b | REQUEST_CHANGES: all figures match run 37740875208; blocking: "~25 B models rank best" within noise; nits: "same code", overnight cause unverified, Qwen3.5 pair now measured, watch figure not comparable | PR #67 |
 | 2026-10-08 | agent:orchestrator | fix review WIP-76 run 1b | ranking claim replaced by pick counts + pairwise within noise; causes marked "possibly"; up to 5 points; missing pair measured; watch caveat | PR #67 |
+| 2026-10-08 | agent:reviewer | re-review WIP-76 run 1b (32299b6) | REQUEST_CHANGES: one sentence left ("up to 5 points" wrong: Gemma pairwise +6, Qwen3.5 precision +10 on 5–6 picks) | PR #67 |
+| 2026-10-08 | agent:orchestrator | fix | run-to-run difference restated: up to 6 points on recall/pairwise, up to 10 on precision with 5–6 picks | PR #67 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

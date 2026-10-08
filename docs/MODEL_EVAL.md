@@ -207,8 +207,9 @@ the 13 rated concerts it had reported were liked (46 %)**. Base rate: 23 % of la
 | Qwen3.5 397B-A17B | profile | 8 % | 50 % on 6 | 57 % | 100 % | 2.0 | 0.65 |
 | Qwen3.5 397B-A17B | profile+examples | 18 % | 38 % on 8 | 53 % | 100 % | 2.4 | 0.87 |
 
-Run 1 and 1b differ by up to 5 points for the same candidate (Gemma with examples, pairwise
-63 % → 58 %; Mistral Medium, recall 25 % → 20 %), possibly because the labels and published
+Between runs 1 and 1b, recall and pairwise differ by up to 6 points for the same pair (Gemma,
+profile only, pairwise 55 % → 61 %) and precision by up to 10 points on 5–6 picks (Qwen3.5,
+profile only, 40 % → 50 %), possibly because the labels and published
 concerts changed overnight (102 → 100 labels) and because temperature 0 does not guarantee
 identical answers from a hosted API; neither cause is measured separately. Run 1b also measures
 the pair missing from run 1 (Qwen3.5 397B with examples: recall 18 %), which changes nothing.
