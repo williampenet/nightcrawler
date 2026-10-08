@@ -398,6 +398,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conditions", default=",".join(CONDITIONS))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--max-calls", type=int, default=2500, help="cost guard for the whole run")
+    ap.add_argument(
+        "--allow-empty-taste",
+        action="store_true",
+        help="call the models even when the written taste is empty (WIP-78: off by default)",
+    )
     # eval/results/ is git-ignored; the workflow uploads the file (aggregates only)
     ap.add_argument("--results", default=str(ROOT.parent / "results" / "judge.json"))
     args = ap.parse_args(argv)
@@ -432,6 +437,11 @@ def main(argv: list[str] | None = None) -> int:
         f"{ref['watch_rated']} of its rated picks liked",
     )
 
+    if not taste_len and not args.allow_empty_taste:
+        # the written taste is the main input of FR-5: without it a run measures nothing the
+        # decision needs (runs 37738954308, 37740875208, 37745152264), so no paid call (WIP-78)
+        annotate("notice", "Judge eval: skipped: the written taste is empty in the event store")
+        return 0
     rows, skipped, results, calls, failed = [], {}, {}, 0, False
     try:
         for cand in candidates(args.only):

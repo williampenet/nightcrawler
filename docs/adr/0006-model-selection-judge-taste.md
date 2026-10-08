@@ -159,8 +159,12 @@ per-step cap: **unmeasured**): schema-valid on 100 % of answers, p95 ≤ 3.2 s, 
 51 %, pairwise 64 %). Rule step 4: nothing routed. Run 1b
 ([37740875208](https://github.com/williampenet/nightcrawler/actions/runs/37740875208), all 10
 pairs, including the one run 1 missed, still no written taste) confirms it: recall 8–49 %; references on the same 100 labels:
-rule-based score pairwise 48 %, former watch 6 of 13 rated picks liked (46 %). Details:
-[`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste.
+rule-based score pairwise 48 %, former watch 6 of 13 rated picks liked (46 %). Run 1c
+([37745152264](https://github.com/williampenet/nightcrawler/actions/runs/37745152264)) read the
+written taste as empty again (not synced from William's device, **unverified**); same reading,
+and it measures run-to-run variation on unchanged inputs (up to 5 points). Since then the
+runner makes no call while the written taste is empty. Details:
+[`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste in the event store.
 
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.

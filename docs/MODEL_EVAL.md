@@ -220,4 +220,32 @@ pairs, within the ~10-point noise level, so no candidate ranks clearly best. The
 directly comparable with the models' precision, since its picks are the reference positives
 (ADR-0006, Baseline).
 
-**Next:** run 2 once the written taste is filled in the app; same candidates, same rule.
+#### Run 1c — 2026-10-08, after William reported filling the written taste (still empty in the store)
+
+[Judge eval run 37745152264](https://github.com/williampenet/nightcrawler/actions/runs/37745152264),
+started by the merge of #68 (WIP-77) after William said at 09:38 that he had filled "Mon goût en
+mots". The event store still held **0 characters** (run annotation); the text most likely stayed in
+his browser without syncing (**unverified**, being checked with him). Same site data as run 1b
+(2026-10-08 08:38), same 100 labels (23 liked, 77 disliked), 78 positives; references unchanged
+(rule-based pairwise 48 %, former watch 6/13).
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 33 % | 36 % on 25 | 63 % | 100 % | 1.1 | 0.12 |
+| Mistral Small 3.2 24B | profile+examples | **49 %** | 34 % on 35 | **63 %** | 100 % | 1.3 | 0.17 |
+| Gemma 4 26B-A4B | profile | 35 % | 26 % on 27 | 57 % | 100 % | 1.0 | 0.21 |
+| Gemma 4 26B-A4B | profile+examples | 38 % | 27 % on 33 | 60 % | 100 % | 1.2 | 0.29 |
+| Mistral Medium 3.5 128B | profile | 23 % | 40 % on 15 | 53 % | 100 % | 1.6 | 1.43 |
+| Mistral Medium 3.5 128B | profile+examples | 27 % | 32 % on 22 | 54 % | 100 % | 1.7 | 1.96 |
+| Qwen3 235B-A22B 2507 | profile | 18 % | 33 % on 12 | 60 % | 100 % | 3.5 | 0.72 |
+| Qwen3 235B-A22B 2507 | profile+examples | 23 % | 35 % on 20 | 59 % | 100 % | 3.6 | 0.99 |
+| Qwen3.5 397B-A17B | profile | 8 % | 60 % on 5 | 58 % | 100 % | 2.4 | 0.65 |
+| Qwen3.5 397B-A17B | profile+examples | 13 % | 38 % on 8 | 54 % | 100 % | 3.9 | 0.87 |
+
+Same inputs as run 1b: the differences between 1b and 1c (up to 5 points on recall and pairwise,
+e.g. Qwen3.5 with examples recall 18 % → 13 %, Gemma profile pairwise 61 % → 57 %; Qwen3 235B with examples precision 29 % → 35 %, on
+17–20 picks) are a direct measure of run-to-run variation at temperature 0 on this hosted API.
+Mistral Small 3.2 with examples is the best pair on recall in all three runs (49–51 %), still far
+from the 80 % gate. Since WIP-78 the runner makes no model call while the written taste is empty.
+
+**Next:** run 2 once the written taste is in the event store; same candidates, same rule.

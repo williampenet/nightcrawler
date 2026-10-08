@@ -302,3 +302,28 @@ def test_failed_pair_and_partial_validity_stay_in_one_annotation(monkeypatch, tm
     gemma = out[2]
     assert gemma.startswith("::error::judge_taste gemma-4-26b-a4b-scaleway [profile]: failed")
     assert "[profile+examples]: recall" in gemma  # the later partly valid pair, still error
+
+
+def test_empty_written_taste_skips_every_call(monkeypatch, tmp_path, capsys):
+    """No paid call without the main FR-5 input, unless forced (WIP-78)."""
+    _setup(monkeypatch)
+    monkeypatch.setattr(runner.taste, "load_store", lambda url: {"state": {"taste_text": ""},
+                                                                 "feedback": []})  # fmt: skip
+    calls = []
+    monkeypatch.setattr(
+        llm,
+        "chat_json",
+        lambda spec, *a, **k: (
+            calls.append(1)
+            or llm.Answer(
+                {"verdict": "no", "reason": "r", "confidence": 50}, [], spec.model, 0.1, 1, 1
+            )
+        ),
+    )
+    out = tmp_path / "r.json"
+    assert runner.main(["--workers", "1", "--results", str(out)]) == 0
+    assert calls == [] and not out.exists()
+    assert "skipped: the written taste is empty" in capsys.readouterr().out
+    args = ["--only", "mistral-small-3.2-scaleway", "--conditions", "profile", "--workers", "1"]
+    assert runner.main([*args, "--allow-empty-taste", "--results", str(out)]) == 0
+    assert len(calls) == 5
