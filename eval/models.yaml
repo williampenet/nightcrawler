@@ -139,3 +139,73 @@ extract_events:
     # Not measured: replays the gold labels this model wrote (F1 = 1 by construction).
     provider: gold
     model: claude-opus-5-5
+
+# WIP-57 / ADR-0006: judge_taste (concert vs William's written profile). Run by `python -m
+# eval.judge` (workflow "Judge eval"), never by `python -m eval`. All on Scaleway Generative APIs,
+# Paris: the prompt holds personal data (profile, ratings), so EU host, zero retention by default,
+# no training (scaleway docs data-privacy page). Ids and EUR prices per M tokens from
+# https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-10-08); precision and
+# reasoning switches from the supported-models page (validated 2026-08-14). Reasoning off where the
+# page lists `reasoning_effort` (thinking tokens are billed as output).
+judge_taste:
+  - id: mistral-small-3.2-scaleway
+    publisher: Mistral AI (FR)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506
+    params: 24B
+    hosting: Scaleway Generative APIs (Paris), fp8
+    provider: scaleway
+    model: mistral-small-3.2-24b-instruct-2506
+    price_eur_per_mtok: {in: 0.15, out: 0.35}
+
+  - id: gemma-4-26b-a4b-scaleway
+    publisher: Google (US)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/google/gemma-4-26B-A4B-it
+    params: 25.2B total / 3.8B active (MoE)
+    hosting: Scaleway Generative APIs (Paris), bf16
+    provider: scaleway
+    model: gemma-4-26b-a4b-it
+    price_eur_per_mtok: {in: 0.25, out: 0.50}
+    extra: {reasoning_effort: none}
+
+  - id: mistral-medium-3.5-scaleway
+    publisher: Mistral AI (FR)
+    licence: Modified MIT (exceptions for companies with large revenue)
+    licence_source: https://huggingface.co/mistralai/Mistral-Medium-3.5-128B
+    params: 128B dense
+    hosting: Scaleway Generative APIs (Paris), fp8
+    provider: scaleway
+    model: mistral-medium-3.5-128b
+    price_eur_per_mtok: {in: 1.50, out: 7.50}
+    extra: {reasoning_effort: none}
+
+  - id: qwen3-235b-a22b-2507-scaleway
+    publisher: Alibaba Qwen (CN)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507
+    params: 235B total / 22B active (MoE)
+    hosting: Scaleway Generative APIs (Paris), precision not stated
+    provider: scaleway
+    model: qwen3-235b-a22b-instruct-2507
+    price_eur_per_mtok: {in: 0.75, out: 2.25}
+
+  - id: qwen3.5-397b-a17b-scaleway
+    publisher: Alibaba Qwen (CN)
+    licence: Apache-2.0
+    licence_source: https://huggingface.co/Qwen/Qwen3.5-397B-A17B
+    params: 397B total / 17B active (MoE)
+    hosting: Scaleway Generative APIs (Paris), int4
+    provider: scaleway
+    model: qwen3.5-397b-a17b
+    price_eur_per_mtok: {in: 0.60, out: 3.60}
+    extra: {reasoning_effort: none}
+
+  - id: baseline-claude
+    publisher: Anthropic (US)
+    licence: Proprietary
+    params: n/a
+    hosting: "US API, not called (personal data, PRD §7); stand-in: the former watch's precision
+      on William's ratings, reported by the runner"
+    provider: none
+    model: claude

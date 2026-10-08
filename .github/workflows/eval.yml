@@ -6,8 +6,9 @@ name: Model eval
 on:
   push:
     branches: [main]
-    paths: [eval/**, config/models.yaml, src/nightcrawler/llm.py, src/nightcrawler/extract.py,
-            .github/workflows/eval.yml]
+    # eval/judge/** is the judge_taste eval (workflow judge.yml): it must not start this one
+    paths: [eval/**, '!eval/judge/**', config/models.yaml, src/nightcrawler/llm.py,
+            src/nightcrawler/extract.py, .github/workflows/eval.yml]
   # Weekly check of the routed model only (`--only routed`), so a provider-side change to a hosted
   # model shows up as a failed gate (ADR-0004). ~11 k tokens on Scaleway per run (run 3: 7 pages x
   # 964 in / 585 out), < €0.01 at €0.25 / €0.50 per M tokens. Mondays 05:17 UTC.

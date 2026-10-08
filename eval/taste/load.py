@@ -89,7 +89,8 @@ def load_store(url: str, connect=None) -> dict:
 
 
 def load_site(source: str, get=None) -> dict:
-    """{concerts, artists, generated_at} from a site directory or the published site URL."""
+    """{concerts, artists, generated_at, coverage} from a site directory or the published site
+    URL (coverage: the run's FR-11 reference matching, used by the judge eval, WIP-57)."""
     data = {}
     if source.startswith(("https://", "http://")):
         if get is None:
@@ -110,6 +111,7 @@ def load_site(source: str, get=None) -> dict:
         "concerts": data["concerts"],
         "artists": data["artists"],
         "generated_at": (data["report"] or {}).get("generated_at"),
+        "coverage": (data["report"] or {}).get("coverage"),
     }
 
 
