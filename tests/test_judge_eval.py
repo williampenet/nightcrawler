@@ -144,6 +144,7 @@ def _setup(monkeypatch):
         "coverage": COVERAGE})  # fmt: skip
     monkeypatch.setattr(runner, "run_labels", lambda payload: LABELS)
     monkeypatch.setattr(runner, "load_reference", lambda path: REFERENCE)
+    monkeypatch.setattr(runner, "load_descriptions", lambda url, ids: {})
 
 
 def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys, caplog):
@@ -234,13 +235,13 @@ def test_main_cost_guard(monkeypatch, tmp_path):
         ),
     )
     out = tmp_path / "r.json"
-    rc = runner.main(["--only", "mistral-small-3.2-scaleway,qwen3.5-397b-a17b-scaleway",
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway",
                       "--workers", "1", "--max-calls", "6", "--results", str(out)])  # fmt: skip
     data = json.loads(out.read_text())
     # null token counts read as 0; every "no": precision 0 (ADR-0006); then the cost guard
     m = data["results"]["mistral-small-3.2-scaleway [profile]"]
     assert m["tokens_in"] == 0 and m["precision"] == 0.0 and m["picked_rated"] == 0
-    assert "cost guard" in data["skipped"]["qwen3.5-397b-a17b-scaleway [profile]"]
+    assert "cost guard" in data["skipped"]["gemma-4-26b-a4b-scaleway [profile]"]
     assert rc == 0
 
 
@@ -253,7 +254,8 @@ def test_candidates_are_eu_only(monkeypatch, tmp_path):
 
 
 def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
-    """One annotation per candidate plus the opening one, references included (WIP-76)."""
+    """One annotation per active candidate plus the opening one, references included (WIP-76);
+    the three larger models are retired since run 2 (WIP-79)."""
     _setup(monkeypatch)
     monkeypatch.setattr(
         llm,
@@ -265,7 +267,7 @@ def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
     assert runner.main(["--workers", "1", "--results", str(tmp_path / "r.json")]) == 0
     out = capsys.readouterr().out
     notes = [ln for ln in out.splitlines() if ln.startswith(("::notice::", "::warning::"))]
-    assert len(notes) == 1 + 5 and "rule-based pairwise 25%" in notes[0]
+    assert len(notes) == 1 + 2 and "rule-based pairwise 25%" in notes[0]
     assert all("[profile]" in n and "[profile+examples]" in n for n in notes[1:])
 
 
@@ -327,3 +329,53 @@ def test_empty_written_taste_skips_every_call(monkeypatch, tmp_path, capsys):
     args = ["--only", "mistral-small-3.2-scaleway", "--conditions", "profile", "--workers", "1"]
     assert runner.main([*args, "--allow-empty-taste", "--results", str(out)]) == 0
     assert len(calls) == 5
+
+
+def test_descriptions_reach_the_prompt_and_are_counted(monkeypatch, tmp_path, capsys):
+    """The listing's own description goes into the concert block (WIP-79); only its count is
+    printed."""
+    _setup(monkeypatch)
+    monkeypatch.setattr(runner, "load_descriptions", lambda url, ids: {
+        LIKED: "Drone &amp; doom from Seattle", REFONLY: "Secret blurb"})  # fmt: skip
+    prompts = []
+
+    def fake(spec, messages, *a, **k):
+        prompts.append(messages[1]["content"])
+        return llm.Answer({"verdict": "no", "reason": "r", "confidence": 50}, [], spec.model,
+                          0.1, 1, 1)  # fmt: skip
+
+    monkeypatch.setattr(llm, "chat_json", fake)
+    args = ["--only", "mistral-small-3.2-scaleway", "--conditions", "profile", "--workers", "1"]
+    assert runner.main([*args, "--results", str(tmp_path / "r.json")]) == 0
+    assert sum("Présentation par la salle : Drone & doom from Seattle" in p for p in prompts) == 1
+    out = capsys.readouterr().out
+    assert "2 with the listing's description" in out and "Secret blurb" not in out
+
+
+def test_load_descriptions_keeps_the_longest_read_only():
+    executed = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def transaction(self):
+            return self
+
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+            class R:
+                def fetchall(_):
+                    return [("a", "short"), ("a", "the longer one"), ("b", "x")]
+
+            return R()
+
+    got = runner.load_descriptions("postgresql://x", ["a", "b"], connect=lambda *a, **k: Conn())
+    assert got == {"a": "the longer one", "b": "x"}
+    assert executed[0][0] == "SET TRANSACTION READ ONLY" and "statement_timeout" in executed[1][0]
+    sql, params = executed[2]
+    assert "ANY(%s)" in sql and "ORDER BY" in sql and params == (["a", "b"],)
