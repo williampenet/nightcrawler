@@ -218,7 +218,9 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:reviewer | review run 3 | REQUEST_CHANGES: figures and Wilson 66–85 % verified; "improved the ranking" overstated (≤ 4-point bound from one pair of runs, single-run SE ≈ 6 points, confounded changes); "at 75 %" ambiguous | PR #73 |
 | 2026-10-08 | agent:orchestrator | fix review run 3 | ranking gain marked plausible but unverified (SE 6.3 points recomputed), confounding stated; BUILD_LOG wording; chat message to William corrected | PR #73 |
 | 2026-10-08 | human:william | feedback | Reports 51 "J'aime" given in the app (23:14); last count 23 liked / 85 disliked ([Taste eval 37770143500](https://github.com/williampenet/nightcrawler/actions/runs/37770143500), 13:27) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
-| 2026-10-08 | agent:orchestrator | config | WIP-80: judge.yml cost comment updated (two active candidates, cents per run, from run 3); the merge starts Judge eval run 4 (the agent cannot dispatch workflows, HTTP 403) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
+| 2026-10-08 | agent:orchestrator | config | WIP-80: judge.yml cost comment updated (two active candidates, ≈ €0.20 per run from run 3; five-candidate run 2 ≈ €1.7); the merge starts Judge eval run 4 (the agent cannot dispatch workflows, HTTP 403) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
+| 2026-10-08 | agent:reviewer | review WIP-80 | REQUEST_CHANGES: YAML valid, per-1,000 range and ~620 calls match run 3; per-run totals wrong (run 3 ≈ €0.20, run 2 ≈ €1.66) | PR #74 |
+| 2026-10-08 | agent:orchestrator | fix review WIP-80 | totals recomputed from the annotations (155 × Σ per-1,000: run 3 €0.20, run 2 €1.66) | PR #74 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
