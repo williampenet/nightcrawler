@@ -221,6 +221,11 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | config | WIP-80: judge.yml cost comment updated (two active candidates, ≈ €0.20 per run from run 3; five-candidate run 2 ≈ €1.7); the merge starts Judge eval run 4 (the agent cannot dispatch workflows, HTTP 403) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
 | 2026-10-08 | agent:reviewer | review WIP-80 | REQUEST_CHANGES: YAML valid, per-1,000 range and ~620 calls match run 3; per-run totals wrong (run 3 ≈ €0.20, run 2 ≈ €1.66) | PR #74 |
 | 2026-10-08 | agent:orchestrator | fix review WIP-80 | totals recomputed from the annotations (155 × Σ per-1,000: run 3 €0.20, run 2 €1.66) | PR #74 |
+| 2026-10-08 | agent:reviewer | re-review WIP-80 (ea24905) | APPROVE: cost comment matches runs 2 and 3 | PR #74 |
+| 2026-10-08 | agent:orchestrator | merge | PR #74 WIP-80 | PR #74 |
+| 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37845697361](https://github.com/williampenet/nightcrawler/actions/runs/37845697361) (run 4): 152 labels (34 liked of the 51 William reported), 87 positives; Mistral Small 3.2 + examples recall 72 % (Wilson 62–81 %), precision 44 % on 57 (base 22 %), pairwise 79 % (rule 52 %); amended gate proposed to William (pairwise above rule-based, recall ≥ 70 %) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
+| 2026-10-08 | agent:reviewer | review run 4 (dd99828) | APPROVE: figures, Wilson 62–81 %, SE 4.9 points, base rate 22 % verified; nits: Taste eval breakdown covers dislikes only, 70 % gate chosen after the result | PR #75 |
+| 2026-10-08 | agent:orchestrator | follow-ups run 4 | breakdown wording, precision interval 32–57 %, post-hoc 70 % threshold stated | PR #75 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
