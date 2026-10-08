@@ -168,8 +168,12 @@ runner makes no call while the written taste is empty. Details:
 [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2a
 ([37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688)) read
 82 characters of the written taste (most likely synced mid-typing, **unverified**): Mistral
-Small 3.2 rose to 76 % pairwise (precision 60 % on 15 picks, not established), recall 36–45 %, still below the gate; not the decision run. Run 2
-waits for the full text.
+Small 3.2 rose to 76 % pairwise (precision 60 % on 15 picks, not established), recall 36–45 %, still below the gate; not the decision run. **Run 2**
+([37753009539](https://github.com/williampenet/nightcrawler/actions/runs/37753009539), full
+written taste, 2,034 characters): best pair Mistral Small 3.2 with examples, recall 76 % (gate
+80 %), precision 36 % on 42 picks, pairwise 68 % (rule-based 48 %), €0.25 per 1,000; every other
+pair ≤ 45 % recall. Rule step 4: nothing routed; one improvement iteration proposed to William
+before a PM decision on the gate.
 
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
