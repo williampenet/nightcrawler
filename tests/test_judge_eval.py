@@ -267,3 +267,33 @@ def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
     notes = [ln for ln in out.splitlines() if ln.startswith(("::notice::", "::warning::"))]
     assert len(notes) == 1 + 5 and "rule-based pairwise 25%" in notes[0]
     assert all("[profile]" in n and "[profile+examples]" in n for n in notes[1:])
+
+
+def test_failed_pair_and_partial_validity_stay_in_one_annotation(monkeypatch, tmp_path, capsys):
+    """A failed pair is reported in its candidate's annotation, which becomes an error; a pair
+    under 100 % valid makes it a warning (WIP-77). Total: 1 + one per candidate."""
+    _setup(monkeypatch)
+    n = {"calls": 0}
+
+    def flaky(spec, *a, **k):
+        n["calls"] += 1
+        data = None if n["calls"] == 1 else {"verdict": "no", "reason": "r", "confidence": 50}
+        return llm.Answer(data, [], spec.model, 0.1, 1, 1, reason=None if data else "schema")
+
+    monkeypatch.setattr(llm, "chat_json", flaky)
+    real = runner.metrics
+    monkeypatch.setattr(
+        runner, "metrics",
+        lambda cand, *a: (_ for _ in ()).throw(KeyError()) if cand["id"].startswith("gemma")
+        else real(cand, *a),
+    )  # fmt: skip
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway",
+                      "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+    out = [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(("::notice::", "::warning::", "::error::"))
+    ]
+    assert rc == 1 and len(out) == 3
+    assert out[1].startswith("::warning::judge_taste mistral-small")  # one invalid answer
+    assert out[2].startswith("::error::judge_taste gemma-4-26b-a4b-scaleway [profile]: failed")

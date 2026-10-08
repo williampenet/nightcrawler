@@ -188,6 +188,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | fix review WIP-76 run 1b | ranking claim replaced by pick counts + pairwise within noise; causes marked "possibly"; up to 5 points; missing pair measured; watch caveat | PR #67 |
 | 2026-10-08 | agent:reviewer | re-review WIP-76 run 1b (32299b6) | REQUEST_CHANGES: one sentence left ("up to 5 points" wrong: Gemma pairwise +6, Qwen3.5 precision +10 on 5–6 picks) | PR #67 |
 | 2026-10-08 | agent:orchestrator | fix | run-to-run difference restated: up to 6 points on recall/pairwise, up to 10 on precision with 5–6 picks | PR #67 |
+| 2026-10-08 | human:william | feedback | Filled "Mon goût en mots" in the app (09:38) | [WIP-77](https://linear.app/wip-coding/issue/WIP-77) |
+| 2026-10-08 | agent:orchestrator | fix | WIP-77: a failed pair is reported in its candidate's annotation (level error), no separate annotation; warning/error escalation tested; manual dispatch of Judge eval refused to the agent (HTTP 403), so this merge starts run 2 | [WIP-77](https://linear.app/wip-coding/issue/WIP-77) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
