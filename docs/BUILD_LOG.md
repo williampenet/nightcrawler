@@ -190,6 +190,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | fix | run-to-run difference restated: up to 6 points on recall/pairwise, up to 10 on precision with 5–6 picks | PR #67 |
 | 2026-10-08 | human:william | feedback | Filled "Mon goût en mots" in the app (09:38) | [WIP-77](https://linear.app/wip-coding/issue/WIP-77) |
 | 2026-10-08 | agent:orchestrator | fix | WIP-77: a failed pair is reported in its candidate's annotation (level error), no separate annotation; warning/error escalation tested; manual dispatch of Judge eval refused to the agent (HTTP 403), so this merge starts run 2 | [WIP-77](https://linear.app/wip-coding/issue/WIP-77) |
+| 2026-10-08 | agent:reviewer | review WIP-77 (44f1b92) | REQUEST_CHANGES: code correct (level precedence, exit code, no personal data in annotations); test did not pin "error never downgraded" (old unconditional-warning mutation still passed) | PR #68 |
+| 2026-10-08 | agent:orchestrator | fix review WIP-77 | test: gemma's first pair raises, its second is partly valid, annotation stays error; the unconditional-warning mutation now fails it (checked locally) | PR #68 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
