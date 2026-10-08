@@ -468,6 +468,8 @@ def test_learning_curve_never_shows_a_case_its_own_rating(monkeypatch, tmp_path)
         seen.clear()
         runner.main(["--only", "mistral-small-3.2-scaleway", "--conditions", cond,
                      "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+        if cond in ("nn", "profile+examples"):
+            assert any("<<<EXEMPLES" in p for p in seen), cond  # not vacuous
         for prompt in seen:
             target = prompt.split("<<<CONCERT", 1)[1]
             examples = prompt.split("<<<CONCERT", 1)[0]
