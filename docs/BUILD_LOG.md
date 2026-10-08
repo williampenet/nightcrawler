@@ -160,6 +160,11 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-07 | agent:dev | fix | WIP-72 review: an "X : Y" title without a known prefix splits only on a hard separator on the right (else left side with 2 acts, else one act, so "Pord : Tournée Rouge & Noir" keeps the per-title artist lookup of main); prices, times, statuses, "DJ set", "N soirées" and a trailing " - 18:00" are no longer acts; 15 title cases + 1 enrich test added, 13 of them fail with the previous lineup.py | PR #61 |
 | 2026-10-07 | agent:reviewer | re-review WIP-72 (a6218db) | REQUEST_CHANGES: trailing " - 12€" / " - 20h30 - 12€" glued to last act; nb: Annulé/Entrée libre parts, PR size | PR #61 |
 | 2026-10-07 | agent:orchestrator | fix WIP-72 re-review | price alternative in STATUS_RE, annulé/entrée libre placeholders, 4 test titles; pytest 416 passed | PR #61 |
+| 2026-10-07 | agent:reviewer | re-review WIP-73 (331f411) | APPROVE. Main was merged into the branch afterwards (b0b4be3: BUILD_LOG, config/zone.yaml, tests only) before the squash merge | PR #60 |
+| 2026-10-07 | agent:reviewer | final re-review WIP-72 (5f1d213, main merged in) | APPROVE | PR #61 |
+| 2026-10-07 | agent:orchestrator | measure | [Taste eval run 37674210942](https://github.com/williampenet/nightcrawler/actions/runs/37674210942) (21:24): 103 labels (22 J'aime / 81 Pas pour moi); pairwise accuracy 49 % over 1,782 pairs; "sûrs" 1/2 liked, "inferred" 0/5, unscored 21/96. The current artist-similarity score orders pairs no better than chance: baseline for WIP-57 | [WIP-52](https://linear.app/wip-coding/issue/WIP-52) |
+| 2026-10-07 | agent:orchestrator | merge | PR #62 WIP-71 (bae541f, 21:53), PR #60 WIP-73 (3f2c021, 21:55), PR #61 WIP-72 (11aa521, 21:58); [Feedback function run 37678098965](https://github.com/williampenet/nightcrawler/actions/runs/37678098965) and [Pipeline run 37678502025](https://github.com/williampenet/nightcrawler/actions/runs/37678502025) green | PR #60–62 |
+| 2026-10-07 | agent:orchestrator | linear | WIP-71, WIP-73, WIP-72 moved to Done | [WIP-71](https://linear.app/wip-coding/issue/WIP-71) · [WIP-72](https://linear.app/wip-coding/issue/WIP-72) · [WIP-73](https://linear.app/wip-coding/issue/WIP-73) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
