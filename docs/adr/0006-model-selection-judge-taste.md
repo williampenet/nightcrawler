@@ -197,6 +197,12 @@ iteration 1, 69 of 155 cases with a description): Mistral Small 3.2 with example
 Gemma 4 with examples 50 % recall, pairwise 73 %. Still under the 80 % gate: the gate goes to
 William (rule step 4).
 
+**Run 4** ([37845697361](https://github.com/williampenet/nightcrawler/actions/runs/37845697361),
+152 labels, 34 liked): Mistral Small 3.2 with examples recall 72 % (63/87, Wilson 62–81 %),
+precision 44 % on 57 (base rate 22 %), pairwise 79 % (rule-based 52 % on the same labels);
+Gemma 4 with examples 54 %, 43 %, 68 %. Still under the 80 % gate; an amended gate is proposed to
+William (pairwise above the rule-based score, recall ≥ 70 %).
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 
