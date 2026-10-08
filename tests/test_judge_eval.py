@@ -267,3 +267,38 @@ def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
     notes = [ln for ln in out.splitlines() if ln.startswith(("::notice::", "::warning::"))]
     assert len(notes) == 1 + 5 and "rule-based pairwise 25%" in notes[0]
     assert all("[profile]" in n and "[profile+examples]" in n for n in notes[1:])
+
+
+def test_failed_pair_and_partial_validity_stay_in_one_annotation(monkeypatch, tmp_path, capsys):
+    """A failed pair is reported in its candidate's annotation, which becomes an error and stays
+    one even when a later pair is only partly valid; a partly valid pair alone gives a warning
+    (WIP-77). Total: 1 + one per candidate."""
+    _setup(monkeypatch)
+
+    def flaky(spec, messages, *a, **k):  # every candidate: the row-text case is invalid
+        bad = "Old Band" in messages[1]["content"]
+        data = None if bad else {"verdict": "no", "reason": "r", "confidence": 50}
+        return llm.Answer(data, [], spec.model, 0.1, 1, 1, reason="schema" if bad else None)
+
+    monkeypatch.setattr(llm, "chat_json", flaky)
+    real, seen = runner.metrics, []
+
+    def metrics(cand, *a):  # gemma's first pair raises, its second is partly valid
+        seen.append(cand["id"])
+        if cand["id"].startswith("gemma") and seen.count(cand["id"]) == 1:
+            raise KeyError()
+        return real(cand, *a)
+
+    monkeypatch.setattr(runner, "metrics", metrics)
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway",
+                      "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+    out = [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(("::notice::", "::warning::", "::error::"))
+    ]
+    assert rc == 1 and len(out) == 3
+    assert out[1].startswith("::warning::judge_taste mistral-small")  # partly valid only
+    gemma = out[2]
+    assert gemma.startswith("::error::judge_taste gemma-4-26b-a4b-scaleway [profile]: failed")
+    assert "[profile+examples]: recall" in gemma  # the later partly valid pair, still error

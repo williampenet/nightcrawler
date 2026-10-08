@@ -456,11 +456,14 @@ def main(argv: list[str] | None = None) -> int:
                     m = metrics(cand, cases, answers)
                 except Exception as exc:  # one pair never stops the others; type only
                     skipped[key] = f"error: {type(exc).__name__}"
-                    annotate("error", f"Judge eval: {key} failed ({type(exc).__name__})")
+                    # in the candidate's annotation, not a separate one (per-step cap, WIP-77)
+                    lines.append(f"judge_taste {key}: failed ({type(exc).__name__})")
+                    level = "error"
                     failed = True
                     continue
                 lines.append(compact(cand["id"], cond, m))
-                level = level if m["valid"] == 1 else "warning"
+                if m["valid"] != 1 and level == "notice":
+                    level = "warning"
                 failed |= not m["valid"]  # not one usable answer: the run fails
                 rows.append((cand["id"], cond, m))
                 results[key] = m
