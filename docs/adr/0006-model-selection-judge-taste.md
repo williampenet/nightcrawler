@@ -179,15 +179,17 @@ before a PM decision on the gate.
 Run 2 left Mistral Small 3.2 with examples 4 points under the recall gate. One iteration, same
 rule, same labels and positives:
 - **Input:** the listing's own event description (venue text), read from the event store
-  (`raw_events.payload` through `concert_sources`, already stored by the pipeline), HTML removed,
-  capped at 600 characters, inside the CONCERT data block (`judge.description_text`). Never
+  (`raw_events.payload` through `concert_sources`, already stored by the pipeline as plain text),
+  entities decoded, every run of angle brackets removed, capped at 600 characters, inside the CONCERT data block (`judge.description_text`). Never
   published: the site data has no description field.
 - **Examples:** 10 liked + 10 disliked instead of 6 + 6, same leakage rules.
 - **Candidates:** Mistral Small 3.2 and Gemma 4 26B-A4B only. The three larger models are
   retired: run 2 recall ≤ 35 % for each, at about 5–11 × the cost per 1,000 of Mistral Small 3.2 in
   the same condition (run 2 annotations).
 - If Mistral Small 3.2 passes the gates, it is proposed for routing (✋ William); otherwise the
-  80 % gate itself goes to William, since it comes from the PRD (FR-5 AC).
+  80 % gate itself goes to William, since it comes from the PRD (FR-5 AC). A pass by a few points
+  is inside the noise (run-to-run recall variation up to 5 points on unchanged inputs, runs
+  1b–1c; Wilson 95 % on 78 positives about ±10 points) and will be reported as such.
 
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.

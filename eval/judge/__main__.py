@@ -84,7 +84,8 @@ def load_descriptions(url: str, ids: list[str], connect=None) -> dict[str, str]:
         rows = conn.execute(
             "SELECT cs.concert_id, r.payload->>'description' FROM concert_sources cs "
             "JOIN raw_events r ON r.id = cs.raw_id "
-            "WHERE cs.concert_id = ANY(%s) AND coalesce(r.payload->>'description', '') <> ''",
+            "WHERE cs.concert_id = ANY(%s) AND coalesce(r.payload->>'description', '') <> '' "
+            "ORDER BY cs.concert_id, r.id",  # ties: the first stored listing, every run
             (ids,),
         ).fetchall()
     out: dict[str, str] = {}

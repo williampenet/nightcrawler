@@ -336,7 +336,7 @@ def test_descriptions_reach_the_prompt_and_are_counted(monkeypatch, tmp_path, ca
     printed."""
     _setup(monkeypatch)
     monkeypatch.setattr(runner, "load_descriptions", lambda url, ids: {
-        LIKED: "<p>Drone &amp; doom from Seattle</p>", REFONLY: "Secret blurb"})  # fmt: skip
+        LIKED: "Drone &amp; doom from Seattle", REFONLY: "Secret blurb"})  # fmt: skip
     prompts = []
 
     def fake(spec, messages, *a, **k):
@@ -366,7 +366,7 @@ def test_load_descriptions_keeps_the_longest_read_only():
             return self
 
         def execute(self, sql, params=None):
-            executed.append(sql)
+            executed.append((sql, params))
 
             class R:
                 def fetchall(_):
@@ -376,4 +376,6 @@ def test_load_descriptions_keeps_the_longest_read_only():
 
     got = runner.load_descriptions("postgresql://x", ["a", "b"], connect=lambda *a, **k: Conn())
     assert got == {"a": "the longer one", "b": "x"}
-    assert executed[0] == "SET TRANSACTION READ ONLY" and "statement_timeout" in executed[1]
+    assert executed[0][0] == "SET TRANSACTION READ ONLY" and "statement_timeout" in executed[1][0]
+    sql, params = executed[2]
+    assert "ANY(%s)" in sql and "ORDER BY" in sql and params == (["a", "b"],)

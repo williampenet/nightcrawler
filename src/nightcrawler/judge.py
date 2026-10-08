@@ -49,10 +49,11 @@ MAX_ACTS = 8
 MAX_FIELD = 200  # characters kept from any one concert field
 # the listing's own event text (WIP-79), read from the event store at judge time, never published
 MAX_DESCRIPTION = 600
-TAG_RE = re.compile(r"<[^>]{0,500}>")
 EXAMPLES_PER_LABEL = 10  # WIP-79 (6 in runs 1–2, ADR-0006)
-# runs of 2+ angle brackets are removed, so no data field can rebuild a <<<…/…>>> marker
-MARKER_RE = re.compile(r"<{2,}|>{2,}")
+# every run of 2+ angle brackets, mixed or not, is removed whole: what is left beside a removed
+# run is never a bracket, so no data field can rebuild a <<<…/…>>> marker (review of PR #72:
+# the former "<{2,}|>{2,}" turned "CONCERT><<><<>" into "CONCERT>>>")
+MARKER_RE = re.compile(r"[<>]{2,}")
 
 SYSTEM = """Tu aides une personne à choisir ses concerts. Tu juges UN concert par rapport à son
 goût, décrit dans ses propres mots, et à ses avis passés.
@@ -150,11 +151,12 @@ def concert_text(concert: dict, artists: dict) -> str:
 
 
 def description_text(text: object) -> str:
-    """The listing's own description as one line of data: tags removed, entities decoded, markers
-    stripped, capped at MAX_DESCRIPTION characters (on a word boundary when possible)."""
+    """The listing's own description as one line of data: entities decoded first, then markers
+    stripped (so an encoded marker is caught too), capped at MAX_DESCRIPTION characters (on a word
+    boundary when possible). Stored descriptions are already plain text (`structured._text`)."""
     if not isinstance(text, str):
         return ""
-    out = _clean(html.unescape(TAG_RE.sub(" ", text)), limit=len(text) + 1)
+    out = _clean(html.unescape(text), limit=len(text) + 1)
     if len(out) > MAX_DESCRIPTION:
         cut = out[:MAX_DESCRIPTION]
         out = (cut.rsplit(" ", 1)[0] if " " in cut[-60:] else cut) + " …"
