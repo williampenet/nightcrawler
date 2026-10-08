@@ -250,3 +250,20 @@ def test_candidates_are_eu_only(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     with pytest.raises(ValueError, match="not allowed for personal data"):
         runner.candidates("")
+
+
+def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
+    """One annotation per candidate plus the opening one, references included (WIP-76)."""
+    _setup(monkeypatch)
+    monkeypatch.setattr(
+        llm,
+        "chat_json",
+        lambda spec, *a, **k: llm.Answer(
+            {"verdict": "for_you", "reason": "r", "confidence": 60}, [], spec.model, 0.1, 1, 1
+        ),
+    )
+    assert runner.main(["--workers", "1", "--results", str(tmp_path / "r.json")]) == 0
+    out = capsys.readouterr().out
+    notes = [ln for ln in out.splitlines() if ln.startswith(("::notice::", "::warning::"))]
+    assert len(notes) == 1 + 5 and "rule-based pairwise 25%" in notes[0]
+    assert all("[profile]" in n and "[profile+examples]" in n for n in notes[1:])
