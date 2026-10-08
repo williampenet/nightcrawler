@@ -304,6 +304,6 @@ iteration (the venue's own event description in the input, 10 + 10 examples) on 
 models, then either route Mistral Small 3.2 if it passes, or a PM decision on the 80 % gate.
 
 What the written taste changed (runs 1b–1c → 2, same labels): Mistral Small 3.2 with examples
-49 % → 76 % recall and 62–63 % → 68 % pairwise, beyond the run-to-run variation measured on
-unchanged inputs (≤ 5 points recall, ≤ 4 pairwise). Precision on William's labels stays 31–44 %
+49 % → 76 % recall, far beyond the run-to-run variation measured on unchanged inputs (≤ 5
+points), and 62–63 % → 68 % pairwise, only marginally beyond it (≤ 4 points, one pair of runs). Precision on William's labels stays 31–44 %
 for every pair (base rate 23 %); the larger models still pick fewer concerts and are not better.

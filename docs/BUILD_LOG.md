@@ -207,6 +207,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:reviewer | re-review run 2a (d9e3797) | APPROVE: baseline 35–36 %, "unverified" in all three docs, per-metric comparison; nit on the Wilson lower bound wording applied | PR #70 |
 | 2026-10-08 | human:william | feedback | Corrected "Mon goût en mots" (profile synced) and started the Judge eval manually | [WIP-57](https://linear.app/wip-coding/issue/WIP-57) |
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37753009539](https://github.com/williampenet/nightcrawler/actions/runs/37753009539) (run 2, written taste 2,034 chars): best Mistral Small 3.2 + examples recall 76 % (gate 80 %), precision 36 % on 42, pairwise 68 % (rule 48 %), €0.25 / 1,000; others ≤ 45 % recall; ADR-0006 step 4: nothing routed; improvement iteration proposed to William | [WIP-57](https://linear.app/wip-coding/issue/WIP-57) |
+| 2026-10-08 | agent:reviewer | review run 2 (9e7dd5e) | APPROVE: table matches run 37753009539, gates and step 4 correctly applied, Wilson 59/78 = 65–84 %; nit (pairwise gain only marginal vs run-to-run variation) applied | PR #71 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
