@@ -276,4 +276,34 @@ precision gain is not established: its Wilson 95 % interval on 15 picks (36–80
 the earlier values. Every pair still
 misses the 80 % recall gate. Not the decision run: the text was incomplete.
 
-**Next:** run 2 with the full text.
+#### Run 2 — 2026-10-08, full written taste (2,034 characters): decision run
+
+[Judge eval run 37753009539](https://github.com/williampenet/nightcrawler/actions/runs/37753009539),
+started by William (manual dispatch, 10:54). Written taste 2,034 characters; same site data and
+labels as runs 1b–2a (100 labels, 23 liked, 77 disliked; 78 positives); references: rule-based
+pairwise 48 %, former watch 6/13.
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 53 % | 36 % on 36 | 67 % | 100 % | 2.3 | 0.20 |
+| Mistral Small 3.2 24B | profile+examples | **76 %** | 36 % on 42 | **68 %** | 100 % | 2.4 | 0.25 |
+| Gemma 4 26B-A4B | profile | 37 % | 35 % on 26 | 66 % | 100 % | 1.0 | 0.34 |
+| Gemma 4 26B-A4B | profile+examples | 45 % | 33 % on 33 | 66 % | 100 % | 0.9 | 0.42 |
+| Mistral Medium 3.5 128B | profile | 27 % | 44 % on 16 | 61 % | 100 % | 1.6 | 2.15 |
+| Mistral Medium 3.5 128B | profile+examples | 35 % | 33 % on 24 | 61 % | 100 % | 1.8 | 2.67 |
+| Qwen3 235B-A22B 2507 | profile | 23 % | 31 % on 16 | 59 % | 100 % | 4.1 | 1.15 |
+| Qwen3 235B-A22B 2507 | profile+examples | 33 % | 41 % on 17 | 63 % | 100 % | 4.0 | 1.41 |
+| Qwen3.5 397B-A17B | profile | 24 % | 31 % on 13 | 60 % | 100 % | 5.5 | 0.97 |
+| Qwen3.5 397B-A17B | profile+examples | 31 % | 38 % on 16 | 59 % | 100 % | 3.2 | 1.18 |
+
+**Applying the ADR-0006 rule:** step 1 gates: no pair reaches 80 % recall (best: Mistral Small 3.2
+with examples, 76 %; its Wilson 95 % interval on 78 positives is about 65–84 %, so the gap is
+within noise but the gate is not met). Valid 100 %, p95 ≤ 5.5 s and pairwise above 48 % hold for
+every pair. Step 4: **nothing routed**; options reported to William (2026-10-08): one improvement
+iteration (the venue's own event description in the input, 10 + 10 examples) on the two ~25 B
+models, then either route Mistral Small 3.2 if it passes, or a PM decision on the 80 % gate.
+
+What the written taste changed (runs 1b–1c → 2, same labels): Mistral Small 3.2 with examples
+49 % → 76 % recall, far beyond the run-to-run variation measured on unchanged inputs (≤ 5
+points), and 62–63 % → 68 % pairwise, only marginally beyond it (≤ 4 points, one pair of runs). Precision on William's labels stays 31–44 %
+for every pair (base rate 23 %); the larger models still pick fewer concerts and are not better.
