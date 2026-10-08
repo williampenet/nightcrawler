@@ -1,7 +1,7 @@
 """Model eval for `judge_taste` (WIP-57, ADR-0006): `python -m eval.judge [--only id,id]`.
 
 Judges William's labelled concerts and the FR-11 reference positives with every candidate of
-`eval/judge/models.yaml`, in two prompt conditions, and publishes aggregated metrics
+`eval/judge/models.yaml`, in the prompt conditions of CONDITIONS, and publishes aggregated metrics
 only: one notice per candidate and condition, and a markdown table in the job summary. The repo
 is public: never print a title, a name, an id, the profile, a prompt or a model's reason.
 
@@ -353,34 +353,48 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
 def cv_operating_point(cases: list[dict], sc: list[float], target: float) -> dict:
     """Two-fold cross-validated cut-off on the judge's score (WIP-81). Cases are split in two by a
     hash of their id; on each half the cut-off is the highest score whose recall on that half's
-    positives reaches `target`; it decides the picks of the other half. Recall (positives) and
-    precision (William's labels) are computed on these out-of-fold picks."""
+    positives reaches `target`; it decides the picks of the other half (every case tied at the
+    cut-off is picked). Recall (positives) and precision (William's labels) are computed on these
+    out-of-fold picks. The out-of-fold recall lands near `target` by construction, so the quality
+    signal is the precision at that cut-off (ADR-0006, iteration 2). A cut-off that would reach
+    an unusable answer (score -1, counted as "no") gives no figure."""
+    none = {"recall": None, "recall_wilson95": None, "precision": None,
+            "precision_wilson95": None, "picked_rated": 0, "cuts": []}  # fmt: skip
     fold = [_h("fold", c["concert"].get("id")) % 2 for c in cases]
     pos = [c["label"] in ("liked", "positive") for c in cases]
     picked = [False] * len(cases)
+    cuts = []
     for f in (0, 1):
         train = sorted((sc[i] for i in range(len(cases)) if fold[i] != f and pos[i]), reverse=True)
         if not train:
-            return {
-                "recall": None,
-                "precision": None,
-                "precision_wilson95": None,
-                "picked_rated": 0,
-            }
-        need = math.ceil(target * len(train))
-        cut = train[need - 1]
+            return none
+        cut = train[math.ceil(target * len(train)) - 1]
+        if cut < 0:
+            return none
+        cuts.append(cut_label(cut))
         for i in range(len(cases)):
             if fold[i] == f:
                 picked[i] = sc[i] >= cut
     rated = [i for i, c in enumerate(cases) if c["kind"] == "rated"]
     rp = [i for i in rated if picked[i]]
     liked = sum(cases[i]["label"] == "liked" for i in rp)
+    hits = sum(picked[i] for i in range(len(cases)) if pos[i])
     return {
-        "recall": ratio(sum(picked[i] for i in range(len(cases)) if pos[i]), sum(pos)),
+        "recall": ratio(hits, sum(pos)),
+        "recall_wilson95": wilson(hits, sum(pos)),
         "precision": ratio(liked, len(rp)) or 0.0,
         "precision_wilson95": wilson(liked, len(rp)),
         "picked_rated": len(rp),
+        "cuts": cuts,
     }
+
+
+def cut_label(score: float) -> str:
+    """A cut-off score as the answer it stands for, e.g. "discovery ≥ 70" or "no ≤ 40"."""
+    rank = min(int(score), 3)
+    verdict = {v: k for k, v in judge.VERDICT_RANK.items()}[rank]
+    conf = round((score - rank) * 101)
+    return f"no ≤ {100 - conf}" if verdict == "no" else f"{verdict} ≥ {conf}"
 
 
 def references(cases: list[dict]) -> dict:
@@ -433,7 +447,9 @@ def compact(cid: str, cond: str, m: dict) -> str:
 def cv_text(m: dict) -> str:
     """Cross-validated operating points (WIP-81): out-of-fold recall and precision."""
     parts = [
-        f"@{t}: recall {pct(p['recall'])}, precision {pct(p['precision'])} on {p['picked_rated']}"
+        f"@{t}: precision {pct(p['precision'])}{ci(p['precision_wilson95'])} on "
+        f"{p['picked_rated']}, recall {pct(p['recall'])}{ci(p['recall_wilson95'])}, cut "
+        f"{' / '.join(p['cuts']) or 'n/a'}"
         for t, p in (m.get("cv") or {}).items()
     ]
     return f"; cut-off cross-validated {' / '.join(parts)}" if parts else ""
@@ -454,8 +470,8 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
         "",
         "| Candidate | Condition | Recall picked (95 % CI) | + discovery | Precision on labels "
         "(95 % CI) | Pairwise (valid only) | Valid (errors) | p95 s | Tokens in / out | "
-        "€ / 1,000 | Verdicts |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "€ / 1,000 | Verdicts | Cross-validated cut-offs |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for cid, cond, m in rows:
         verdicts = ", ".join(f"{k or 'invalid'} {v}" for k, v in m["verdicts"].items())
@@ -464,10 +480,11 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
             f"{pct(m['recall_with_discovery'])} | {pct(m['precision'])}"
             f"{ci(m['precision_wilson95'])} on {m['picked_rated']} | {pct(m['pairwise'])} "
             f"({pct(m['pairwise_valid'])}) | {pct(m['valid'])} ({errs(m)}) | {m['p95_s']} | "
-            f"{m['tokens_in']} / {m['tokens_out']} | {m['eur_per_1000']} | {verdicts} |"
+            f"{m['tokens_in']} / {m['tokens_out']} | {m['eur_per_1000']} | {verdicts} | "
+            f"{cv_text(m).removeprefix('; cut-off cross-validated ') or 'n/a'} |"
         )
     for cid, why in skipped.items():
-        out.append(f"| {cid} | — | skipped: {why} | | | | | | | | |")
+        out.append(f"| {cid} | — | skipped: {why} | | | | | | | | | |")
     out += [
         "",
         "Recall by subset (picked / n): "

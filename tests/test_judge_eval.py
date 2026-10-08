@@ -410,16 +410,70 @@ def test_subsample_is_nested_per_label_and_seeded():
     assert runner.subsample(rated, 1 / 3, 2) != third and runner.subsample(rated, 1.0, 1) == rated
 
 
+def _cv_cases(n=60):
+    return [{"concert": {"id": f"c{i}"}, "kind": "rated",
+             "label": "liked" if i % 3 else "disliked"} for i in range(n)]  # fmt: skip
+
+
 def test_cv_operating_point_uses_the_other_half():
     """The cut-off is learnt on one half of the cases and applied to the other (WIP-81)."""
-    cs = [{"concert": {"id": f"c{i}"}, "kind": "rated", "label": "liked" if i % 3 else "disliked"}
-          for i in range(60)]  # fmt: skip
-    sc = [3.5 if c["label"] == "liked" else 0.2 for c in cs]  # a perfect judge
+    cs = _cv_cases()
+    S = runner.judge.score
+    yes, no = S({"verdict": "must_see", "confidence": 90}), S({"verdict": "no", "confidence": 80})
+    sc = [yes if c["label"] == "liked" else no for c in cs]  # a perfect judge
     p = runner.cv_operating_point(cs, sc, 0.8)
-    assert p["recall"] == 1.0 and p["precision"] == 1.0 and p["picked_rated"] == 40
-    noisy = [0.5 if i % 2 else s for i, s in enumerate(sc)]  # half the scores uninformative
-    q = runner.cv_operating_point(cs, noisy, 0.9)
-    assert q["recall"] >= 0.8 and q["precision"] < 1.0
+    assert (p["recall"], p["precision"], p["picked_rated"]) == (1.0, 1.0, 40)
+    assert p["cuts"] == ["must_see ≥ 90", "must_see ≥ 90"]
+    # liked scores differ between halves: each cut-off comes from the *other* half
+    fold = [runner._h("fold", c["concert"]["id"]) % 2 for c in cs]
+    mid = S({"verdict": "for_you", "confidence": 50})
+    sc2 = [(yes if fold[i] == 0 else mid) if c["label"] == "liked" else no
+           for i, c in enumerate(cs)]  # fmt: skip
+    q = runner.cv_operating_point(cs, sc2, 0.8)
+    # half 0 is cut at half 1's level (for_you ≥ 50), half 1 at half 0's (must_see ≥ 90):
+    # half 1's likes (for_you 50) fall under it, so recall is only half 0's share
+    assert sorted(q["cuts"]) == ["for_you ≥ 50", "must_see ≥ 90"]
+    assert q["recall"] == round(sum(1 for i, c in enumerate(cs) if c["label"] == "liked"
+                                    and fold[i] == 0) / 40, 3)  # fmt: skip
+
+
+def test_cv_operating_point_ties_invalid_and_empty_folds():
+    cs = _cv_cases()
+    tied = [runner.judge.score({"verdict": "discovery", "confidence": 50})] * len(cs)  # all tied
+    t = runner.cv_operating_point(cs, tied, 0.8)
+    assert t["recall"] == 1.0 and t["precision"] == round(40 / 60, 3)
+    assert t["cuts"] == ["discovery ≥ 50", "discovery ≥ 50"]
+    invalid = [-1.0 if c["label"] == "liked" and i % 2 else 3.5 for i, c in enumerate(cs)]
+    assert runner.cv_operating_point(cs, invalid, 0.9)["recall"] is None  # cut would reach -1
+    only_neg = [{**c, "label": "disliked"} for c in cs]
+    assert runner.cv_operating_point(only_neg, [1.0] * len(cs), 0.8)["precision"] is None
+    S = runner.judge.score
+    assert runner.cut_label(S({"verdict": "no", "confidence": 80})) == "no ≤ 80"
+    assert runner.cut_label(S({"verdict": "for_you", "confidence": 71})) == "for_you ≥ 71"
+
+
+def test_learning_curve_never_shows_a_case_its_own_rating(monkeypatch, tmp_path):
+    """In every condition, a rated case's prompt holds neither its own rating nor one sharing
+    an artist with it (the pool shrinks; the leakage rules do not)."""
+    _setup(monkeypatch)
+    seen = []
+
+    def fake(spec, messages, *a, **k):
+        seen.append(messages[1]["content"])
+        return llm.Answer({"verdict": "no", "reason": "r", "confidence": 50}, [], spec.model,
+                          0.1, 1, 1)  # fmt: skip
+
+    monkeypatch.setattr(llm, "chat_json", fake)
+    for cond in runner.DEFAULT_CONDITIONS:
+        seen.clear()
+        runner.main(["--only", "mistral-small-3.2-scaleway", "--conditions", cond,
+                     "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+        for prompt in seen:
+            target = prompt.split("<<<CONCERT", 1)[1]
+            examples = prompt.split("<<<CONCERT", 1)[0]
+            for title in ("Earth live", "Popstar tour", "Boris night"):
+                if f"Titre : {title}" in target:
+                    assert title not in examples, (cond, title)
 
 
 def test_default_conditions_run_the_learning_curve(monkeypatch, tmp_path, capsys):
