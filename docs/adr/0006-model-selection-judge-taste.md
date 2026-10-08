@@ -134,9 +134,9 @@ is reported too. *Precision* = liked / picked among William's labels; when nothi
 picked it is 0.
 
 **Decision rule** (one candidate × condition pair is chosen):
-1. **Gates:** recall of picked on the positives ≥ 80 %; pairwise accuracy > 49 % (the rule-based
-   score on the same labels in the same run, if that differs from 49 %); valid answers ≥ 95 %;
-   p95 latency ≤ 30 s.
+1. **Gates:** recall of picked on the positives ≥ 80 %; pairwise accuracy above the rule-based
+   score's, measured on the same labels in the same run (49 % on 2026-10-07); valid answers
+   ≥ 95 %; p95 latency ≤ 30 s.
 2. Among the pairs that pass, let P be the best precision. The pairs within **10 points** of P
    (the noise level below) are equivalent on quality.
 3. Among those, the cheapest per 1,000 judgements (measured tokens) wins; if an EU-publisher pair
@@ -190,7 +190,7 @@ small one fails the schema).
 - **Eval:** ~170 judgements × 2 conditions × 5 candidates ≈ 4.3 M tokens in, ≈ €3 one-off at list
   prices (**unverified**, measured by the run).
 - Scaleway's free tier covers the first 1 M tokens of the project
-  ([pricing](https://www.scaleway.com/en/pricing/model-as-a-service/)), already partly used by
-  ADR-0004.
+  ([pricing](https://www.scaleway.com/en/pricing/model-as-a-service/)); how much of it ADR-0004's
+  runs already used is not measured (**unverified**).
 - **Production:** ≤ 1,500 judgements / month × €0.40–4.35 / 1 000 = €0.6–6.5 / month depending
   on the winner, inside the ~€20 budget.

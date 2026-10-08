@@ -204,9 +204,9 @@ def score(data: dict) -> float:
     """Ranking score in [0, 4): the verdict's rank, then confidence as a tie-break. Confidence is
     the certainty on the verdict, so it raises a positive verdict (must_see, for_you, discovery)
     and lowers a "no": a sure "no" ranks below an unsure one."""
-    conf = min(max(int(data.get("confidence") or 0), 0), 100) / 101
+    conf = min(max(int(data.get("confidence") or 0), 0), 100)
     verdict = data["verdict"]
-    return VERDICT_RANK[verdict] + (1 - conf if verdict == "no" else conf)
+    return VERDICT_RANK[verdict] + ((100 - conf) if verdict == "no" else conf) / 101
 
 
 def names_of(concert: dict) -> set[str]:

@@ -49,6 +49,7 @@ def test_score_orders_verdicts_then_confidence():
         for v, c in [
             ("no", 100),  # a sure "no" ranks below an unsure one
             ("no", 20),
+            ("no", 0),  # still below any discovery
             ("discovery", 0),
             ("discovery", 90),
             ("for_you", 10),
