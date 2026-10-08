@@ -203,6 +203,40 @@ precision 44 % on 57 (base rate 22 %), pairwise 79 % (rule-based 52 % on the sam
 Gemma 4 with examples 54 %, 43 %, 68 %. Still under the 80 % gate; an amended gate is proposed to
 William (pairwise above the rule-based score, recall ≥ 70 %).
 
+### Iteration 2 (WIP-81, fixed before run 5): William's condition
+William (2026-10-08 23:27) agrees to route Mistral Small 3.2 **only if it has every chance of
+reaching and passing 80 % recall (aiming at 90 %) as he keeps rating**. Measured so far, more
+ratings did not raise recall (run 3, 23 likes: 77 %; run 4, 34 likes: 72 %), and the prompt sees
+10 + 10 ratings drawn at random, so new ratings barely change what the model reads. Iteration 2
+tests the condition before any routing:
+- **Nearest ratings as examples** (`judge.pick_nearest`): the 10 liked and 10 disliked ratings
+  most similar to the concert: related artists (Deezer, either way), shared styles (Jaccard on
+  MusicBrainz tags), same venue; only confident identities bring artist data; the leakage rules
+  of `pick_examples` are unchanged. Each new rating can then become the closest example of the
+  concerts around it.
+- **Learning curve:** the example pool is cut to 1/3 and 2/3 of William's ratings (per label,
+  2 seeds each, nested) against all of them (condition `nn`); every case is still judged.
+- **Cross-validated cut-off:** the judge's score (verdict, then confidence) is cut at the highest
+  value reaching 80 % (and 90 %) recall on one half of the cases, chosen by a hash of their id;
+  that cut-off decides the other half. Out-of-fold recall and precision are reported.
+- **Candidate:** Mistral Small 3.2 only; Gemma 4 retired (runs 2–4 recall 45–54 % vs 72–77 %).
+  `profile+examples` (random, iteration 1) is kept as the reference condition.
+
+**Decision rule for iteration 2** (both needed, plus valid ≥ 95 % and p95 ≤ 30 s):
+1. **80 % reachable now:** in `nn`, the cross-validated cut-off gives out-of-fold recall ≥ 80 %
+   with precision on William's labels ≥ 40 % (base rate 22 % in run 4).
+2. **More ratings help:** pairwise accuracy in `nn` is at least 3 points above the mean of the
+   two `nn@1/3` conditions, and precision at the cross-validated 80 % point in `nn` is not below
+   their mean.
+
+If both hold, Mistral Small 3.2 with nearest examples and that cut-off is proposed for routing
+(✋ William), with a CI gate on the same cross-validated measure. Otherwise nothing is routed and
+the next option is fine-tuning on William's ratings (LoRA), with its own ADR section, method,
+data and GPU cost. The 90 % point is reported, not gated. **Limits:** one run; with 1/3 of the
+ratings the pool holds about 11 likes; a 3-point pairwise difference is below the single-run
+standard error (about 5 points, run 4), although both sides are measured on the same labels in
+the same run, which removes the label sampling part of it.
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 

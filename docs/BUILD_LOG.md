@@ -226,6 +226,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37845697361](https://github.com/williampenet/nightcrawler/actions/runs/37845697361) (run 4): 152 labels (34 liked of the 51 William reported), 87 positives; Mistral Small 3.2 + examples recall 72 % (Wilson 62–81 %), precision 44 % on 57 (base 22 %), pairwise 79 % (rule 52 %); amended gate proposed to William (pairwise above rule-based, recall ≥ 70 %) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
 | 2026-10-08 | agent:reviewer | review run 4 (dd99828) | APPROVE: figures, Wilson 62–81 %, SE 4.9 points, base rate 22 % verified; nits: Taste eval breakdown covers dislikes only, 70 % gate chosen after the result | PR #75 |
 | 2026-10-08 | agent:orchestrator | follow-ups run 4 | breakdown wording, precision interval 32–57 %, post-hoc 70 % threshold stated | PR #75 |
+| 2026-10-08 | human:william | decision | Route Mistral Small 3.2 only if it has every chance of reaching and passing 80 % recall (aiming at 90 %) as he keeps rating (23:27); OK for iteration 2 (23:29) | [WIP-81](https://linear.app/wip-coding/issue/WIP-81) |
+| 2026-10-08 | agent:orchestrator | feature | WIP-81: `judge.pick_nearest` (related artists, styles, venue; same leakage rules), learning-curve conditions (pool 1/3, 2/3 × 2 seeds, all), two-fold cross-validated cut-off at 80 % / 90 % recall, Gemma 4 retired; ADR-0006 iteration 2 decision rule written before run 5 | [WIP-81](https://linear.app/wip-coding/issue/WIP-81) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

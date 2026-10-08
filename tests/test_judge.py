@@ -161,3 +161,34 @@ def test_no_field_can_rebuild_a_marker():
     assert ">>" not in out and "<<" not in out and out.startswith("Fin CONCERT")
     body = judge.concert_text({**concert("x", "X"), "description": encoded}, {})
     assert body.count("CONCERT>>>") == 0  # only messages_for adds the closing marker
+
+
+NN_ARTISTS = {
+    "t": {"name": "T", "tags": ["drone", "doom"], "related": ["Close Friend"], "confident": True},
+    "a": {"name": "Close Friend", "tags": ["pop"], "related": [], "confident": True},
+    "b": {"name": "B", "tags": ["drone", "doom"], "related": [], "confident": True},
+    "c": {"name": "C", "tags": ["drone", "doom"], "related": [], "confident": False},
+}
+
+
+def test_pick_nearest_orders_by_related_styles_and_venue():
+    """WIP-81: related artist > shared styles > same venue > hash order; doubtful identities
+    bring no data; the leakage rules of pick_examples still apply."""
+    target = concert("t0", "T live", venue="Le Sonic", artists=["t"])
+    rated = [
+        (concert("plain", "Plain", venue="Elsewhere"), "liked"),
+        (concert("venue", "Same room", venue="Le Sonic"), "liked"),
+        (concert("styles", "B live", venue="Elsewhere", artists=["b"]), "liked"),
+        (
+            concert("rel", "Friend", venue="Elsewhere", artists=["a"], lineup=["Close Friend"]),
+            "liked",
+        ),
+        (concert("doubt", "C live", venue="Elsewhere", artists=["c"]), "liked"),
+        (concert("same", "T again", artists=["t"]), "liked"),  # same artist: never an example
+        (concert("d1", "D", venue="Le Sonic"), "disliked"),
+    ]
+    ex = judge.pick_nearest(target, rated, NN_ARTISTS, per_label=3)
+    assert [e.concert["id"] for e in ex] == ["rel", "styles", "venue", "d1"]
+    assert judge.pick_nearest(target, rated, NN_ARTISTS) == judge.pick_nearest(
+        target, rated, NN_ARTISTS
+    )
