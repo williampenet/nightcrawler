@@ -158,23 +158,30 @@ PRD FR-5 was missing, so this run measures the candidates without it, not the ta
 | Qwen3.5 397B-A17B | profile | 8 % | 40 % on 5 | 59 % | 100 % | 2.1 | 0.65 |
 | Qwen3.5 397B-A17B | profile+examples | — | — | — | — | — | — |
 
-Missing row: GitHub kept 10 notice annotations for the step and this one was the 11th (measured
-on this run; the limit is not in GitHub's docs, a [community thread](https://github.com/orgs/community/discussions/68471)
-reports 10 per step). The job summary and the results artifact hold it but cannot be read from the
-agent workspace. The runner now sends one annotation per candidate (WIP-76).
+Missing row (**unmeasured** here): GitHub kept 10 notice annotations for the step and this pair
+was the 11th (measured on this run; a [community thread](https://github.com/orgs/community/discussions/68471)
+reports a cap of 10 warnings or errors per step; whether GitHub documents a notice cap is
+**unverified**). The job summary and the results artifact hold it but cannot be read from the
+agent workspace (HTTP 403 from the artifact store). The runner now sends one annotation per
+candidate (WIP-76).
 
-References: the rule-based score's pairwise accuracy on these 102 labels was not annotated in this
-run (same cap); on 2026-10-07 it was 49 % on 103 labels
+References: the runner did not annotate the rule-based score's pairwise accuracy at that time (it
+was only in the job summary); on 2026-10-07 it was 49 % on 103 labels
 ([Taste eval 37674210942](https://github.com/williampenet/nightcrawler/actions/runs/37674210942)).
 
-**What run 1 shows (facts from the table, small sample):**
-- Every candidate answers in the schema (valid 100 %), fast (p95 ≤ 3.1 s) and cheaply
+**What run 1 shows (9 of 10 pairs measured, one run, small sample: 22 liked / 81 disliked the day
+before; a precision on 5 or 15 picks is not interpretable):**
+- The 9 measured pairs answer in the schema (valid 100 %), fast (p95 ≤ 3.2 s) and cheaply
   (€0.12–1.96 per 1,000 at these prompt sizes; a 4,000-character profile adds tokens, so costs
   will rise, **unverified** by how much).
-- **No pair passes the recall gate** (≥ 80 %): best 51 %. ADR-0006 rule, step 4: no model routed.
+- **No measured pair passes the recall gate** (≥ 80 %): best 51 %. ADR-0006 rule, step 4: no
+  model routed (the unmeasured pair is **unverified**; Qwen3.5 picked 8 % without examples).
 - The larger models pick less: Qwen3.5 397B picked 5 of 102 labelled concerts, Mistral Medium
   15–24, against 22–34 for Mistral Small 3.2. Without a written profile, size did not help here.
-- Examples raise recall for the two small models (+17 and +8 points) and pairwise (+2 and +8).
+- Examples have a mixed effect: recall up in 3 of 4 comparable candidates (Mistral Small +17,
+  Qwen3 235B +11, Gemma +8), down 2 for Mistral Medium; every candidate also picked more labelled
+  concerts with examples (e.g. 22 → 34), which raises recall mechanically; precision did not
+  improve consistently. Most differences are within the ~10-point noise level.
 - Pairwise accuracy 54–64 % against 49 % for the rule-based score the day before (different
   label set by one concert); differences under ~10 points are within noise (ADR-0006, limits).
 
