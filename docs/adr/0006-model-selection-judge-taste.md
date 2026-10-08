@@ -248,6 +248,12 @@ precision measured on about 60 picks has a Wilson interval of roughly ±12 point
 pass or fail by chance even though all conditions are measured on the same labels in the same
 run.
 
+**Run 5** ([37848873088](https://github.com/williampenet/nightcrawler/actions/runs/37848873088),
+iteration 2): gate 1 fails (precision 36 %, 26–47 %, at the cross-validated 80 % cut-off, which
+lands at "discovery ≥ 30" and gives 90 % recall; bar 40 %); gate 2 passes narrowly (precision 30 %
+→ 31.5 % → 36 % with 1/3, 2/3 and all ratings). Nothing routed; next: more ratings and a
+fine-tuning cost study (William to confirm).
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 
