@@ -69,6 +69,31 @@ def run_labels(payload: dict) -> list[dict]:
     return json.loads(proc.stdout)["labels"]
 
 
+def load_descriptions(url: str, ids: list[str], connect=None) -> dict[str, str]:
+    """{concert id: the longest description among its stored listings} (WIP-79). The pipeline
+    already stores each listing (`raw_events.payload`, store/sync.py) and links it to its concert
+    (`concert_sources`); read-only transaction with a statement timeout, like the taste eval.
+    Descriptions are venue text: sent to the EU model only, never printed or published."""
+    if connect is None:
+        import psycopg
+
+        connect = psycopg.connect
+    with connect(url, autocommit=True, **taste.CONNECT) as conn, conn.transaction():
+        conn.execute("SET TRANSACTION READ ONLY")
+        conn.execute(f"SET LOCAL statement_timeout = '{taste.STATEMENT_TIMEOUT}'")
+        rows = conn.execute(
+            "SELECT cs.concert_id, r.payload->>'description' FROM concert_sources cs "
+            "JOIN raw_events r ON r.id = cs.raw_id "
+            "WHERE cs.concert_id = ANY(%s) AND coalesce(r.payload->>'description', '') <> ''",
+            (ids,),
+        ).fetchall()
+    out: dict[str, str] = {}
+    for cid, text in rows:
+        if len(text) > len(out.get(cid, "")):
+            out[cid] = text
+    return out
+
+
 def row_concert(i: int, row: dict) -> dict:
     """A reference row as a concert: its own text (artists, venue, date), no artist data."""
     acts = [a.strip() for a in row["artists"].replace(" & ", " + ").split("+") if a.strip()]
@@ -426,12 +451,23 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     profile = store["state"] or {}
     cases = build_cases(labels, site["concerts"], load_reference(REFERENCE), site["coverage"])
+    try:
+        ids = [c["concert"]["id"] for c in cases if c["kind"] != "ref_row"]
+        descriptions = load_descriptions(url, ids)
+    except Exception as exc:  # the type only; the eval runs on without descriptions
+        annotate("warning", f"Judge eval: descriptions unavailable ({type(exc).__name__})")
+        descriptions = {}
+    for c in cases:
+        if text := descriptions.get(c["concert"]["id"]):
+            c["concert"] = {**c["concert"], "description": text}
+    with_desc = sum(bool(c["concert"].get("description")) for c in cases)
     ref = references(cases)
     taste_len = len(profile.get("taste_text") or "") if isinstance(profile, dict) else 0
     annotate(
         "notice",
         f"Judge eval: {len(cases)} cases, {ref['labels']} labels ({ref['liked']} liked, "
-        f"{ref['disliked']} disliked), {ref['positives']} positives; written taste {taste_len} "
+        f"{ref['disliked']} disliked), {ref['positives']} positives, {with_desc} with the "
+        f"listing's description; written taste {taste_len} "
         f"chars; site data {site['generated_at']}. References on the same labels: rule-based "
         f"pairwise {pct(ref['rule_pairwise'])}; former watch {ref['watch_liked']}/"
         f"{ref['watch_rated']} of its rated picks liked",

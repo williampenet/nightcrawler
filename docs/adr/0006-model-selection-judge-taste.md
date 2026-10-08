@@ -175,6 +175,20 @@ written taste, 2,034 characters): best pair Mistral Small 3.2 with examples, rec
 pair ≤ 45 % recall. Rule step 4: nothing routed; one improvement iteration proposed to William
 before a PM decision on the gate.
 
+### Iteration 1 (WIP-79, approved by William 2026-10-08 11:34, fixed before run 3)
+Run 2 left Mistral Small 3.2 with examples 4 points under the recall gate. One iteration, same
+rule, same labels and positives:
+- **Input:** the listing's own event description (venue text), read from the event store
+  (`raw_events.payload` through `concert_sources`, already stored by the pipeline), HTML removed,
+  capped at 600 characters, inside the CONCERT data block (`judge.description_text`). Never
+  published: the site data has no description field.
+- **Examples:** 10 liked + 10 disliked instead of 6 + 6, same leakage rules.
+- **Candidates:** Mistral Small 3.2 and Gemma 4 26B-A4B only. The three larger models are
+  retired: run 2 recall ≤ 35 % for each, at about 5–11 × the cost per 1,000 of Mistral Small 3.2 in
+  the same condition (run 2 annotations).
+- If Mistral Small 3.2 passes the gates, it is proposed for routing (✋ William); otherwise the
+  80 % gate itself goes to William, since it comes from the PRD (FR-5 AC).
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 
@@ -182,8 +196,9 @@ To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `ta
 small one fails the schema).
 
 ## Security & compliance
-- **Data:** sent per judgement: the written taste, up to 60 seed artist names, up to 12 of
-  William's rated concerts (title, acts, venue) and the judged concert. No identifier, no e-mail,
+- **Data:** sent per judgement: the written taste, up to 60 seed artist names, up to 20 of
+  William's rated concerts (title, acts, venue; 12 before WIP-79) and the judged concert, with
+  its listing's own description since WIP-79 (public venue text, not published by us). No identifier, no e-mail,
   no rating timestamps. Provider: Scaleway, Paris, zero retention by default, no training
   ([data privacy](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/data-privacy.mdx));
   exceptions it lists: content of a request that triggers an HTTP 500 kept up to two weeks to fix

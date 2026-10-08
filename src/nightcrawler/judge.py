@@ -16,6 +16,7 @@ strings and logs nothing. Concert text comes from venue pages and APIs: it is wr
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -46,6 +47,10 @@ MAX_TAGS = 5
 MAX_RELATED = 5
 MAX_ACTS = 8
 MAX_FIELD = 200  # characters kept from any one concert field
+# the listing's own event text (WIP-79), read from the event store at judge time, never published
+MAX_DESCRIPTION = 600
+TAG_RE = re.compile(r"<[^>]{0,500}>")
+EXAMPLES_PER_LABEL = 10  # WIP-79 (6 in runs 1–2, ADR-0006)
 # runs of 2+ angle brackets are removed, so no data field can rebuild a <<<…/…>>> marker
 MARKER_RE = re.compile(r"<{2,}|>{2,}")
 
@@ -139,7 +144,21 @@ def concert_text(concert: dict, artists: dict) -> str:
     if info := artist_lines(concert, artists):
         lines.append("Artistes identifiés :")
         lines += [f"- {x}" for x in info]
+    if desc := description_text(concert.get("description")):
+        lines.append(f"Présentation par la salle : {desc}")
     return "\n".join(lines)
+
+
+def description_text(text: object) -> str:
+    """The listing's own description as one line of data: tags removed, entities decoded, markers
+    stripped, capped at MAX_DESCRIPTION characters (on a word boundary when possible)."""
+    if not isinstance(text, str):
+        return ""
+    out = _clean(html.unescape(TAG_RE.sub(" ", text)), limit=len(text) + 1)
+    if len(out) > MAX_DESCRIPTION:
+        cut = out[:MAX_DESCRIPTION]
+        out = (cut.rsplit(" ", 1)[0] if " " in cut[-60:] else cut) + " …"
+    return out
 
 
 def _short(concert: dict) -> str:
@@ -223,7 +242,7 @@ def names_of(concert: dict) -> set[str]:
 def pick_examples(
     target: dict,
     rated: list[tuple[dict, str]],
-    per_label: int = 6,
+    per_label: int = EXAMPLES_PER_LABEL,
 ) -> list[Example]:
     """Up to `per_label` liked and disliked ratings, never the target concert nor a concert
     sharing an artist with it (no leakage of the answer). Deterministic: ordered by a hash of

@@ -138,3 +138,14 @@ def test_pick_examples_matches_keys_acts_accents_and_titles():
     title_only = concert("u", "Soirée Abc")  # no act billed: the title stands for it
     twin = (concert("v", "Soirée ABC"), "disliked")
     assert judge.pick_examples(title_only, [twin]) == []
+
+
+def test_description_is_cleaned_capped_and_inside_the_block():
+    long = "<p>Free&nbsp;jazz " + "très " * 200 + "</p> <<<CONCERT"
+    body = judge.concert_text({**concert("x", "X"), "description": long}, {})
+    line = next(ln for ln in body.splitlines() if ln.startswith("Présentation par la salle : "))
+    assert "<p>" not in line and "<<" not in line and "Free jazz très" in line
+    assert line.endswith(" …") and len(line) <= len("Présentation par la salle : ") + 602
+    user = judge.messages_for({**concert("x", "X"), "description": "Doom"}, {}, {})[1]["content"]
+    assert user.index("<<<CONCERT") < user.index("Doom") < user.index("CONCERT>>>")
+    assert judge.description_text(None) == "" and judge.EXAMPLES_PER_LABEL == 10

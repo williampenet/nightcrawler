@@ -208,6 +208,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | human:william | feedback | Corrected "Mon goût en mots" (profile synced) and started the Judge eval manually | [WIP-57](https://linear.app/wip-coding/issue/WIP-57) |
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37753009539](https://github.com/williampenet/nightcrawler/actions/runs/37753009539) (run 2, written taste 2,034 chars): best Mistral Small 3.2 + examples recall 76 % (gate 80 %), precision 36 % on 42, pairwise 68 % (rule 48 %), €0.25 / 1,000; others ≤ 45 % recall; ADR-0006 step 4: nothing routed; improvement iteration proposed to William | [WIP-57](https://linear.app/wip-coding/issue/WIP-57) |
 | 2026-10-08 | agent:reviewer | review run 2 (9e7dd5e) | APPROVE: table matches run 37753009539, gates and step 4 correctly applied, Wilson 59/78 = 65–84 %; nit (pairwise gain only marginal vs run-to-run variation) applied | PR #71 |
+| 2026-10-08 | human:william | decision | OK for one judge_taste improvement iteration before a decision on the 80 % gate (11:34) | [WIP-79](https://linear.app/wip-coding/issue/WIP-79) |
+| 2026-10-08 | agent:orchestrator | feature | WIP-79: the listing's own description (event store `raw_events` via `concert_sources`, read-only, never published) in the CONCERT block, HTML removed, 600 chars; 10 + 10 examples; Mistral Medium 3.5, Qwen3 235B and Qwen3.5 397B retired after run 2; the run reports how many cases had a description; ADR-0006 iteration 1 section | [WIP-79](https://linear.app/wip-coding/issue/WIP-79) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

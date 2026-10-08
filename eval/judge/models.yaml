@@ -37,6 +37,7 @@ judge_taste:
     hosting: Scaleway Generative APIs (Paris), fp8
     provider: scaleway
     model: mistral-medium-3.5-128b
+    retired: true  # set aside after run 2 (37753009539): recall ≤ 35 % vs 76 % for Mistral Small 3.2, dearer (ADR-0006, WIP-79)
     price_eur_per_mtok: {in: 1.50, out: 7.50}
     extra: {reasoning_effort: none}
 
@@ -48,6 +49,7 @@ judge_taste:
     hosting: Scaleway Generative APIs (Paris), precision not stated
     provider: scaleway
     model: qwen3-235b-a22b-instruct-2507
+    retired: true  # set aside after run 2 (37753009539): recall ≤ 35 % vs 76 % for Mistral Small 3.2, dearer (ADR-0006, WIP-79)
     price_eur_per_mtok: {in: 0.75, out: 2.25}
 
   - id: qwen3.5-397b-a17b-scaleway
@@ -58,6 +60,7 @@ judge_taste:
     hosting: Scaleway Generative APIs (Paris), int4
     provider: scaleway
     model: qwen3.5-397b-a17b
+    retired: true  # set aside after run 2 (37753009539): recall ≤ 35 % vs 76 % for Mistral Small 3.2, dearer (ADR-0006, WIP-79)
     price_eur_per_mtok: {in: 0.60, out: 3.60}
     extra: {reasoning_effort: none}
 
