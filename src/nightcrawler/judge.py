@@ -241,6 +241,22 @@ def names_of(concert: dict) -> set[str]:
     return out
 
 
+def _pool(target: dict, rated: list[tuple[dict, str]], label: str) -> list[dict]:
+    """Rated concerts with this label that may inform the target: never the target itself nor a
+    concert sharing an artist (or an act, or a title-only name) with it."""
+    tid = str(target.get("id"))
+    banned = names_of(target)
+    return [
+        c
+        for c, lab in rated
+        if lab == label and str(c.get("id")) != tid and not (names_of(c) & banned)
+    ]
+
+
+def _hash_key(tid: str, c: dict) -> str:
+    return hashlib.sha256(f"{tid}|{c.get('id')}".encode()).hexdigest()
+
+
 def pick_examples(
     target: dict,
     rated: list[tuple[dict, str]],
@@ -250,14 +266,64 @@ def pick_examples(
     sharing an artist with it (no leakage of the answer). Deterministic: ordered by a hash of
     (target id, example id), so each target sees its own reproducible sample."""
     tid = str(target.get("id"))
-    banned = names_of(target)
     out: list[Example] = []
     for label in ("liked", "disliked"):
-        pool = [
-            c
-            for c, lab in rated
-            if lab == label and str(c.get("id")) != tid and not (names_of(c) & banned)
-        ]
-        pool.sort(key=lambda c: hashlib.sha256(f"{tid}|{c.get('id')}".encode()).hexdigest())
+        pool = sorted(_pool(target, rated, label), key=lambda c: _hash_key(tid, c))
+        out += [Example(c, label) for c in pool[:per_label]]
+    return out
+
+
+@dataclass(frozen=True)
+class Features:
+    names: frozenset[str]  # artist keys and act names, artists.norm form
+    related: frozenset[str]  # related artists of its confident identities, same form
+    tags: frozenset[str]  # styles of its confident identities, lower case
+    venue: str
+
+
+def features(concert: dict, artists: dict) -> Features:
+    related: set[str] = set()
+    tags: set[str] = set()
+    for key in concert.get("artists") or []:
+        a = artists.get(key) if isinstance(artists, dict) else None
+        if not isinstance(a, dict) or not a.get("confident"):
+            continue  # a doubtful match may be a homonym (artists.py): its data is not used
+        related |= {norm(str(r)) for r in a.get("related") or [] if isinstance(r, str)}
+        tags |= {t.strip().lower() for t in a.get("tags") or [] if isinstance(t, str)}
+    related.discard("")
+    tags.discard("")
+    return Features(
+        frozenset(names_of(concert)),
+        frozenset(related),
+        frozenset(tags),
+        norm(str(concert.get("venue_name") or "")),
+    )
+
+
+def similarity(a: Features, b: Features) -> float:
+    """How much a rating of `b` tells about `a` (WIP-81): related artists (either way, at most 2
+    counted, 3 each), shared styles (Jaccard, up to 2), same venue (1)."""
+    rel = min(len(a.related & b.names) + len(b.related & a.names), 2)
+    union = a.tags | b.tags
+    jac = len(a.tags & b.tags) / len(union) if union else 0.0
+    return 3 * rel + 2 * jac + (1 if a.venue and a.venue == b.venue else 0)
+
+
+def pick_nearest(
+    target: dict,
+    rated: list[tuple[dict, str]],
+    artists: dict,
+    per_label: int = EXAMPLES_PER_LABEL,
+) -> list[Example]:
+    """The `per_label` liked and disliked ratings most similar to the target (WIP-81), with the
+    same leakage rules as pick_examples; ties (e.g. no artist data) in the hash order of
+    pick_examples, so the selection is deterministic. Unlike a random sample, every new rating
+    can become the closest example of the concerts around it."""
+    tid = str(target.get("id"))
+    ft = features(target, artists)
+    out: list[Example] = []
+    for label in ("liked", "disliked"):
+        pool = _pool(target, rated, label)
+        pool.sort(key=lambda c: (-similarity(ft, features(c, artists)), _hash_key(tid, c)))
         out += [Example(c, label) for c in pool[:per_label]]
     return out

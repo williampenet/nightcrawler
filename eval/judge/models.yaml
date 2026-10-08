@@ -26,6 +26,7 @@ judge_taste:
     hosting: Scaleway Generative APIs (Paris), bf16
     provider: scaleway
     model: gemma-4-26b-a4b-it
+    retired: true  # WIP-81: runs 2–4 recall 45–54 % vs 72–77 % for Mistral Small 3.2 (same conditions)
     price_eur_per_mtok: {in: 0.25, out: 0.50}
     extra: {reasoning_effort: none}
 

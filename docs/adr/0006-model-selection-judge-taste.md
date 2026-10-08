@@ -203,6 +203,51 @@ precision 44 % on 57 (base rate 22 %), pairwise 79 % (rule-based 52 % on the sam
 Gemma 4 with examples 54 %, 43 %, 68 %. Still under the 80 % gate; an amended gate is proposed to
 William (pairwise above the rule-based score, recall ≥ 70 %).
 
+### Iteration 2 (WIP-81, fixed before run 5): William's condition
+William (2026-10-08 23:27) agrees to route Mistral Small 3.2 **only if it has every chance of
+reaching and passing 80 % recall (aiming at 90 %) as he keeps rating**. Measured so far, more
+ratings did not raise recall (run 3, 23 likes: 77 %; run 4, 34 likes: 72 %), and the prompt sees
+10 + 10 ratings drawn at random, so new ratings barely change what the model reads. Iteration 2
+tests the condition before any routing:
+- **Nearest ratings as examples** (`judge.pick_nearest`): the 10 liked and 10 disliked ratings
+  most similar to the concert: related artists (Deezer, either way), shared styles (Jaccard on
+  MusicBrainz tags), same venue; only confident identities bring artist data; the leakage rules
+  of `pick_examples` are unchanged. Each new rating can then become the closest example of the
+  concerts around it.
+- **Learning curve:** the example pool is cut to 1/3 and 2/3 of William's ratings (per label,
+  2 seeds each, nested) against all of them (condition `nn`); every case is still judged.
+- **Cross-validated cut-off:** the judge's score (verdict, then confidence) is cut at the highest
+  value reaching 80 % (and 90 %) recall on one half of the cases, chosen by a hash of their id;
+  that cut-off decides the other half (cases tied at it are picked). Recall can always be raised
+  by lowering the cut-off, which may then fall inside `discovery` or a low-confidence `no`: the
+  out-of-fold recall lands near the target by construction (reviewer simulation on PR #76: mean
+  80–83 % whatever the judge's quality). **The quality signal is therefore the precision at that
+  cut-off**: how many of the concerts the judge picks to reach 80 % recall William actually likes.
+  The run reports the out-of-fold recall and precision with their Wilson intervals and the answer
+  each cut-off stands for (e.g. "discovery ≥ 70").
+- **Candidate:** Mistral Small 3.2 only; Gemma 4 retired (runs 2–4 recall 45–54 % vs 72–77 %).
+  `profile+examples` (random, iteration 1) is kept as the reference condition.
+
+**Decision rule for iteration 2** (both needed, plus valid ≥ 95 % and p95 ≤ 30 s):
+1. **80 % within reach at an acceptable precision:** in `nn`, at the cross-validated cut-off for
+   80 % recall, out-of-fold precision on William's labels ≥ 40 % (base rate 22 % in run 4), with
+   out-of-fold recall ≥ 75 % (a check that the cut-off transfers between halves, not a quality
+   test).
+2. **More ratings help:** that same precision rises with the share of ratings in the pool: the
+   mean of the two `nn@1/3` conditions ≤ the mean of the two `nn@2/3` ≤ `nn`, and `nn` is at
+   least 5 points above the `nn@1/3` mean. Pairwise accuracy along the same curve is reported.
+
+If both hold, Mistral Small 3.2 with nearest examples is proposed for routing (✋ William), with
+the cut-off it implies stated in plain words (which verdicts and confidences count as picked) and
+a CI gate on the same cross-validated precision. If gate 1 holds but gate 2 does not, the curve is
+measured again once William has added more ratings before any decision, since gate 2 sits close
+to the noise; if gate 1 fails, nothing is routed and the next option is fine-tuning on William's
+ratings (LoRA), with its own ADR section, method, data and GPU cost. The 90 % point is reported,
+not gated. **Limits:** one run; with a third of the ratings the pool holds about 11 likes; a
+precision measured on about 60 picks has a Wilson interval of roughly ±12 points, so gate 2 can
+pass or fail by chance even though all conditions are measured on the same labels in the same
+run.
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 

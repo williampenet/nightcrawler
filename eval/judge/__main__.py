@@ -1,7 +1,7 @@
 """Model eval for `judge_taste` (WIP-57, ADR-0006): `python -m eval.judge [--only id,id]`.
 
 Judges William's labelled concerts and the FR-11 reference positives with every candidate of
-`eval/judge/models.yaml`, in two prompt conditions, and publishes aggregated metrics
+`eval/judge/models.yaml`, in the prompt conditions of CONDITIONS, and publishes aggregated metrics
 only: one notice per candidate and condition, and a markdown table in the job summary. The repo
 is public: never print a title, a name, an id, the profile, a prompt or a model's reason.
 
@@ -13,6 +13,7 @@ store (read-only, as the taste eval), the published site (concerts, artists, rep
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import math
@@ -38,7 +39,19 @@ from nightcrawler.coverage import load_reference
 ROOT = Path(__file__).resolve().parent
 LABELS_JS = ROOT / "labels.js"
 REFERENCE = ROOT.parent / "reference" / "watch_events.csv"
-CONDITIONS = ("profile", "profile+examples")
+# condition -> (example selection, share of the rated pool kept, subsample seed); None = none
+# (WIP-81: "nn" = nearest ratings; "@1/3#1" = a third of the ratings, seed 1 = learning curve)
+CONDITIONS: dict[str, tuple[str, float, int] | None] = {
+    "profile": None,
+    "profile+examples": ("random", 1.0, 0),
+    "nn": ("nearest", 1.0, 0),
+    "nn@2/3#1": ("nearest", 2 / 3, 1),
+    "nn@2/3#2": ("nearest", 2 / 3, 2),
+    "nn@1/3#1": ("nearest", 1 / 3, 1),
+    "nn@1/3#2": ("nearest", 1 / 3, 2),
+}
+DEFAULT_CONDITIONS = ("profile+examples", "nn", "nn@2/3#1", "nn@2/3#2", "nn@1/3#1", "nn@1/3#2")
+TARGET_RECALLS = (0.80, 0.90)  # cross-validated operating points (ADR-0006 iteration 2)
 MAX_OUTPUT_TOKENS = 400
 TIMEOUT_S = 120.0
 # a candidate × condition stops calling after this many failed calls in a row (unknown model id,
@@ -198,11 +211,31 @@ def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -
     }
 
 
+def _h(*parts: object) -> int:
+    return int(hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest(), 16)
+
+
+def subsample(rated: list[tuple[dict, str]], share: float, seed: int) -> list[tuple[dict, str]]:
+    """The first round(share × n) ratings of each label in a seeded hash order (nested: a third
+    is inside two thirds for the same seed). Only the example pool shrinks; every case is still
+    judged and scored (learning curve, WIP-81)."""
+    if share >= 1:
+        return rated
+    out = []
+    for label in ("liked", "disliked"):
+        pool = sorted((r for r in rated if r[1] == label), key=lambda r: _h(seed, r[0].get("id")))
+        out += pool[: round(share * len(pool))]
+    return out
+
+
 def run_condition(
     cand: dict, cond: str, cases: list[dict], artists: dict, profile: dict, workers: int
 ) -> list[dict]:
     spec = spec_of(cand)
+    how = CONDITIONS[cond]
     rated = [(c["concert"], c["label"]) for c in cases if c["kind"] == "rated"]
+    if how:
+        rated = subsample(rated, how[1], how[2])
 
     lock, failed = threading.Lock(), [0]  # failed calls in a row
 
@@ -210,7 +243,12 @@ def run_condition(
         with lock:
             if failed[0] >= STOP_AFTER:
                 return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": "aborted"}
-        ex = judge.pick_examples(case["concert"], rated) if cond == "profile+examples" else ()
+        if not how:
+            ex = ()
+        elif how[0] == "nearest":
+            ex = judge.pick_nearest(case["concert"], rated, artists)
+        else:
+            ex = judge.pick_examples(case["concert"], rated)
         r = judge_one(spec, judge.messages_for(case["concert"], artists, profile, ex), client)
         with lock:
             bad = r["error"] in FAILED_CALL or str(r["error"]).startswith("http_")
@@ -280,7 +318,7 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
             "recall_wilson95": None, "recall_with_discovery": None, "recall_by_kind": {},
             "precision": None, "precision_wilson95": None, "picked_rated": 0, "pairwise": None,
             "pairwise_valid": None, "verdicts": {}, "p50_s": None, "p95_s": None,
-            "tokens_in": None, "tokens_out": None, "eur_per_1000": None,
+            "tokens_in": None, "tokens_out": None, "eur_per_1000": None, "cv": {},
         }  # fmt: skip
     liked_r = [i for i in rated if cases[i]["label"] == "liked"]
     disliked_r = [i for i in rated if cases[i]["label"] == "disliked"]
@@ -308,7 +346,55 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
         "tokens_in": round(statistics.mean(tin)) if tin else None,
         "tokens_out": round(statistics.mean(tout)) if tout else None,
         "eur_per_1000": cost,
+        "cv": {f"{t:.0%}": cv_operating_point(cases, sc, t) for t in TARGET_RECALLS},
     }
+
+
+def cv_operating_point(cases: list[dict], sc: list[float], target: float) -> dict:
+    """Two-fold cross-validated cut-off on the judge's score (WIP-81). Cases are split in two by a
+    hash of their id; on each half the cut-off is the highest score whose recall on that half's
+    positives reaches `target`; it decides the picks of the other half (every case tied at the
+    cut-off is picked). Recall (positives) and precision (William's labels) are computed on these
+    out-of-fold picks. The out-of-fold recall lands near `target` by construction, so the quality
+    signal is the precision at that cut-off (ADR-0006, iteration 2). A cut-off that would reach
+    an unusable answer (score -1, counted as "no") gives no figure."""
+    none = {"recall": None, "recall_wilson95": None, "precision": None,
+            "precision_wilson95": None, "picked_rated": 0, "cuts": []}  # fmt: skip
+    fold = [_h("fold", c["concert"].get("id")) % 2 for c in cases]
+    pos = [c["label"] in ("liked", "positive") for c in cases]
+    picked = [False] * len(cases)
+    cuts = []
+    for f in (0, 1):
+        train = sorted((sc[i] for i in range(len(cases)) if fold[i] != f and pos[i]), reverse=True)
+        if not train:
+            return none
+        cut = train[math.ceil(target * len(train)) - 1]
+        if cut < 0:
+            return none
+        cuts.append(cut_label(cut))
+        for i in range(len(cases)):
+            if fold[i] == f:
+                picked[i] = sc[i] >= cut
+    rated = [i for i, c in enumerate(cases) if c["kind"] == "rated"]
+    rp = [i for i in rated if picked[i]]
+    liked = sum(cases[i]["label"] == "liked" for i in rp)
+    hits = sum(picked[i] for i in range(len(cases)) if pos[i])
+    return {
+        "recall": ratio(hits, sum(pos)),
+        "recall_wilson95": wilson(hits, sum(pos)),
+        "precision": ratio(liked, len(rp)) or 0.0,
+        "precision_wilson95": wilson(liked, len(rp)),
+        "picked_rated": len(rp),
+        "cuts": cuts,
+    }
+
+
+def cut_label(score: float) -> str:
+    """A cut-off score as the answer it stands for, e.g. "discovery ≥ 70" or "no ≤ 40"."""
+    rank = min(int(score), 3)
+    verdict = {v: k for k, v in judge.VERDICT_RANK.items()}[rank]
+    conf = round((score - rank) * 101)
+    return f"no ≤ {100 - conf}" if verdict == "no" else f"{verdict} ≥ {conf}"
 
 
 def references(cases: list[dict]) -> dict:
@@ -354,8 +440,19 @@ def compact(cid: str, cond: str, m: dict) -> str:
         f"judge_taste {cid} [{cond}]: recall {pct(m['recall'])}, precision "
         f"{pct(m['precision'])} on {m['picked_rated']} picked, pairwise {pct(m['pairwise'])} "
         f"(valid only {pct(m['pairwise_valid'])}), valid {pct(m['valid'])} (errors: {errs(m)}), "
-        f"p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000"
+        f"p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000{cv_text(m)}"
     )
+
+
+def cv_text(m: dict) -> str:
+    """Cross-validated operating points (WIP-81): out-of-fold recall and precision."""
+    parts = [
+        f"@{t}: precision {pct(p['precision'])}{ci(p['precision_wilson95'])} on "
+        f"{p['picked_rated']}, recall {pct(p['recall'])}{ci(p['recall_wilson95'])}, cut "
+        f"{' / '.join(p['cuts']) or 'n/a'}"
+        for t, p in (m.get("cv") or {}).items()
+    ]
+    return f"; cut-off cross-validated {' / '.join(parts)}" if parts else ""
 
 
 def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str]) -> str:
@@ -373,8 +470,8 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
         "",
         "| Candidate | Condition | Recall picked (95 % CI) | + discovery | Precision on labels "
         "(95 % CI) | Pairwise (valid only) | Valid (errors) | p95 s | Tokens in / out | "
-        "€ / 1,000 | Verdicts |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "€ / 1,000 | Verdicts | Cross-validated cut-offs |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for cid, cond, m in rows:
         verdicts = ", ".join(f"{k or 'invalid'} {v}" for k, v in m["verdicts"].items())
@@ -383,10 +480,11 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
             f"{pct(m['recall_with_discovery'])} | {pct(m['precision'])}"
             f"{ci(m['precision_wilson95'])} on {m['picked_rated']} | {pct(m['pairwise'])} "
             f"({pct(m['pairwise_valid'])}) | {pct(m['valid'])} ({errs(m)}) | {m['p95_s']} | "
-            f"{m['tokens_in']} / {m['tokens_out']} | {m['eur_per_1000']} | {verdicts} |"
+            f"{m['tokens_in']} / {m['tokens_out']} | {m['eur_per_1000']} | {verdicts} | "
+            f"{cv_text(m).removeprefix('; cut-off cross-validated ') or 'n/a'} |"
         )
     for cid, why in skipped.items():
-        out.append(f"| {cid} | — | skipped: {why} | | | | | | | | |")
+        out.append(f"| {cid} | — | skipped: {why} | | | | | | | | | |")
     out += [
         "",
         "Recall by subset (picked / n): "
@@ -421,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m eval.judge")
     ap.add_argument("--site", default=os.environ.get("TASTE_SITE", "site"))
     ap.add_argument("--only", default=os.environ.get("JUDGE_ONLY", ""))
-    ap.add_argument("--conditions", default=",".join(CONDITIONS))
+    ap.add_argument("--conditions", default=",".join(DEFAULT_CONDITIONS))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--max-calls", type=int, default=2500, help="cost guard for the whole run")
     ap.add_argument(

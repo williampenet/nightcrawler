@@ -126,7 +126,24 @@ def test_labels_js_uses_the_taste_eval_labels():
     assert got == {DISLIKED: "disliked"}  # artist-only like is not a label (TASTE_EVAL.md)
 
 
+TEST_MODELS = """judge_taste:
+  - {id: mistral-small-3.2-scaleway, provider: scaleway, model: mistral-small-3.2-24b-instruct-2506,
+     price_eur_per_mtok: {in: 0.15, out: 0.35}}
+  - {id: gemma-4-26b-a4b-scaleway, provider: scaleway, model: gemma-4-26b-a4b-it,
+     price_eur_per_mtok: {in: 0.25, out: 0.50}}
+  - {id: retired-one, provider: scaleway, model: x, retired: true}
+"""
+OLD_CONDITIONS = ["--conditions", "profile,profile+examples"]
+BOTH = "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway"
+
+
 def _setup(monkeypatch):
+    import tempfile
+    from pathlib import Path
+
+    root = Path(tempfile.mkdtemp())
+    (root / "models.yaml").write_text(TEST_MODELS)
+    monkeypatch.setattr(runner, "ROOT", root)  # only candidates() reads ROOT at run time
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("SCW_GENAI_SECRET_KEY", "k")
     monkeypatch.delenv("SCW_DEFAULT_PROJECT_ID", raising=False)
@@ -165,7 +182,7 @@ def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys, caplog):
 
     monkeypatch.setattr(llm, "chat_json", fake)
     out = tmp_path / "r.json"
-    rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--workers", "1",
+    rc = runner.main([*OLD_CONDITIONS, "--only", "mistral-small-3.2-scaleway", "--workers", "1",
                       "--results", str(out)])  # fmt: skip
     assert rc == 0
     assert len(prompts) == 2 * 5  # two conditions x five cases
@@ -215,7 +232,7 @@ def test_main_isolates_an_unexpected_error(monkeypatch, tmp_path):
         ),
     )
     out = tmp_path / "r.json"
-    rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--workers", "1",
+    rc = runner.main([*OLD_CONDITIONS, "--only", "mistral-small-3.2-scaleway", "--workers", "1",
                       "--results", str(out)])  # fmt: skip
     skipped = json.loads(out.read_text())["skipped"]
     assert skipped == {
@@ -235,7 +252,7 @@ def test_main_cost_guard(monkeypatch, tmp_path):
         ),
     )
     out = tmp_path / "r.json"
-    rc = runner.main(["--only", "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway",
+    rc = runner.main([*OLD_CONDITIONS, "--only", BOTH,
                       "--workers", "1", "--max-calls", "6", "--results", str(out)])  # fmt: skip
     data = json.loads(out.read_text())
     # null token counts read as 0; every "no": precision 0 (ADR-0006); then the cost guard
@@ -264,7 +281,9 @@ def test_annotations_fit_the_per_step_cap(monkeypatch, tmp_path, capsys):
             {"verdict": "for_you", "reason": "r", "confidence": 60}, [], spec.model, 0.1, 1, 1
         ),
     )
-    assert runner.main(["--workers", "1", "--results", str(tmp_path / "r.json")]) == 0
+    assert (
+        runner.main([*OLD_CONDITIONS, "--workers", "1", "--results", str(tmp_path / "r.json")]) == 0
+    )
     out = capsys.readouterr().out
     notes = [ln for ln in out.splitlines() if ln.startswith(("::notice::", "::warning::"))]
     assert len(notes) == 1 + 2 and "rule-based pairwise 25%" in notes[0]
@@ -292,7 +311,7 @@ def test_failed_pair_and_partial_validity_stay_in_one_annotation(monkeypatch, tm
         return real(cand, *a)
 
     monkeypatch.setattr(runner, "metrics", metrics)
-    rc = runner.main(["--only", "mistral-small-3.2-scaleway,gemma-4-26b-a4b-scaleway",
+    rc = runner.main([*OLD_CONDITIONS, "--only", BOTH,
                       "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
     out = [
         ln
@@ -379,3 +398,101 @@ def test_load_descriptions_keeps_the_longest_read_only():
     assert executed[0][0] == "SET TRANSACTION READ ONLY" and "statement_timeout" in executed[1][0]
     sql, params = executed[2]
     assert "ANY(%s)" in sql and "ORDER BY" in sql and params == (["a", "b"],)
+
+
+def test_subsample_is_nested_per_label_and_seeded():
+    rated = [({"id": f"l{i}"}, "liked") for i in range(9)] + [
+        ({"id": f"d{i}"}, "disliked") for i in range(6)
+    ]
+    third, two = runner.subsample(rated, 1 / 3, 1), runner.subsample(rated, 2 / 3, 1)
+    assert [lab for _, lab in third].count("liked") == 3 and len(third) == 5
+    assert {c["id"] for c, _ in third} <= {c["id"] for c, _ in two}
+    assert runner.subsample(rated, 1 / 3, 2) != third and runner.subsample(rated, 1.0, 1) == rated
+
+
+def _cv_cases(n=60):
+    return [{"concert": {"id": f"c{i}"}, "kind": "rated",
+             "label": "liked" if i % 3 else "disliked"} for i in range(n)]  # fmt: skip
+
+
+def test_cv_operating_point_uses_the_other_half():
+    """The cut-off is learnt on one half of the cases and applied to the other (WIP-81)."""
+    cs = _cv_cases()
+    S = runner.judge.score
+    yes, no = S({"verdict": "must_see", "confidence": 90}), S({"verdict": "no", "confidence": 80})
+    sc = [yes if c["label"] == "liked" else no for c in cs]  # a perfect judge
+    p = runner.cv_operating_point(cs, sc, 0.8)
+    assert (p["recall"], p["precision"], p["picked_rated"]) == (1.0, 1.0, 40)
+    assert p["cuts"] == ["must_see ≥ 90", "must_see ≥ 90"]
+    # liked scores differ between halves: each cut-off comes from the *other* half
+    fold = [runner._h("fold", c["concert"]["id"]) % 2 for c in cs]
+    mid = S({"verdict": "for_you", "confidence": 50})
+    sc2 = [(yes if fold[i] == 0 else mid) if c["label"] == "liked" else no
+           for i, c in enumerate(cs)]  # fmt: skip
+    q = runner.cv_operating_point(cs, sc2, 0.8)
+    # half 0 is cut at half 1's level (for_you ≥ 50), half 1 at half 0's (must_see ≥ 90):
+    # half 1's likes (for_you 50) fall under it, so recall is only half 0's share
+    assert sorted(q["cuts"]) == ["for_you ≥ 50", "must_see ≥ 90"]
+    assert q["recall"] == round(sum(1 for i, c in enumerate(cs) if c["label"] == "liked"
+                                    and fold[i] == 0) / 40, 3)  # fmt: skip
+
+
+def test_cv_operating_point_ties_invalid_and_empty_folds():
+    cs = _cv_cases()
+    tied = [runner.judge.score({"verdict": "discovery", "confidence": 50})] * len(cs)  # all tied
+    t = runner.cv_operating_point(cs, tied, 0.8)
+    assert t["recall"] == 1.0 and t["precision"] == round(40 / 60, 3)
+    assert t["cuts"] == ["discovery ≥ 50", "discovery ≥ 50"]
+    invalid = [-1.0 if c["label"] == "liked" and i % 2 else 3.5 for i, c in enumerate(cs)]
+    assert runner.cv_operating_point(cs, invalid, 0.9)["recall"] is None  # cut would reach -1
+    only_neg = [{**c, "label": "disliked"} for c in cs]
+    assert runner.cv_operating_point(only_neg, [1.0] * len(cs), 0.8)["precision"] is None
+    S = runner.judge.score
+    assert runner.cut_label(S({"verdict": "no", "confidence": 80})) == "no ≤ 80"
+    assert runner.cut_label(S({"verdict": "for_you", "confidence": 71})) == "for_you ≥ 71"
+
+
+def test_learning_curve_never_shows_a_case_its_own_rating(monkeypatch, tmp_path):
+    """In every condition, a rated case's prompt holds neither its own rating nor one sharing
+    an artist with it (the pool shrinks; the leakage rules do not)."""
+    _setup(monkeypatch)
+    seen = []
+
+    def fake(spec, messages, *a, **k):
+        seen.append(messages[1]["content"])
+        return llm.Answer({"verdict": "no", "reason": "r", "confidence": 50}, [], spec.model,
+                          0.1, 1, 1)  # fmt: skip
+
+    monkeypatch.setattr(llm, "chat_json", fake)
+    for cond in runner.DEFAULT_CONDITIONS:
+        seen.clear()
+        runner.main(["--only", "mistral-small-3.2-scaleway", "--conditions", cond,
+                     "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+        if cond in ("nn", "profile+examples"):
+            assert any("<<<EXEMPLES" in p for p in seen), cond  # not vacuous
+        for prompt in seen:
+            target = prompt.split("<<<CONCERT", 1)[1]
+            examples = prompt.split("<<<CONCERT", 1)[0]
+            for title in ("Earth live", "Popstar tour", "Boris night"):
+                if f"Titre : {title}" in target:
+                    assert title not in examples, (cond, title)
+
+
+def test_default_conditions_run_the_learning_curve(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch)
+    calls = []
+
+    def fake(spec, messages, *a, **k):
+        calls.append(messages[1]["content"])
+        return llm.Answer({"verdict": "for_you", "reason": "r", "confidence": 60}, [], spec.model,
+                          0.1, 1, 1)  # fmt: skip
+
+    monkeypatch.setattr(llm, "chat_json", fake)
+    out = tmp_path / "r.json"
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--workers", "1",
+                      "--results", str(out)])  # fmt: skip
+    assert rc == 0 and len(calls) == 6 * 5
+    res = json.loads(out.read_text())["results"]
+    assert set(res) == {f"mistral-small-3.2-scaleway [{c}]" for c in runner.DEFAULT_CONDITIONS}
+    assert set(res["mistral-small-3.2-scaleway [nn]"]["cv"]) == {"80%", "90%"}
+    assert "cut-off cross-validated @80%" in capsys.readouterr().out
