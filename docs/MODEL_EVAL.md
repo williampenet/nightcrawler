@@ -185,4 +185,39 @@ before; a precision on 5 or 15 picks is not interpretable):**
 - Pairwise accuracy 54–64 % against 49 % for the rule-based score the day before (different
   label set by one concert); differences under ~10 points are within noise (ADR-0006, limits).
 
+#### Run 1b — 2026-10-08, same scoring code, annotation change only (WIP-76), still without a written profile
+
+[Judge eval run 37740875208](https://github.com/williampenet/nightcrawler/actions/runs/37740875208)
+(site data of 2026-10-08 08:38): 155 cases, 100 labels (23 liked, 77 disliked), 78 positives,
+written taste 0 characters. All 10 pairs measured this time.
+
+References on the same labels: **rule-based score pairwise 48 %**; **former watch (Claude): 6 of
+the 13 rated concerts it had reported were liked (46 %)**. Base rate: 23 % of labels are liked.
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 36 % | 35 % on 26 | 61 % | 100 % | 1.7 | 0.12 |
+| Mistral Small 3.2 24B | profile+examples | **49 %** | 32 % on 38 | **62 %** | 100 % | 1.6 | 0.17 |
+| Gemma 4 26B-A4B | profile | 35 % | 27 % on 26 | 61 % | 100 % | 1.6 | 0.21 |
+| Gemma 4 26B-A4B | profile+examples | 40 % | 27 % on 33 | 58 % | 100 % | 1.1 | 0.29 |
+| Mistral Medium 3.5 128B | profile | 20 % | 33 % on 15 | 51 % | 100 % | 1.5 | 1.43 |
+| Mistral Medium 3.5 128B | profile+examples | 24 % | 29 % on 24 | 52 % | 100 % | 1.5 | 1.96 |
+| Qwen3 235B-A22B 2507 | profile | 15 % | 18 % on 11 | 60 % | 100 % | 1.4 | 0.72 |
+| Qwen3 235B-A22B 2507 | profile+examples | 23 % | 29 % on 17 | 56 % | 100 % | 1.5 | 0.99 |
+| Qwen3.5 397B-A17B | profile | 8 % | 50 % on 6 | 57 % | 100 % | 2.0 | 0.65 |
+| Qwen3.5 397B-A17B | profile+examples | 18 % | 38 % on 8 | 53 % | 100 % | 2.4 | 0.87 |
+
+Between runs 1 and 1b, recall and pairwise differ by up to 6 points for the same pair (Gemma,
+profile only, pairwise 55 % → 61 %) and precision by up to 10 points on 5–6 picks (Qwen3.5,
+profile only, 40 % → 50 %), possibly because the labels and published
+concerts changed overnight (102 → 100 labels) and because temperature 0 does not guarantee
+identical answers from a hosted API; neither cause is measured separately. Run 1b also measures
+the pair missing from run 1 (Qwen3.5 397B with examples: recall 18 %), which changes nothing.
+Same reading as run 1: every pair below the 80 % recall gate, nothing routed. The two ~25 B
+models pick the most labelled concerts (26–38 against 6–24); pairwise accuracy is 51–62 % for all
+pairs, within the ~10-point noise level, so no candidate ranks clearly best. The former watch's
+46 % on William's ratings is the only Claude reference; it is on 13 concerts only and not
+directly comparable with the models' precision, since its picks are the reference positives
+(ADR-0006, Baseline).
+
 **Next:** run 2 once the written taste is filled in the app; same candidates, same rule.
