@@ -165,7 +165,11 @@ written taste as empty again (not synced from William's device, **unverified**);
 and it measures run-to-run variation on unchanged inputs (up to 5 points on recall, 4 on pairwise, 15 on precision with 11–12
 picks). Since then the
 runner makes no call while the written taste is empty. Details:
-[`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste in the event store.
+[`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2a
+([37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688)) read
+82 characters of the written taste (most likely synced mid-typing, **unverified**): Mistral
+Small 3.2 rose to 76 % pairwise (precision 60 % on 15 picks, not established), recall 36–45 %, still below the gate; not the decision run. Run 2
+waits for the full text.
 
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.

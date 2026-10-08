@@ -248,4 +248,32 @@ Qwen3 235B profile 18 % → 33 % on 11–12 picks) are a direct measure of run-t
 Mistral Small 3.2 with examples is the best pair on recall in all three runs (49–51 %), still far
 from the 80 % gate. Since WIP-78 the runner makes no model call while the written taste is empty.
 
-**Next:** run 2 once the written taste is in the event store; same candidates, same rule.
+#### Run 2a — 2026-10-08, partial written taste (82 characters)
+
+[Judge eval run 37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688),
+started by the merge of #69 at 09:55 while William was typing his text again (09:56 message): the
+store held **82 characters** of it (run annotation), most likely a sync made mid-typing (the page
+pushes 1.5 s after the last edit, `app.js`; **unverified** for this case). Same site data and
+labels as runs 1b–1c (100 labels, 23 liked), references unchanged (48 %, watch 6/13).
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 36 % | **60 % on 15** | **76 %** | 100 % | 3.4 | 0.12 |
+| Mistral Small 3.2 24B | profile+examples | **45 %** | 55 % on 22 | 71 % | 100 % | 1.6 | 0.18 |
+| Gemma 4 26B-A4B | profile | 19 % | 50 % on 12 | 65 % | 100 % | 0.7 | 0.21 |
+| Gemma 4 26B-A4B | profile+examples | 28 % | 35 % on 20 | 61 % | 100 % | 0.8 | 0.29 |
+| Mistral Medium 3.5 128B | profile | 19 % | 40 % on 10 | 63 % | 100 % | 1.5 | 1.41 |
+| Mistral Medium 3.5 128B | profile+examples | 24 % | 54 % on 13 | 59 % | 100 % | 1.8 | 1.95 |
+| Qwen3 235B-A22B 2507 | profile | 17 % | 50 % on 8 | 65 % | 100 % | 2.7 | 0.73 |
+| Qwen3 235B-A22B 2507 | profile+examples | 19 % | 43 % on 14 | 60 % | 100 % | 3.4 | 1.00 |
+| Qwen3.5 397B-A17B | profile | 12 % | 43 % on 7 | 66 % | 100 % | 2.3 | 0.66 |
+| Qwen3.5 397B-A17B | profile+examples | 20 % | 33 % on 12 | 60 % | 100 % | 4.6 | 0.87 |
+
+With only 82 characters of written taste, Mistral Small 3.2 (profile only) moves from 35–36 %
+precision and 61–63 % pairwise (runs 1–1c) to 60 % on 15 picks and 76 %. Pairwise is the solid
+signal: +13 points, against at most 4 points between runs 1b and 1c on unchanged inputs. The
+precision gain is not established: its Wilson 95 % interval on 15 picks (36–80 %) reaches down to
+the earlier values. Every pair still
+misses the 80 % recall gate. Not the decision run: the text was incomplete.
+
+**Next:** run 2 with the full text.
