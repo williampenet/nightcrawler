@@ -328,7 +328,10 @@ examples, 60 of 78 positives, Wilson 95 % 66–85 %); every other gate holds (va
 with the recommendation to accept Mistral Small 3.2 with examples.
 
 What iteration 1 changed for that pair (run 2 → 3, same labels and positives): recall 76 % → 77 %
-(within the ≤ 5-point run-to-run variation), pairwise 68 % → 75 % (beyond the ≤ 4-point
-variation), precision 36 % on 42 → 39 % on 44 (within noise). The descriptions and the extra
-examples improved the ranking, not the recall.
+(within the ≤ 5-point run-to-run variation), pairwise 68 % → 75 %, precision 36 % on 42 → 39 %
+on 44 (within noise). The pairwise rise is larger than the variation seen once on unchanged
+inputs (≤ 4 points, one pair of runs) but within a single run's own uncertainty: with 23 liked ×
+77 disliked labels its standard error is about 6 points (Hanley–McNeil, computed), so about ±12
+points at 95 %; run 2a also gave this model 76 %. A ranking gain is plausible but **unverified**,
+and the two changes (descriptions, more examples) are confounded.
 
