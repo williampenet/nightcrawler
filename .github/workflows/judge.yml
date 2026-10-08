@@ -1,0 +1,62 @@
+name: Judge eval
+
+# Model eval for judge_taste (WIP-57, docs/adr/0006-model-selection-judge-taste.md): every
+# candidate of eval/judge/models.yaml judges William's labelled concerts and the FR-11
+# reference positives, in two prompt conditions. The prompt holds personal data (written taste,
+# ratings): candidates are Scaleway-hosted (Paris, no retention or training). The repo is public:
+# the job publishes aggregated counts and rates only, never a title, name, id, prompt or reason,
+# and commits nothing (the aggregated results file is kept as a run artifact). Cost ~€3 per full run (ADR-0006, Cost impact): not on a schedule, only when
+# the task, its runner or the candidates change, or on demand.
+on:
+  push:
+    branches: [main]
+    # eval/taste/** builds the labels (run.js); eval/judge/** holds the runner and candidates
+    paths: [src/nightcrawler/judge.py, eval/judge/**, eval/taste/**, .github/workflows/judge.yml]
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Candidate ids, comma-separated (empty = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: judge-eval
+  cancel-in-progress: false  # a run is paid per token: never kill one half-way
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pip install -e .
+      # Store secrets as in the taste eval (database looked up, never created; URL masked);
+      # SCW_GENAI_SECRET_KEY for the models (IAM application limited to GenerativeApisModelAccess).
+      - name: Run the judge eval
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          SCW_DB_USER: ${{ secrets.SCW_DB_USER }}  # optional
+          SCW_GENAI_SECRET_KEY: ${{ secrets.SCW_GENAI_SECRET_KEY }}
+          TASTE_SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          JUDGE_ONLY: ${{ github.event.inputs.only }}
+        run: python -m eval.judge
+      - name: Keep the aggregated results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge-eval-results
+          path: eval/results/judge.json
+          if-no-files-found: ignore
+          retention-days: 90

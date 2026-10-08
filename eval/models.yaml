@@ -139,3 +139,5 @@ extract_events:
     # Not measured: replays the gold labels this model wrote (F1 = 1 by construction).
     provider: gold
     model: claude-opus-5-5
+
+# judge_taste candidates: eval/judge/models.yaml (WIP-57).
