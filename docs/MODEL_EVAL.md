@@ -307,3 +307,31 @@ What the written taste changed (runs 1b–1c → 2, same labels): Mistral Small 
 49 % → 76 % recall, far beyond the run-to-run variation measured on unchanged inputs (≤ 5
 points), and 62–63 % → 68 % pairwise, only marginally beyond it (≤ 4 points, one pair of runs). Precision on William's labels stays 31–44 %
 for every pair (base rate 23 %); the larger models still pick fewer concerts and are not better.
+
+#### Run 3 — 2026-10-08, iteration 1 (listing description, 10 + 10 examples), two ~25 B models
+
+[Judge eval run 37759022114](https://github.com/williampenet/nightcrawler/actions/runs/37759022114),
+started by the merge of #72 (WIP-79). Written taste 2,034 characters; same site data and labels as
+run 2 (100 labels, 23 liked; 78 positives); **69 of the 155 cases had the listing's own
+description**; references unchanged (rule-based pairwise 48 %, former watch 6/13).
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 56 % | 38 % on 40 | 70 % | 100 % | 1.5 | 0.20 |
+| Mistral Small 3.2 24B | profile+examples | **77 %** | 39 % on 44 | **75 %** | 100 % | 1.1 | 0.28 |
+| Gemma 4 26B-A4B | profile | 42 % | 36 % on 33 | 70 % | 100 % | 0.6 | 0.34 |
+| Gemma 4 26B-A4B | profile+examples | 50 % | 40 % on 38 | 73 % | 99 % (2 × HTTP 429) | 0.7 | 0.48 |
+
+**Applying the ADR-0006 rule:** no pair reaches 80 % recall (best: Mistral Small 3.2 with
+examples, 60 of 78 positives, Wilson 95 % 66–85 %); every other gate holds (valid ≥ 99 %, p95 ≤
+1.5 s, pairwise above 48 %). Step 4: nothing routed; the 80 % gate (PRD FR-5 AC) goes to William,
+with the recommendation to accept Mistral Small 3.2 with examples.
+
+What iteration 1 changed for that pair (run 2 → 3, same labels and positives): recall 76 % → 77 %
+(within the ≤ 5-point run-to-run variation), pairwise 68 % → 75 %, precision 36 % on 42 → 39 %
+on 44 (within noise). The pairwise rise is larger than the variation seen once on unchanged
+inputs (≤ 4 points, one pair of runs) but within a single run's own uncertainty: with 23 liked ×
+77 disliked labels its standard error is about 6 points (Hanley–McNeil, computed), so about ±12
+points at 95 %; run 2a also gave this model 76 %. A ranking gain is plausible but **unverified**,
+and the two changes (descriptions, more examples) are confounded.
+
