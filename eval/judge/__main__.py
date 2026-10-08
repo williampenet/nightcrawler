@@ -1,7 +1,7 @@
 """Model eval for `judge_taste` (WIP-57, ADR-0006): `python -m eval.judge [--only id,id]`.
 
 Judges William's labelled concerts and the FR-11 reference positives with every candidate of
-`eval/models.yaml` (`judge_taste`), in two prompt conditions, and publishes aggregated metrics
+`eval/judge/models.yaml`, in two prompt conditions, and publishes aggregated metrics
 only: one notice per candidate and condition, and a markdown table in the job summary. The repo
 is public: never print a title, a name, an id, the profile, a prompt or a model's reason.
 
@@ -17,11 +17,15 @@ import json
 import logging
 import math
 import os
+import re
 import statistics
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 import yaml
@@ -37,6 +41,13 @@ REFERENCE = ROOT.parent / "reference" / "watch_events.csv"
 CONDITIONS = ("profile", "profile+examples")
 MAX_OUTPUT_TOKENS = 400
 TIMEOUT_S = 120.0
+# a candidate × condition stops calling after this many failed calls in a row (unknown model id,
+# unsupported parameter, outage): the rest of its cases are "aborted", not paid for
+STOP_AFTER = 10
+FAILED_CALL = frozenset({"transport", "timeout", "aborted"})
+# every prompt holds personal data: only EU providers (Scaleway Paris) or a local model
+EU_PROVIDERS = frozenset({"scaleway", "local"})
+TZ = ZoneInfo("Europe/Paris")  # reference rows are local dates (eval/reference/README.md)
 RULE_BASELINE = "rule-based score (scoring.js, leave-one-out)"
 log = logging.getLogger("eval.judge")
 
@@ -78,10 +89,18 @@ def build_cases(
     (reference row matched to a published concert, not rated), "ref_row" (judged from the
     row's text). A rated concert also reported by the watch keeps William's label (watch=True)."""
     by_id = {c["id"]: c for c in concerts}
-    matched = {}  # concert id -> reference row index
+    matched = {}  # concert id -> reference row index (the first one)
+    rows_used = set()  # every reference row matched to a published concert
     for e in (coverage or {}).get("events") or []:
-        if e.get("found") and e.get("concert_id") in by_id:
-            matched.setdefault(e["concert_id"], e["row"])
+        cid, row = e.get("concert_id"), e.get("row")
+        if not (e.get("found") and cid in by_id and isinstance(row, int)):
+            continue
+        # the report's row index comes from the CSV the Pipeline read; skip it when this
+        # checkout's CSV holds another date at that index (CSV edited since)
+        if not 0 <= row < len(reference) or reference[row]["date"] != local_day(by_id[cid]):
+            continue
+        matched.setdefault(cid, row)
+        rows_used.add(row)
     cases = []
     for lab in labels:
         if (c := by_id.get(lab["id"])) is None:
@@ -96,18 +115,31 @@ def build_cases(
             }
         )
     rated = {c["concert"]["id"] for c in cases}
-    rows_used = {row for cid, row in matched.items() if cid in rated}
-    for cid, row in matched.items():
+    for cid in matched:
         if cid not in rated:
             cases.append({"concert": by_id[cid], "kind": "ref_matched", "label": "positive"})
-            rows_used.add(row)
     for i, row in enumerate(reference):
         if i not in rows_used:
             cases.append({"concert": row_concert(i, row), "kind": "ref_row", "label": "positive"})
     return cases
 
 
+def local_day(concert: dict) -> str | None:
+    try:
+        return datetime.fromisoformat(concert["start"]).astimezone(TZ).date().isoformat()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------- calls
+
+
+def error_code(exc: llm.ModelError) -> str:
+    """A ModelError message holds a model id and an HTTP status or an exception type only."""
+    msg = str(exc)
+    if m := re.search(r"HTTP (\d{3})", msg):
+        return f"http_{m.group(1)}"
+    return "timeout" if "Timeout" in msg else "transport"
 
 
 def spec_of(cand: dict) -> llm.ModelSpec:
@@ -126,8 +158,8 @@ def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -
             timeout_s=TIMEOUT_S,
             client=client,
         )
-    except llm.ModelError:
-        return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": "transport"}
+    except llm.ModelError as exc:
+        return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": error_code(exc)}
     data = a.data
     if data is not None and judge.check(data):
         data, a.reason = None, "check"
@@ -146,9 +178,18 @@ def run_condition(
     spec = spec_of(cand)
     rated = [(c["concert"], c["label"]) for c in cases if c["kind"] == "rated"]
 
+    lock, failed = threading.Lock(), [0]  # failed calls in a row
+
     def one(case: dict) -> dict:
+        with lock:
+            if failed[0] >= STOP_AFTER:
+                return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": "aborted"}
         ex = judge.pick_examples(case["concert"], rated) if cond == "profile+examples" else ()
-        return judge_one(spec, judge.messages_for(case["concert"], artists, profile, ex), client)
+        r = judge_one(spec, judge.messages_for(case["concert"], artists, profile, ex), client)
+        with lock:
+            bad = r["error"] in FAILED_CALL or str(r["error"]).startswith("http_")
+            failed[0] = failed[0] + 1 if bad else 0
+        return r
 
     with httpx.Client() as client, ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(one, cases))
@@ -162,7 +203,7 @@ def wilson(k: int, n: int, z: float = 1.959963984540054) -> list[float] | None:
         return None
     p, d = k / n, 1 + z * z / n
     mid, half = (p + z * z / (2 * n)) / d, z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return [round(mid - half, 3), round(mid + half, 3)]
+    return [round(max(0.0, mid - half), 3), round(min(1.0, mid + half), 3)]
 
 
 def pairwise(liked: list[float], disliked: list[float]) -> float | None:
@@ -180,8 +221,11 @@ def ratio(k: int, n: int) -> float | None:
 
 def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
     verdict = [a["data"]["verdict"] if a["data"] else None for a in answers]
-    # an unusable answer ranks last and counts as "no" (conservative); validity is reported
+    # ADR-0006: an unusable answer counts as "no" for recall and precision and ranks below every
+    # valid answer for pairwise (which favours a candidate whose failures fall on disliked
+    # concerts: pairwise on valid answers only is reported next to it, and validity is a gate)
     sc = [judge.score(a["data"]) if a["data"] else -1.0 for a in answers]
+    ok = [a["data"] is not None for a in answers]
     pos = [i for i, c in enumerate(cases) if c["label"] in ("liked", "positive")]
     picked = [i for i in pos if verdict[i] in judge.PICKED]
     with_disc = [i for i in pos if verdict[i] in (*judge.PICKED, "discovery")]
@@ -204,9 +248,19 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
     for a in answers:
         if a["data"] is None:
             errors[a["error"] or "unknown"] = errors.get(a["error"] or "unknown", 0) + 1
+    if not any(ok):  # nothing measured: no quality figure at all, never a chance-level 50 %
+        return {
+            "n": len(cases), "valid": 0.0, "errors": errors, "recall": None,
+            "recall_wilson95": None, "recall_with_discovery": None, "recall_by_kind": {},
+            "precision": None, "precision_wilson95": None, "picked_rated": 0, "pairwise": None,
+            "pairwise_valid": None, "verdicts": {}, "p50_s": None, "p95_s": None,
+            "tokens_in": None, "tokens_out": None, "eur_per_1000": None,
+        }  # fmt: skip
+    liked_r = [i for i in rated if cases[i]["label"] == "liked"]
+    disliked_r = [i for i in rated if cases[i]["label"] == "disliked"]
     return {
         "n": len(cases),
-        "valid": ratio(sum(a["data"] is not None for a in answers), len(answers)),
+        "valid": ratio(sum(ok), len(answers)),
         "errors": errors,
         "recall": ratio(len(picked), len(pos)),
         "recall_wilson95": wilson(len(picked), len(pos)),
@@ -217,9 +271,9 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
         "precision": ratio(len(rated_liked_picked), len(rated_picked)),
         "precision_wilson95": wilson(len(rated_liked_picked), len(rated_picked)),
         "picked_rated": len(rated_picked),
-        "pairwise": pairwise(
-            [sc[i] for i in rated if cases[i]["label"] == "liked"],
-            [sc[i] for i in rated if cases[i]["label"] == "disliked"],
+        "pairwise": pairwise([sc[i] for i in liked_r], [sc[i] for i in disliked_r]),
+        "pairwise_valid": pairwise(
+            [sc[i] for i in liked_r if ok[i]], [sc[i] for i in disliked_r if ok[i]]
         ),
         "verdicts": {v: verdict.count(v) for v in (*judge.VERDICTS, None) if verdict.count(v)},
         "p50_s": round(statistics.median(lat), 2) if lat else None,
@@ -264,11 +318,16 @@ def ci(w) -> str:
     return "" if not w else f" ({w[0]:.0%}–{w[1]:.0%})"
 
 
+def errs(m: dict) -> str:
+    return ", ".join(f"{k} {v}" for k, v in sorted(m["errors"].items())) or "none"
+
+
 def compact(cid: str, cond: str, m: dict) -> str:
     return (
         f"judge_taste {cid} [{cond}]: recall {pct(m['recall'])}, precision "
-        f"{pct(m['precision'])} on {m['picked_rated']} picked, pairwise {pct(m['pairwise'])}, "
-        f"valid {pct(m['valid'])}, p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000"
+        f"{pct(m['precision'])} on {m['picked_rated']} picked, pairwise {pct(m['pairwise'])} "
+        f"(valid only {pct(m['pairwise_valid'])}), valid {pct(m['valid'])} (errors: {errs(m)}), "
+        f"p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000"
     )
 
 
@@ -286,19 +345,21 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
         f"liked ({pct(ref['watch_precision'])}).",
         "",
         "| Candidate | Condition | Recall picked (95 % CI) | + discovery | Precision on labels "
-        "(95 % CI) | Pairwise | Valid | p95 s | Tokens in / out | € / 1,000 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "(95 % CI) | Pairwise (valid only) | Valid (errors) | p95 s | Tokens in / out | "
+        "€ / 1,000 | Verdicts |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for cid, cond, m in rows:
+        verdicts = ", ".join(f"{k or 'invalid'} {v}" for k, v in m["verdicts"].items())
         out.append(
             f"| {cid} | {cond} | {pct(m['recall'])}{ci(m['recall_wilson95'])} | "
             f"{pct(m['recall_with_discovery'])} | {pct(m['precision'])}"
-            f"{ci(m['precision_wilson95'])} on {m['picked_rated']} | {pct(m['pairwise'])} | "
-            f"{pct(m['valid'])} | {m['p95_s']} | {m['tokens_in']} / {m['tokens_out']} | "
-            f"{m['eur_per_1000']} |"
+            f"{ci(m['precision_wilson95'])} on {m['picked_rated']} | {pct(m['pairwise'])} "
+            f"({pct(m['pairwise_valid'])}) | {pct(m['valid'])} ({errs(m)}) | {m['p95_s']} | "
+            f"{m['tokens_in']} / {m['tokens_out']} | {m['eur_per_1000']} | {verdicts} |"
         )
     for cid, why in skipped.items():
-        out.append(f"| {cid} | — | skipped: {why} | | | | | | | |")
+        out.append(f"| {cid} | — | skipped: {why} | | | | | | | | |")
     out += [
         "",
         "Recall by subset (picked / n): "
@@ -306,6 +367,7 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
             f"{cid} [{cond}] "
             + ", ".join(f"{k} {a}/{b}" for k, (a, b) in m["recall_by_kind"].items())
             for cid, cond, m in rows
+            if m["recall_by_kind"]
         ),
         "",
     ]
@@ -313,10 +375,15 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
 
 
 def candidates(only: str) -> list[dict]:
-    cands = yaml.safe_load((ROOT.parent / "models.yaml").read_text("utf-8"))["judge_taste"]
-    cands = [c for c in cands if not c.get("retired") and c["provider"] not in ("gold", "none")]
+    """Callable candidates of eval/judge/models.yaml; any other provider is a config error."""
+    cands = yaml.safe_load((ROOT / "models.yaml").read_text("utf-8"))["judge_taste"]
+    cands = [c for c in cands if not c.get("retired") and c["provider"] != "none"]
+    if bad := [c["id"] for c in cands if c["provider"] not in EU_PROVIDERS]:
+        raise ValueError(f"provider not allowed for personal data (ADR-0006): {', '.join(bad)}")
     if only:
         wanted = {i.strip() for i in only.split(",") if i.strip()}
+        if unknown := sorted(wanted - {c["id"] for c in cands}):
+            annotate("warning", f"Judge eval: --only: unknown candidate id(s) {', '.join(unknown)}")
         cands = [c for c in cands if c["id"] in wanted]
     return cands
 
@@ -330,7 +397,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conditions", default=",".join(CONDITIONS))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--max-calls", type=int, default=2500, help="cost guard for the whole run")
-    ap.add_argument("--results", default=str(ROOT / "results" / "latest.json"))
+    # eval/results/ is git-ignored; the workflow uploads the file (aggregates only)
+    ap.add_argument("--results", default=str(ROOT.parent / "results" / "judge.json"))
     args = ap.parse_args(argv)
     conds = [c for c in args.conditions.split(",") if c in CONDITIONS]
 
@@ -361,34 +429,48 @@ def main(argv: list[str] | None = None) -> int:
         f"{site['generated_at']}",
     )
 
-    rows, skipped, results, calls = [], {}, {}, 0
-    for cand in candidates(args.only):
-        ok, why = spec_of(cand).available()
-        if not ok:
-            skipped[cand["id"]] = why
-            continue
-        for cond in conds:
-            if calls + len(cases) > args.max_calls:
-                skipped[f"{cand['id']} [{cond}]"] = f"cost guard ({args.max_calls} calls)"
+    rows, skipped, results, calls, failed = [], {}, {}, 0, False
+    try:
+        for cand in candidates(args.only):
+            ok, why = spec_of(cand).available()
+            if not ok:
+                skipped[cand["id"]] = why
                 continue
-            calls += len(cases)
-            log.info("candidate %s, condition %s", cand["id"], cond)
-            answers = run_condition(cand, cond, cases, site["artists"], profile, args.workers)
-            m = metrics(cand, cases, answers)
-            annotate("notice", compact(cand["id"], cond, m))
-            rows.append((cand["id"], cond, m))
-            results[f"{cand['id']} [{cond}]"] = m
-    md = table(ref, rows, skipped)
-    print(md)
-    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(md)
-    out = Path(args.results)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps({"references": ref, "results": results, "skipped": skipped}, indent=1), "utf-8"
-    )
-    return 0
+            for cond in conds:
+                key = f"{cand['id']} [{cond}]"
+                if calls + len(cases) > args.max_calls:
+                    skipped[key] = f"cost guard ({args.max_calls} calls)"
+                    continue
+                calls += len(cases)
+                log.info("candidate %s, condition %s", cand["id"], cond)
+                try:
+                    answers = run_condition(
+                        cand, cond, cases, site["artists"], profile, args.workers
+                    )
+                    m = metrics(cand, cases, answers)
+                except Exception as exc:  # one pair never stops the others; type only
+                    skipped[key] = f"error: {type(exc).__name__}"
+                    annotate("error", f"Judge eval: {key} failed ({type(exc).__name__})")
+                    failed = True
+                    continue
+                level = "notice" if m["valid"] == 1 else "warning"
+                annotate(level, compact(cand["id"], cond, m))
+                failed |= not m["valid"]  # not one usable answer: the run fails
+                rows.append((cand["id"], cond, m))
+                results[key] = m
+    finally:  # the summary is written even if the loop stops (paid calls stay accounted)
+        md = table(ref, rows, skipped)
+        print(md)
+        if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(md)
+        out = Path(args.results)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps({"references": ref, "results": results, "skipped": skipped}, indent=1),
+            "utf-8",
+        )
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

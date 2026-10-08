@@ -1,17 +1,17 @@
 name: Judge eval
 
 # Model eval for judge_taste (WIP-57, docs/adr/0006-model-selection-judge-taste.md): every
-# candidate of eval/models.yaml `judge_taste` judges William's labelled concerts and the FR-11
+# candidate of eval/judge/models.yaml judges William's labelled concerts and the FR-11
 # reference positives, in two prompt conditions. The prompt holds personal data (written taste,
 # ratings): candidates are Scaleway-hosted (Paris, no retention or training). The repo is public:
 # the job publishes aggregated counts and rates only, never a title, name, id, prompt or reason,
-# and commits nothing. Cost ~€3 per full run (ADR-0006, Cost impact): not on a schedule, only when
+# and commits nothing (the aggregated results file is kept as a run artifact). Cost ~€3 per full run (ADR-0006, Cost impact): not on a schedule, only when
 # the task, its runner or the candidates change, or on demand.
 on:
   push:
     branches: [main]
-    paths: [src/nightcrawler/judge.py, eval/judge/**, eval/models.yaml,
-            .github/workflows/judge.yml]
+    # eval/taste/** builds the labels (run.js); eval/judge/** holds the runner and candidates
+    paths: [src/nightcrawler/judge.py, eval/judge/**, eval/taste/**, .github/workflows/judge.yml]
   workflow_dispatch:
     inputs:
       only:
@@ -52,3 +52,11 @@ jobs:
           TASTE_SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           JUDGE_ONLY: ${{ github.event.inputs.only }}
         run: python -m eval.judge
+      - name: Keep the aggregated results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge-eval-results
+          path: eval/results/judge.json
+          if-no-files-found: ignore
+          retention-days: 90

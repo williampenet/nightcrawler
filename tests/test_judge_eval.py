@@ -33,7 +33,8 @@ LABELS = [
     {"id": DISLIKED, "label": "disliked", "rule": 0.9},
     {"id": WATCHED, "label": "disliked", "rule": 0.0},
 ]
-PRIVATE = ["Earth", "Popstar", "Boris", "Sunn", "Old Band", "goût secret", LIKED, DISLIKED]
+PRIVATE = ["Earth", "Popstar", "Boris", "Sunn", "Old Band", "goût secret", "Sonic", "Périscope",
+           "Transbordeur", "Grrrnd", LIKED, DISLIKED, WATCHED, REFONLY]  # fmt: skip
 
 
 def cases():
@@ -55,6 +56,17 @@ def test_build_cases_kinds_and_watch():
     assert row["lineup"] == ["Old Band", "Other Band"] and row["start"] == "2026-07-26"
 
 
+def test_build_cases_second_row_on_a_rated_concert_and_stale_rows():
+    ref = [*REFERENCE, {"date": "2026-10-12", "artists": "Boris + guest", "venue": "Le Périscope"}]
+    cov = {"events": [*COVERAGE["events"], {"row": 3, "found": True, "concert_id": WATCHED},
+                      {"row": 0, "found": True, "concert_id": LIKED}]}  # fmt: skip
+    cs = runner.build_cases(LABELS, CONCERTS, ref, cov)
+    # row 3 matched the disliked concert too: never judged again as a positive; row 0's date
+    # differs from LIKED's (CSV edited since the report): ignored, row 0 judged from its text
+    assert [c["concert"]["id"] for c in cs if c["kind"] == "ref_row"] == ["ref0"]
+    assert [c["watch"] for c in cs if c["kind"] == "rated"] == [False, False, True]
+
+
 def test_references_rule_and_watch():
     ref = runner.references(cases())
     assert ref["labels"] == 3 and ref["liked"] == 1 and ref["disliked"] == 2
@@ -74,6 +86,7 @@ def test_metrics():
     answers = [ans("for_you", 80), ans("must_see"), ans("no"), ans("discovery"), ans(None)]
     m = runner.metrics(cand, cases(), answers)
     assert m["valid"] == 0.8 and m["errors"] == {"schema": 1}
+    assert m["pairwise_valid"] == 0.5
     assert m["recall"] == round(1 / 3, 3)  # liked picked; matched = discovery; row invalid
     assert m["recall_with_discovery"] == round(2 / 3, 3)
     assert m["recall_by_kind"] == {"rated": [1, 1], "ref_matched": [0, 1], "ref_row": [0, 1]}
@@ -83,6 +96,12 @@ def test_metrics():
     assert m["verdicts"] == {"must_see": 1, "for_you": 1, "discovery": 1, "no": 1, None: 1}
 
 
+def test_metrics_without_a_valid_answer_reports_no_quality():
+    m = runner.metrics({}, cases(), [ans(None)] * 5)
+    assert m["valid"] == 0.0 and m["pairwise"] is None and m["recall"] is None
+    assert runner.wilson(0, 21)[0] == 0.0 and runner.wilson(21, 21)[1] == 1.0
+
+
 def test_judge_one_maps_errors(monkeypatch):
     spec = llm.ModelSpec(provider="scaleway", model="m")
 
@@ -90,7 +109,9 @@ def test_judge_one_maps_errors(monkeypatch):
         raise llm.ModelError("m: HTTP 400")
 
     monkeypatch.setattr(llm, "chat_json", bad)
-    assert runner.judge_one(spec, [], None)["error"] == "transport"
+    assert runner.judge_one(spec, [], None)["error"] == "http_400"
+    assert runner.error_code(llm.ModelError("m: ReadTimeout")) == "timeout"
+    assert runner.error_code(llm.ModelError("m: ConnectError")) == "transport"
     out = llm.Answer({"verdict": "no", "reason": "r", "confidence": 300}, [], "m", 1.0, 10, 5)
     monkeypatch.setattr(llm, "chat_json", lambda *a, **k: out)
     r = runner.judge_one(spec, [], None)
@@ -105,7 +126,7 @@ def test_labels_js_uses_the_taste_eval_labels():
     assert got == {DISLIKED: "disliked"}  # artist-only like is not a label (TASTE_EVAL.md)
 
 
-def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys):
+def _setup(monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("SCW_GENAI_SECRET_KEY", "k")
     monkeypatch.delenv("SCW_DEFAULT_PROJECT_ID", raising=False)
@@ -118,18 +139,16 @@ def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys):
             "feedback": [],
         },
     )
-    monkeypatch.setattr(
-        runner.taste,
-        "load_site",
-        lambda s: {
-            "concerts": CONCERTS,
-            "artists": {},
-            "generated_at": "2026-10-08T06:00:00+02:00",
-            "coverage": COVERAGE,
-        },
-    )
+    monkeypatch.setattr(runner.taste, "load_site", lambda s: {
+        "concerts": CONCERTS, "artists": {}, "generated_at": "2026-10-08T06:00:00+02:00",
+        "coverage": COVERAGE})  # fmt: skip
     monkeypatch.setattr(runner, "run_labels", lambda payload: LABELS)
     monkeypatch.setattr(runner, "load_reference", lambda path: REFERENCE)
+
+
+def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys, caplog):
+    _setup(monkeypatch)
+    caplog.set_level("DEBUG")
     prompts = []
 
     def fake(spec, messages, schema, **kw):
@@ -151,7 +170,8 @@ def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys):
     assert len(prompts) == 2 * 5  # two conditions x five cases
     assert sum("Concerts qu'elle a aimés" in p for p in prompts) > 0  # examples condition
     assert all("goût secret" in p for p in prompts)
-    printed = capsys.readouterr().out + out.read_text()
+    cap = capsys.readouterr()
+    printed = cap.out + cap.err + caplog.text + out.read_text()
     for s in PRIVATE:
         assert s not in printed
     data = json.loads(out.read_text())
@@ -162,3 +182,49 @@ def test_main_publishes_aggregates_only(monkeypatch, tmp_path, capsys):
 def test_main_skips_without_store(monkeypatch, tmp_path):
     monkeypatch.setattr(runner.taste, "database_url", lambda: None)
     assert runner.main(["--results", str(tmp_path / "r.json")]) == 0  # skipped, nothing called
+
+
+def test_main_failing_candidate_stops_early_and_fails_the_run(monkeypatch, tmp_path, capsys):
+    _setup(monkeypatch)
+    calls = []
+
+    def http_400(spec, messages, schema, **kw):
+        calls.append(1)
+        raise llm.ModelError(f"{spec.model}: HTTP 400")
+
+    monkeypatch.setattr(llm, "chat_json", http_400)
+    monkeypatch.setattr(runner, "STOP_AFTER", 2)
+    out = tmp_path / "r.json"
+    rc = runner.main(["--only", "gemma-4-26b-a4b-scaleway", "--workers", "1", "--conditions",
+                      "profile", "--results", str(out)])  # fmt: skip
+    assert rc == 1 and len(calls) == 2  # stopped after 2 failed calls in a row
+    m = json.loads(out.read_text())["results"]["gemma-4-26b-a4b-scaleway [profile]"]
+    assert m["errors"] == {"http_400": 2, "aborted": 3} and m["pairwise"] is None
+    assert "::warning::" in capsys.readouterr().out
+
+
+def test_main_cost_guard_and_unexpected_error(monkeypatch, tmp_path):
+    _setup(monkeypatch)
+    monkeypatch.setattr(
+        llm,
+        "chat_json",
+        lambda *a, **k: llm.Answer(
+            {"verdict": "no", "reason": "r", "confidence": 50}, [], "m", 0.1, None, None
+        ),
+    )
+    out = tmp_path / "r.json"
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway,qwen3.5-397b-a17b-scaleway",
+                      "--workers", "1", "--max-calls", "6", "--results", str(out)])  # fmt: skip
+    data = json.loads(out.read_text())
+    # tokens None -> TypeError in metrics: recorded, the other pairs still run; then the guard
+    assert data["skipped"]["mistral-small-3.2-scaleway [profile]"] == "error: TypeError"
+    assert "cost guard" in data["skipped"]["qwen3.5-397b-a17b-scaleway [profile]"]
+    assert rc == 1
+
+
+def test_candidates_are_eu_only(monkeypatch, tmp_path):
+    bad = tmp_path / "models.yaml"
+    bad.write_text("judge_taste:\n  - {id: x, provider: mistral, model: m}\n")
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="not allowed for personal data"):
+        runner.candidates("")
