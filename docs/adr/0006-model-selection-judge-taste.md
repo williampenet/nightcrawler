@@ -158,7 +158,7 @@ per-step cap: **unmeasured**): schema-valid on 100 % of answers, p95 ≤ 3.2 s, 
 1,000; recall of picked 8–51 %, all below the 80 % gate (best: Mistral Small 3.2 with examples,
 51 %, pairwise 64 %). Rule step 4: nothing routed. Run 1b
 ([37740875208](https://github.com/williampenet/nightcrawler/actions/runs/37740875208), all 10
-pairs, still no written taste) confirms it: recall 8–49 %; references on the same 100 labels:
+pairs, including the one run 1 missed, still no written taste) confirms it: recall 8–49 %; references on the same 100 labels:
 rule-based score pairwise 48 %, former watch 6 of 13 rated picks liked (46 %). Details:
 [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste.
 

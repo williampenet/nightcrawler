@@ -185,7 +185,7 @@ before; a precision on 5 or 15 picks is not interpretable):**
 - Pairwise accuracy 54–64 % against 49 % for the rule-based score the day before (different
   label set by one concert); differences under ~10 points are within noise (ADR-0006, limits).
 
-#### Run 1b — 2026-10-08, same code, after WIP-76 (still without a written profile)
+#### Run 1b — 2026-10-08, same scoring code, annotation change only (WIP-76), still without a written profile
 
 [Judge eval run 37740875208](https://github.com/williampenet/nightcrawler/actions/runs/37740875208)
 (site data of 2026-10-08 08:38): 155 cases, 100 labels (23 liked, 77 disliked), 78 positives,
@@ -207,11 +207,16 @@ the 13 rated concerts it had reported were liked (46 %)**. Base rate: 23 % of la
 | Qwen3.5 397B-A17B | profile | 8 % | 50 % on 6 | 57 % | 100 % | 2.0 | 0.65 |
 | Qwen3.5 397B-A17B | profile+examples | 18 % | 38 % on 8 | 53 % | 100 % | 2.4 | 0.87 |
 
-Run 1 and 1b differ by a few points for the same candidate (e.g. Gemma with examples, pairwise
-63 % → 58 %): the labels and published concerts changed overnight (102 → 100 labels), and
-temperature 0 does not guarantee identical answers from a hosted API (not measured separately).
-Same reading as run 1: every pair below the 80 % recall gate, nothing routed; the two ~25 B
-models pick the most and rank best, the three larger ones pick little. The former watch's
-46 % precision on William's ratings is the only Claude reference; it is on 13 concerts only.
+Run 1 and 1b differ by up to 5 points for the same candidate (Gemma with examples, pairwise
+63 % → 58 %; Mistral Medium, recall 25 % → 20 %), possibly because the labels and published
+concerts changed overnight (102 → 100 labels) and because temperature 0 does not guarantee
+identical answers from a hosted API; neither cause is measured separately. Run 1b also measures
+the pair missing from run 1 (Qwen3.5 397B with examples: recall 18 %), which changes nothing.
+Same reading as run 1: every pair below the 80 % recall gate, nothing routed. The two ~25 B
+models pick the most labelled concerts (26–38 against 6–24); pairwise accuracy is 51–62 % for all
+pairs, within the ~10-point noise level, so no candidate ranks clearly best. The former watch's
+46 % on William's ratings is the only Claude reference; it is on 13 concerts only and not
+directly comparable with the models' precision, since its picks are the reference positives
+(ADR-0006, Baseline).
 
 **Next:** run 2 once the written taste is filled in the app; same candidates, same rule.
