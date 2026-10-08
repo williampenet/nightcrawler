@@ -191,6 +191,12 @@ rule, same labels and positives:
   is inside the noise (run-to-run recall variation up to 5 points on unchanged inputs, runs
   1b–1c; Wilson 95 % on 78 positives about ±10 points) and will be reported as such.
 
+**Run 3** ([37759022114](https://github.com/williampenet/nightcrawler/actions/runs/37759022114),
+iteration 1, 69 of 155 cases with a description): Mistral Small 3.2 with examples recall 77 %
+(60/78, Wilson 95 % 66–85 %), precision 39 % on 44 picks, pairwise 75 %, €0.28 per 1,000;
+Gemma 4 with examples 50 % recall, pairwise 73 %. Still under the 80 % gate: the gate goes to
+William (rule step 4).
+
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
 
