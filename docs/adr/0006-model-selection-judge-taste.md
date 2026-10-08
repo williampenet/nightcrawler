@@ -167,8 +167,8 @@ picks). Since then the
 runner makes no call while the written taste is empty. Details:
 [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2a
 ([37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688)) read
-82 characters of the written taste (synced mid-typing): Mistral Small 3.2 rose to 60 % precision
-on 15 picks and 76 % pairwise, recall 36–45 %, still below the gate; not the decision run. Run 2
+82 characters of the written taste (most likely synced mid-typing, **unverified**): Mistral
+Small 3.2 rose to 76 % pairwise (precision 60 % on 15 picks, not established), recall 36–45 %, still below the gate; not the decision run. Run 2
 waits for the full text.
 
 ## Decision

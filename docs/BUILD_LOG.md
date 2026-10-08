@@ -201,7 +201,9 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:reviewer | re-review WIP-78 (7c213ee) | APPROVE: variation per metric matches the 1b/1c annotations | PR #69 |
 | 2026-10-08 | agent:orchestrator | merge | PR #69 WIP-78 (078af91) | PR #69 |
 | 2026-10-08 | human:william | feedback | Wrote "Mon goût en mots" again in the app (09:56) and pasted the text in chat | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
-| 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688): written taste 82 chars (synced mid-typing); Mistral Small 3.2 profile: precision 60 % on 15, pairwise 76 %, recall 36 %; every pair below the 80 % recall gate; recorded as run 2a, not the decision run | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
+| 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688): written taste 82 chars (most likely synced mid-typing, unverified); Mistral Small 3.2 profile: precision 60 % on 15, pairwise 76 %, recall 36 %; every pair below the 80 % recall gate; recorded as run 2a, not the decision run | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
+| 2026-10-08 | agent:reviewer | review run 2a | REQUEST_CHANGES: table, header and Wilson 36–80 % verified; baseline precision 35–36 % not 33–36 %; "synced mid-typing" unlabelled in ADR and BUILD_LOG | PR #70 |
+| 2026-10-08 | agent:orchestrator | fix review run 2a | 35–36 %; "unverified" everywhere; pairwise (+13 vs ≤ 4 run-to-run) as the signal, precision gain not established | PR #70 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

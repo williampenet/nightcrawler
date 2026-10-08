@@ -269,9 +269,11 @@ labels as runs 1b–1c (100 labels, 23 liked), references unchanged (48 %, watch
 | Qwen3.5 397B-A17B | profile | 12 % | 43 % on 7 | 66 % | 100 % | 2.3 | 0.66 |
 | Qwen3.5 397B-A17B | profile+examples | 20 % | 33 % on 12 | 60 % | 100 % | 4.6 | 0.87 |
 
-With only 82 characters of written taste, Mistral Small 3.2 (profile only) moves from 33–36 %
-precision and 61–63 % pairwise (runs 1b–1c) to 60 % on 15 picks and 76 %; that is above the
-~10-point noise level, but on 15 picks (Wilson 95 % interval 36–80 %). Every pair still
+With only 82 characters of written taste, Mistral Small 3.2 (profile only) moves from 35–36 %
+precision and 61–63 % pairwise (runs 1–1c) to 60 % on 15 picks and 76 %. Pairwise is the solid
+signal: +13 points, against at most 4 points between runs 1b and 1c on unchanged inputs. The
+precision gain is not established: its Wilson 95 % interval on 15 picks (36–80 %) still includes
+the earlier values. Every pair still
 misses the 80 % recall gate. Not the decision run: the text was incomplete.
 
 **Next:** run 2 with the full text.
