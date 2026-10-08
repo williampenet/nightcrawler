@@ -362,3 +362,34 @@ amended gate (pairwise above the rule-based score and recall ≥ 70 %), pending 
 the run-to-run variation (up to 5 points), so a later run can fail it; the pairwise part rests on a
 27-point gap against a standard error of about 5 points.
 
+#### Run 5 — 2026-10-09, iteration 2 (nearest ratings, learning curve, cross-validated cut-off)
+
+[Judge eval run 37848873088](https://github.com/williampenet/nightcrawler/actions/runs/37848873088),
+started by the merge of #76 (WIP-81). Same data as run 4 (site data 2026-10-08 13:23; 152 labels,
+34 liked, 118 disliked; 87 positives; rule-based pairwise 52 %). Mistral Small 3.2 only.
+
+| Condition | Recall picked | Precision on labels | Pairwise | @80 % cut-off: precision (95 %) on picks | recall | cut-offs |
+|---|---|---|---|---|---|---|
+| profile+examples (random) | 70 % | 41 % on 58 | 76 % | 33 % (24–43 %) on 89 | 91 % | discovery ≥ 30 / discovery ≥ 30 |
+| **nn** (all ratings) | 71 % | 44 % on 57 | 77 % | **36 % (26–47 %) on 81** | 90 % | discovery ≥ 30 / discovery ≥ 30 |
+| nn@2/3#1 | 63 % | 41 % on 56 | 71 % | 27 % (19–36 %) on 100 | 83 % | no ≤ 20 / discovery ≥ 30 |
+| nn@2/3#2 | 75 % | 46 % on 55 | 78 % | 36 % (27–47 %) on 80 | 91 % | discovery ≥ 30 / discovery ≥ 30 |
+| nn@1/3#1 | 71 % | 42 % on 55 | 73 % | 30 % (22–40 %) on 90 | 79 % | no ≤ 10 / discovery ≥ 30 |
+| nn@1/3#2 | 68 % | 44 % on 52 | 74 % | 30 % (21–39 %) on 95 | 82 % | no ≤ 10 / no ≤ 10 |
+
+All pairs valid ≥ 99 % (2 × HTTP 429 in nn@1/3#1), p95 ≤ 1.3 s, €0.28 per 1,000. At the 90 %
+cut-off, `nn` gives precision 31 % (23–41 %) on 100 picks, recall 93 %.
+
+**Applying the iteration 2 rule (ADR-0006):**
+- **Gate 1 fails:** in `nn`, precision at the cross-validated 80 % cut-off is 36 %, under 40 %
+  (recall 90 %, transfer check ≥ 75 % holds). The score is coarse: the cut-off that reaches 80 %
+  on one half lands at "discovery ≥ 30" and overshoots to 90 % recall on the other.
+- **Gate 2 passes, narrowly:** precision at that cut-off rises with the share of ratings, 1/3
+  mean 30 % ≤ 2/3 mean 31.5 % ≤ all 36 %, +6 points (threshold +5), inside the ±12-point noise
+  stated in the ADR.
+- Nearest ratings vs random ones (all ratings): precision at the cut-off 36 % vs 33 %, default
+  picks 44 % vs 41 %, pairwise 77 % vs 76 %: within noise.
+
+Nothing routed. Options put to William (2026-10-09): keep rating and re-measure, and in parallel a
+cost study for fine-tuning (LoRA) on his ratings.
+
