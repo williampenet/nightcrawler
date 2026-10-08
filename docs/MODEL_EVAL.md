@@ -342,7 +342,8 @@ started by the merge of #74 (WIP-80). Site data of 2026-10-08 13:23; **152 label
 disliked)**, 87 positives, 205 cases, 92 with the listing's description; references on these
 labels: rule-based pairwise 52 %, former watch 7/15. William reported 51 likes given; the eval
 counts only likes on upcoming concerts present in that site data (docs/TASTE_EVAL.md), and the
-breakdown of the gap is not in this run's output (**unverified**; the next Taste eval reports it).
+breakdown of the gap is not measured (**unverified**: the Taste eval's per-reason breakdown covers
+dislikes only; for likes it counts only ratings on concerts no longer published).
 
 | Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
 |---|---|---|---|---|---|---|---|
@@ -354,7 +355,10 @@ breakdown of the gap is not in this run's output (**unverified**; the next Taste
 For Mistral Small 3.2 with examples: recall 72 % (63 of 87, Wilson 95 % 62–81 %), below the 80 %
 gate and inside the 66–85 % interval of run 3's 77 %; pairwise 79 % against 52 % for the
 rule-based score on the same labels, a 27-point gap against a single-run standard error of about
-5 points (Hanley–McNeil on 34 × 118, computed); precision 44 % against a 22 % base rate (34/152).
+5 points (Hanley–McNeil on 34 × 118, computed); precision 44 % (Wilson 95 % 32–57 % on 57 picks) against a 22 % base rate (34/152).
 ADR-0006 step 4: nothing routed. Proposed to William: route it as the ranking judge with an
-amended gate (pairwise above the rule-based score and recall ≥ 70 %), pending his decision.
+amended gate (pairwise above the rule-based score and recall ≥ 70 %), pending his decision. The
+70 % recall threshold was chosen after seeing this run: it is 2 points under run 4's 72 %, inside
+the run-to-run variation (up to 5 points), so a later run can fail it; the pairwise part rests on a
+27-point gap against a standard error of about 5 points.
 
