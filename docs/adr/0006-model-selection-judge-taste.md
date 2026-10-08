@@ -53,7 +53,7 @@ rather than assumed.
 All five run on **Scaleway Generative APIs (Paris)**, the provider already used by ADR-0004:
 zero data retention by default, inputs not used for training
 ([data privacy](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/data-privacy.mdx)),
-strict `json_schema` output supported by all its LLMs
+structured outputs (`json_schema`) and JSON mode supported by all its LLMs, with accuracy that "may vary between models"
 ([structured outputs](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/how-to/use-structured-outputs.mdx)).
 Same key (`SCW_GENAI_SECRET_KEY`), no new account.
 
@@ -79,7 +79,8 @@ non-EU provider unless William approves it here (removing the name does not anon
 profile, GDPR Recital 26). Two references stand in for it:
 1. **The former watch** (Claude judging the same kind of written profile): its precision on
    William's own ratings, i.e. among the rated concerts that the watch reported, the share he
-   liked. The reference positives themselves are the watch's picks, so its recall on them is 100 %
+   liked. Reported for context, not used by the decision rule: the overlap between rated concerts
+   and the watch's in-window picks may be only a handful of concerts. The reference positives themselves are the watch's picks, so its recall on them is 100 %
    by construction and is not a comparison.
 2. **The current rule-based score:** pairwise accuracy 49 % (above).
 
@@ -92,7 +93,11 @@ profile, GDPR Recital 26). Two references stand in for it:
   candidates win, by measuring the local Gemma 4 QAT GGUF already pinned for ADR-0004.
 - *gpt-oss-120b, DeepSeek V4 Flash, GLM 5.2* on Scaleway: listed with English (and Chinese) only
   on the supported-models page; the prompt and reasons are French.
-- *Llama 3.3 70B*: Llama community licence (custom, restrictive), and older than the Qwen and
+- *Magistral Small* (QuelLLM's #1 for French): listed on Scaleway's supported-models page as not
+  available serverless (dedicated only).
+- *Llama 3.3 70B*: Llama 3.3 Community licence (custom, not OSI open source,
+  [licence](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/blob/main/LICENSE)), €0.90 /
+  €0.90 per M on Scaleway (pricing page above), and older than the Qwen and
   Mistral models in the same price range.
 - *Mistral Large 3, Qwen3.5 122B*: dedicated deployment only on Scaleway (from €0.93 / h,
   ADR-0004). *Mistral La Plateforme*: zero retention only on request on paid plans, the free plan
@@ -104,7 +109,8 @@ Runner `eval/judge` (Model eval for `judge_taste`), triggered in CI; publishes a
 (public repo). Data, read at eval time and never committed:
 - **William's labels:** liked / disliked concerts from the event store, built exactly as the taste
   eval does (`eval/taste/run.js` `buildLabels`, docs/TASTE_EVAL.md).
-- **Reference positives:** the 68 rows of `eval/reference/watch_events.csv`. A row matched to a
+- **Reference positives:** the 68 rows of `eval/reference/watch_events.csv` (the watch's 69 rows
+  minus one held at a private place, `eval/reference/README.md`). A row matched to a
   published concert (`report.json` coverage) is judged as that concert; other rows (past, or
   outside the window) are judged from the row's own text (artists, venue, date) and reported as a
   separate subset, since that text is cleaner than a real listing. A concert both rated and
@@ -119,16 +125,26 @@ liked) and with `discovery` counted; precision of `must_see + for_you` on Willia
 (Wilson 95 %); pairwise accuracy on his labels (same definition as the taste eval); schema-valid
 rate; p50 / p95 latency; mean tokens; € / 1 000 judgements from measured tokens.
 
-**Decision rule:**
-1. Keep the candidate × condition pairs with recall ≥ 80 % on the positives and pairwise accuracy
-   above the 49 % rule-based baseline.
-2. Among them, the highest precision on William's labels wins.
-3. Within 5 points of that precision, the cheapest per 1,000 judgements wins; between two within
-   20 % of cost, the EU publisher.
-4. If no pair passes step 1: no model is routed; report the gap and the options (more examples,
-   the venue's own description in the input, a LoRA ADR section).
+**Definitions.** *Positives* = William's liked concerts ∪ the reference positives (all three
+subsets, including those judged from the row text). *Picked* = verdict `must_see` or `for_you`;
+`discovery` is reported but never counts as picked. An answer that is unusable (transport or HTTP
+error, timeout, invalid JSON, schema or `judge.check` failure) counts as `no` for recall and
+precision and ranks below every valid answer for pairwise accuracy; pairwise on valid answers only
+is reported too. *Precision* = liked / picked among William's labels; when nothing labelled is
+picked it is 0.
 
-**Known limits:** 22 liked / 81 disliked labels and 68 positives: a Wilson interval on 22 items
+**Decision rule** (one candidate × condition pair is chosen):
+1. **Gates:** recall of picked on the positives ≥ 80 %; pairwise accuracy > 49 % (the rule-based
+   score on the same labels in the same run, if that differs from 49 %); valid answers ≥ 95 %;
+   p95 latency ≤ 30 s.
+2. Among the pairs that pass, let P be the best precision. The pairs within **10 points** of P
+   (the noise level below) are equivalent on quality.
+3. Among those, the cheapest per 1,000 judgements (measured tokens) wins; if an EU-publisher pair
+   costs at most 1.2 × that one, the cheapest such EU pair wins instead.
+4. If no pair passes the gates: no model is routed; report the gap and the options (more
+   examples, the venue's own description in the input, a LoRA ADR section).
+
+**Known limits:** 22 liked / 81 disliked labels and up to 68 reference positives: a Wilson interval on 22 items
 is about ±20 points, so differences under ~10 points are noise. The positives were picked by
 Claude from a written profile, so agreement with them partly measures agreement with Claude. One
 run per candidate, temperature 0.
@@ -147,12 +163,16 @@ small one fails the schema).
   William's rated concerts (title, acts, venue) and the judged concert. No identifier, no e-mail,
   no rating timestamps. Provider: Scaleway, Paris, zero retention by default, no training
   ([data privacy](https://raw.githubusercontent.com/scaleway/docs-content/main/pages/generative-apis/reference-content/data-privacy.mdx));
-  the only exception it lists is content kept up to two weeks on an HTTP 500 or suspected abuse.
+  exceptions it lists: content of a request that triggers an HTTP 500 kept up to two weeks to fix
+  it, and full request content stored "temporarily" when misuse harms the service.
 - **Model supply chain:** hosted models, pinned by Scaleway id; Scaleway publishes no weight
   revision for serverless models (**unverified** silent updates), so the routed model gets a
   weekly re-run like ADR-0004.
-- **Prompt injection:** concert text comes from venue pages: it is wrapped between markers, the
-  markers are stripped from it, and the system prompt says it is data (`judge.SYSTEM`). Output is
+- **Prompt injection:** concert text comes from venue pages, and so do the example concerts (titles,
+  acts, venues): each goes in its own block (`<<<EXEMPLES`, `<<<CONCERT`), every run of two or more
+  angle brackets is removed from the data so no field can rebuild a marker, and the system prompt
+  says both blocks are data (`judge.SYSTEM`). Artist styles, fans and related artists are given
+  only for confident identities (a doubtful match may be a homonym, `artists.py`). Output is
   strict `json_schema` and re-validated (`llm.validate` + `judge.check`); its only effect is the
   order and labels of concerts on William's own page.
 - **Secrets:** `SCW_GENAI_SECRET_KEY` (model), `SCW_*` store secrets (read-only transaction), in
@@ -163,10 +183,14 @@ small one fails the schema).
 ## Consequences
 - Switching model = editing `config/models.yaml` and re-running `python -m eval.judge`.
 - Production must re-judge when the profile text changes, not only when the concert changes
-  (cache key = concert hash + profile hash): to design in the follow-up ticket.
+  (cache key = concert hash + profile hash): to design in the follow-up ticket. Each profile edit
+  re-judges the whole window (~500 concerts, ≈ €0.20–2.20 at the estimates above).
 
 ## Cost impact
 - **Eval:** ~170 judgements × 2 conditions × 5 candidates ≈ 4.3 M tokens in, ≈ €3 one-off at list
   prices (**unverified**, measured by the run).
+- Scaleway's free tier covers the first 1 M tokens of the project
+  ([pricing](https://www.scaleway.com/en/pricing/model-as-a-service/)), already partly used by
+  ADR-0004.
 - **Production:** ≤ 1,500 judgements / month × €0.40–4.35 / 1 000 = €0.6–6.5 / month depending
   on the winner, inside the ~€20 budget.
