@@ -204,6 +204,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37746419688](https://github.com/williampenet/nightcrawler/actions/runs/37746419688): written taste 82 chars (most likely synced mid-typing, unverified); Mistral Small 3.2 profile: precision 60 % on 15, pairwise 76 %, recall 36 %; every pair below the 80 % recall gate; recorded as run 2a, not the decision run | [WIP-78](https://linear.app/wip-coding/issue/WIP-78) |
 | 2026-10-08 | agent:reviewer | review run 2a | REQUEST_CHANGES: table, header and Wilson 36–80 % verified; baseline precision 35–36 % not 33–36 %; "synced mid-typing" unlabelled in ADR and BUILD_LOG | PR #70 |
 | 2026-10-08 | agent:orchestrator | fix review run 2a | 35–36 %; "unverified" everywhere; pairwise (+13 vs ≤ 4 run-to-run) as the signal, precision gain not established | PR #70 |
+| 2026-10-08 | agent:reviewer | re-review run 2a (d9e3797) | APPROVE: baseline 35–36 %, "unverified" in all three docs, per-metric comparison; nit on the Wilson lower bound wording applied | PR #70 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
