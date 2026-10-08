@@ -217,6 +217,8 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | measure | [Judge eval run 37759022114](https://github.com/williampenet/nightcrawler/actions/runs/37759022114) (run 3, 69/155 cases with a description): Mistral Small 3.2 + examples recall 77 % (60/78, gate 80 %), precision 39 % on 44, pairwise 75 % (run 2: 68 %), €0.28 / 1,000; Gemma 4 + examples 50 %, 73 %; gate decision asked to William, recommending to accept Mistral Small 3.2 + examples at 77 % recall (gate 80 %; proposed new gate 75 %) | [WIP-79](https://linear.app/wip-coding/issue/WIP-79) |
 | 2026-10-08 | agent:reviewer | review run 3 | REQUEST_CHANGES: figures and Wilson 66–85 % verified; "improved the ranking" overstated (≤ 4-point bound from one pair of runs, single-run SE ≈ 6 points, confounded changes); "at 75 %" ambiguous | PR #73 |
 | 2026-10-08 | agent:orchestrator | fix review run 3 | ranking gain marked plausible but unverified (SE 6.3 points recomputed), confounding stated; BUILD_LOG wording; chat message to William corrected | PR #73 |
+| 2026-10-08 | human:william | feedback | Reports 51 "J'aime" given in the app (23:14); last count 23 liked / 85 disliked ([Taste eval 37770143500](https://github.com/williampenet/nightcrawler/actions/runs/37770143500), 13:27) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
+| 2026-10-08 | agent:orchestrator | config | WIP-80: judge.yml cost comment updated (two active candidates, cents per run, from run 3); the merge starts Judge eval run 4 (the agent cannot dispatch workflows, HTTP 403) | [WIP-80](https://linear.app/wip-coding/issue/WIP-80) |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human

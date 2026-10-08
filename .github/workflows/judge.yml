@@ -5,8 +5,10 @@ name: Judge eval
 # reference positives, in two prompt conditions. The prompt holds personal data (written taste,
 # ratings): candidates are Scaleway-hosted (Paris, no retention or training). The repo is public:
 # the job publishes aggregated counts and rates only, never a title, name, id, prompt or reason,
-# and commits nothing (the aggregated results file is kept as a run artifact). Cost ~€3 per full run (ADR-0006, Cost impact): not on a schedule, only when
-# the task, its runner or the candidates change, or on demand.
+# and commits nothing (the aggregated results file is kept as a run artifact).
+# Cost: since WIP-79 only the two ~25 B candidates are active; run 3 (37759022114) measured
+# €0.20–0.48 per 1,000 judgements, so a run of ~620 calls costs a few cents (the five-candidate
+# runs were ~€1). Not on a schedule: on task, runner or candidate changes, or on demand.
 on:
   push:
     branches: [main]
