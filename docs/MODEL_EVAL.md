@@ -179,7 +179,7 @@ before; a precision on 5 or 15 picks is not interpretable):**
 - The larger models pick less: Qwen3.5 397B picked 5 of 102 labelled concerts, Mistral Medium
   15–24, against 22–34 for Mistral Small 3.2. Without a written profile, size did not help here.
 - Examples have a mixed effect: recall up in 3 of 4 comparable candidates (Mistral Small +17,
-  Qwen3 235B +11, Gemma +8), down 2 for Mistral Medium; every candidate also picked more labelled
+  Qwen3 235B +11, Gemma +8), down 2 for Mistral Medium; every comparable candidate also picked more labelled
   concerts with examples (e.g. 22 → 34), which raises recall mechanically; precision did not
   improve consistently. Most differences are within the ~10-point noise level.
 - Pairwise accuracy 54–64 % against 49 % for the rule-based score the day before (different

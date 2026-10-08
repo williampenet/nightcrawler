@@ -181,6 +181,7 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 | 2026-10-08 | agent:orchestrator | fix | WIP-76: one annotation per candidate (both conditions) plus an opening one with the rule-based pairwise and the watch's precision; run 1 recorded in MODEL_EVAL.md and ADR-0006 (not conclusive, nothing routed) | [WIP-76](https://linear.app/wip-coding/issue/WIP-76) |
 | 2026-10-08 | agent:reviewer | review WIP-76 (04cbcfe) | REQUEST_CHANGES: table matches the 9 annotated rows, runner and test OK; blocking: "all 5 valid 100 %" overclaimed (one pair unmeasured), examples effect framed selectively and within noise, references were never annotated (not cut by the cap) | PR #66 |
 | 2026-10-08 | agent:orchestrator | fix review WIP-76 | 9 of 10 pairs measured stated everywhere, the 10th marked unmeasured; examples effect described as mixed with the pick-count caveat; references wording corrected; p95 ≤ 3.2 s; small-sample sentence; notice cap sourced as measured + community thread | PR #66 |
+| 2026-10-08 | agent:reviewer | re-review WIP-76 (441d411) | APPROVE: 3 blocking and non-blocking 4–6 fixed; nit "every comparable candidate" applied | PR #66 |
 
 ## Summary (filled at demo time)
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
