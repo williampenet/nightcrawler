@@ -203,7 +203,28 @@ def test_main_failing_candidate_stops_early_and_fails_the_run(monkeypatch, tmp_p
     assert "::warning::" in capsys.readouterr().out
 
 
-def test_main_cost_guard_and_unexpected_error(monkeypatch, tmp_path):
+def test_main_isolates_an_unexpected_error(monkeypatch, tmp_path):
+    _setup(monkeypatch)
+    monkeypatch.setattr(runner, "metrics", lambda *a: 1 / 0)
+    monkeypatch.setattr(
+        llm,
+        "chat_json",
+        lambda *a, **k: llm.Answer(
+            {"verdict": "no", "reason": "r", "confidence": 50}, [], "m", 0.1, 1, 1
+        ),
+    )
+    out = tmp_path / "r.json"
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--workers", "1",
+                      "--results", str(out)])  # fmt: skip
+    skipped = json.loads(out.read_text())["skipped"]
+    assert skipped == {
+        "mistral-small-3.2-scaleway [profile]": "error: ZeroDivisionError",
+        "mistral-small-3.2-scaleway [profile+examples]": "error: ZeroDivisionError",
+    }
+    assert rc == 1
+
+
+def test_main_cost_guard(monkeypatch, tmp_path):
     _setup(monkeypatch)
     monkeypatch.setattr(
         llm,
@@ -216,10 +237,11 @@ def test_main_cost_guard_and_unexpected_error(monkeypatch, tmp_path):
     rc = runner.main(["--only", "mistral-small-3.2-scaleway,qwen3.5-397b-a17b-scaleway",
                       "--workers", "1", "--max-calls", "6", "--results", str(out)])  # fmt: skip
     data = json.loads(out.read_text())
-    # tokens None -> TypeError in metrics: recorded, the other pairs still run; then the guard
-    assert data["skipped"]["mistral-small-3.2-scaleway [profile]"] == "error: TypeError"
+    # null token counts read as 0; every "no": precision 0 (ADR-0006); then the cost guard
+    m = data["results"]["mistral-small-3.2-scaleway [profile]"]
+    assert m["tokens_in"] == 0 and m["precision"] == 0.0 and m["picked_rated"] == 0
     assert "cost guard" in data["skipped"]["qwen3.5-397b-a17b-scaleway [profile]"]
-    assert rc == 1
+    assert rc == 0
 
 
 def test_candidates_are_eu_only(monkeypatch, tmp_path):

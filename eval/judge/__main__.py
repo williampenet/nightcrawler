@@ -166,8 +166,8 @@ def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -
     return {
         "data": data,
         "latency": a.latency_s,
-        "tin": a.tokens_in,
-        "tout": a.tokens_out,
+        "tin": a.tokens_in or 0,  # a provider may send null usage counts
+        "tout": a.tokens_out or 0,
         "error": a.reason,
     }
 
@@ -268,7 +268,8 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
         "recall_by_kind": {
             k: [sum(verdict[i] in judge.PICKED for i in v), len(v)] for k, v in sub.items()
         },
-        "precision": ratio(len(rated_liked_picked), len(rated_picked)),
+        # ADR-0006: precision is 0 when nothing labelled is picked
+        "precision": ratio(len(rated_liked_picked), len(rated_picked)) or 0.0,
         "precision_wilson95": wilson(len(rated_liked_picked), len(rated_picked)),
         "picked_rated": len(rated_picked),
         "pairwise": pairwise([sc[i] for i in liked_r], [sc[i] for i in disliked_r]),
