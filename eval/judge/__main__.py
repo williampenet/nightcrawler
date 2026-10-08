@@ -425,9 +425,11 @@ def main(argv: list[str] | None = None) -> int:
     taste_len = len(profile.get("taste_text") or "") if isinstance(profile, dict) else 0
     annotate(
         "notice",
-        f"Judge eval: {len(cases)} cases, {ref['labels']} labels, "
-        f"{ref['positives']} positives; written taste {taste_len} chars; site data "
-        f"{site['generated_at']}",
+        f"Judge eval: {len(cases)} cases, {ref['labels']} labels ({ref['liked']} liked, "
+        f"{ref['disliked']} disliked), {ref['positives']} positives; written taste {taste_len} "
+        f"chars; site data {site['generated_at']}. References on the same labels: rule-based "
+        f"pairwise {pct(ref['rule_pairwise'])}; former watch {ref['watch_liked']}/"
+        f"{ref['watch_rated']} of its rated picks liked",
     )
 
     rows, skipped, results, calls, failed = [], {}, {}, 0, False
@@ -437,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
             if not ok:
                 skipped[cand["id"]] = why
                 continue
+            # GitHub keeps about 10 notices per step (run 37738954308 showed 10 of 11): one
+            # annotation per candidate, both conditions in it, plus the opening one
+            lines, level = [], "notice"
             for cond in conds:
                 key = f"{cand['id']} [{cond}]"
                 if calls + len(cases) > args.max_calls:
@@ -454,11 +459,13 @@ def main(argv: list[str] | None = None) -> int:
                     annotate("error", f"Judge eval: {key} failed ({type(exc).__name__})")
                     failed = True
                     continue
-                level = "notice" if m["valid"] == 1 else "warning"
-                annotate(level, compact(cand["id"], cond, m))
+                lines.append(compact(cand["id"], cond, m))
+                level = level if m["valid"] == 1 else "warning"
                 failed |= not m["valid"]  # not one usable answer: the run fails
                 rows.append((cand["id"], cond, m))
                 results[key] = m
+            if lines:
+                annotate(level, "\n".join(lines))
     finally:  # the summary is written even if the loop stops (paid calls stay accounted)
         md = table(ref, rows, skipped)
         print(md)

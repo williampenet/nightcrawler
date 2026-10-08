@@ -129,3 +129,53 @@ eval.
 - **Next experiment** (when the long tail is worth it): give the model the page *structure*
   instead of flattened text — one block per HTML card/heading — which is what defeats small
   models here; then rerun this eval unchanged.
+
+## Task `judge_taste` — see [ADR-0006](adr/0006-model-selection-judge-taste.md)
+
+Rerun: `python -m eval.judge` or the **Judge eval** workflow (Scaleway candidates of
+`eval/judge/models.yaml`). Data read at run time from the event store and the published site,
+never committed; the workflow publishes aggregates only. Method and decision rule: ADR-0006
+(fixed before run 1).
+
+#### Run 1 — 2026-10-08, without a written profile
+
+[Judge eval run 37738954308](https://github.com/williampenet/nightcrawler/actions/runs/37738954308)
+(site data of 2026-10-07 22:00): 156 cases, 102 labels, 77 positives. **The written taste
+("Mon goût en mots") was empty: 0 characters** (run annotation). The model saw only the seed
+artists, the concert and, in the second condition, 6 + 6 of William's ratings: the main input of
+PRD FR-5 was missing, so this run measures the candidates without it, not the task.
+
+| Candidate | Condition | Recall picked | Precision on labels | Pairwise | Valid | p95 s | € / 1,000 |
+|---|---|---|---|---|---|---|---|
+| Mistral Small 3.2 24B | profile | 34 % | 36 % on 22 | 62 % | 100 % | 1.7 | 0.12 |
+| Mistral Small 3.2 24B | profile+examples | **51 %** | 32 % on 34 | **64 %** | 100 % | 1.3 | 0.17 |
+| Gemma 4 26B-A4B | profile | 35 % | 29 % on 24 | 55 % | 100 % | 0.7 | 0.21 |
+| Gemma 4 26B-A4B | profile+examples | 43 % | 33 % on 30 | 63 % | 100 % | 0.86 | 0.29 |
+| Mistral Medium 3.5 128B | profile | 25 % | 40 % on 15 | 54 % | 100 % | 1.6 | 1.42 |
+| Mistral Medium 3.5 128B | profile+examples | 23 % | 29 % on 24 | 55 % | 100 % | 1.6 | 1.96 |
+| Qwen3 235B-A22B 2507 | profile | 14 % | 21 % on 14 | 60 % | 100 % | 3.1 | 0.72 |
+| Qwen3 235B-A22B 2507 | profile+examples | 25 % | 29 % on 17 | 56 % | 100 % | 2.5 | 0.99 |
+| Qwen3.5 397B-A17B | profile | 8 % | 40 % on 5 | 59 % | 100 % | 2.1 | 0.65 |
+| Qwen3.5 397B-A17B | profile+examples | — | — | — | — | — | — |
+
+Missing row: GitHub kept 10 notice annotations for the step and this one was the 11th (measured
+on this run; the limit is not in GitHub's docs, a [community thread](https://github.com/orgs/community/discussions/68471)
+reports 10 per step). The job summary and the results artifact hold it but cannot be read from the
+agent workspace. The runner now sends one annotation per candidate (WIP-76).
+
+References: the rule-based score's pairwise accuracy on these 102 labels was not annotated in this
+run (same cap); on 2026-10-07 it was 49 % on 103 labels
+([Taste eval 37674210942](https://github.com/williampenet/nightcrawler/actions/runs/37674210942)).
+
+**What run 1 shows (facts from the table, small sample):**
+- Every candidate answers in the schema (valid 100 %), fast (p95 ≤ 3.1 s) and cheaply
+  (€0.12–1.96 per 1,000 at these prompt sizes; a 4,000-character profile adds tokens, so costs
+  will rise, **unverified** by how much).
+- **No pair passes the recall gate** (≥ 80 %): best 51 %. ADR-0006 rule, step 4: no model routed.
+- The larger models pick less: Qwen3.5 397B picked 5 of 102 labelled concerts, Mistral Medium
+  15–24, against 22–34 for Mistral Small 3.2. Without a written profile, size did not help here.
+- Examples raise recall for the two small models (+17 and +8 points) and pairwise (+2 and +8).
+- Pairwise accuracy 54–64 % against 49 % for the rule-based score the day before (different
+  label set by one concert); differences under ~10 points are within noise (ADR-0006, limits).
+
+**Next:** run 2 once the written taste is filled in the app; same candidates, same rule.

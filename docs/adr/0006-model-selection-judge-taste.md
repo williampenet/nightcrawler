@@ -150,7 +150,13 @@ Claude from a written profile, so agreement with them partly measures agreement 
 run per candidate, temperature 0.
 
 ## Evaluation summary
-To fill from the first eval run.
+**Run 1 (2026-10-08,
+[Judge eval 37738954308](https://github.com/williampenet/nightcrawler/actions/runs/37738954308)):
+not conclusive.** The written taste was empty (0 characters), so the models judged from seed
+artists and examples only. All five candidates were schema-valid on 100 % of answers, p95
+≤ 3.1 s, €0.12–1.96 per 1,000; recall of picked 8–51 %, all below the 80 % gate (best: Mistral
+Small 3.2 with examples, 51 %, pairwise 64 %). Rule step 4: nothing routed. Details:
+[`docs/MODEL_EVAL.md`](../MODEL_EVAL.md). Run 2 waits for the written taste.
 
 ## Decision
 To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
