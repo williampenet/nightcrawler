@@ -3,6 +3,8 @@
 - **Status:** ✋ Accepted — Mistral Small 3.2 24B on Scaleway, nearest-rating examples, recall
   first (William, 2026-10-09 07:02 and 07:06, WIP-82). Proposed 2026-10-08 with the method and
   decision rules fixed before each run.
+- **Amended by:** [ADR-0007](0007-private-taste-judgements.md) (2026-10-09): production writes
+  judgements to the event store; the read-only rule in Security applies to the eval.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

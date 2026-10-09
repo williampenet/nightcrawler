@@ -1,6 +1,7 @@
 # ADR-0005: Event store and server-side feedback (Scaleway, EU)
 
 - **Status:** ✋ Accepted (William, 2026-10-06) — Scaleway account and API key: William
+- **Amended by:** [ADR-0007](0007-private-taste-judgements.md) (2026-10-09): with a send key, the page reads taste judgements through the feedback function (`GET /verdicts`) while browsing.
 - **Date:** 2026-10-06
 - **Deciders:** William (PM), Claude (engineer)
 

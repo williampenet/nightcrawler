@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -137,12 +138,43 @@ def artist_lines(concert: dict, artists: dict) -> list[str]:
         if tags := [_clean(t, 40) for t in (a.get("tags") or [])[:MAX_TAGS] if _clean(t, 40)]:
             parts.append("styles : " + ", ".join(tags))
         if isinstance(a.get("fans"), int) and not isinstance(a.get("fans"), bool):
-            parts.append(f"fans Deezer : {a['fans']}")
+            parts.append(f"fans Deezer : {round_fans(a['fans'])}")
         rel = [_clean(r, 60) for r in (a.get("related") or [])[:MAX_RELATED] if _clean(r, 60)]
         if rel:
             parts.append("proches : " + ", ".join(rel))
         lines.append(" ; ".join(parts))
     return lines
+
+
+def round_fans(n: int) -> int:
+    """Two significant figures (1234 -> 1200): the order of size is what tells a niche artist
+    from a star; exact counts move every day and would change the prompt, hence the cache key
+    of every judgement (ADR-0007)."""
+    if n < 100:
+        return max(n, 0)
+    digits = len(str(n)) - 2
+    return round(n, -digits)
+
+
+def input_hash(task, messages: list[dict]) -> str:
+    """Cache key of a judgement (ADR-0007): the task's model and settings, the output schema sent
+    with the request (`response_format`, llm.chat_json) and the exact messages (concert,
+    description, written taste, seeds, examples). Any change re-judges the concert. The section
+    rule is not in it: the pipeline recomputes `section` from the stored verdict every run."""
+    p = task.primary
+    payload = {
+        "task": task.name,
+        "provider": p.provider,
+        "model": p.model,
+        "revision": p.revision,
+        "extra": p.extra,
+        "temperature": task.temperature,
+        "max_output_tokens": task.max_output_tokens,
+        "schema": SCHEMA,
+        "messages": messages,
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _day(start: object) -> str:

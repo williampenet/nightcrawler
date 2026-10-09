@@ -35,6 +35,7 @@ from eval.taste import load as taste
 from nightcrawler import judge, llm
 from nightcrawler.cli import annotate
 from nightcrawler.coverage import load_reference
+from nightcrawler.store import verdicts
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = ROOT.parent.parent / "config" / "models.yaml"  # routing (tasks.judge_taste)
@@ -84,10 +85,9 @@ def run_labels(payload: dict) -> list[dict]:
 
 
 def load_descriptions(url: str, ids: list[str], connect=None) -> dict[str, str]:
-    """{concert id: the longest description among its stored listings} (WIP-79). The pipeline
-    already stores each listing (`raw_events.payload`, store/sync.py) and links it to its concert
-    (`concert_sources`); read-only transaction with a statement timeout, like the taste eval.
-    Descriptions are venue text: sent to the EU model only, never printed or published."""
+    """{concert id: the longest description among its stored listings} (WIP-79), read like the
+    production judge reads it (store.verdicts.read_descriptions, ADR-0007), in a read-only
+    transaction with a statement timeout. Venue text: sent to the EU model only, never printed."""
     if connect is None:
         import psycopg
 
@@ -95,18 +95,7 @@ def load_descriptions(url: str, ids: list[str], connect=None) -> dict[str, str]:
     with connect(url, autocommit=True, **taste.CONNECT) as conn, conn.transaction():
         conn.execute("SET TRANSACTION READ ONLY")
         conn.execute(f"SET LOCAL statement_timeout = '{taste.STATEMENT_TIMEOUT}'")
-        rows = conn.execute(
-            "SELECT cs.concert_id, r.payload->>'description' FROM concert_sources cs "
-            "JOIN raw_events r ON r.id = cs.raw_id "
-            "WHERE cs.concert_id = ANY(%s) AND coalesce(r.payload->>'description', '') <> '' "
-            "ORDER BY cs.concert_id, r.id",  # ties: the first stored listing, every run
-            (ids,),
-        ).fetchall()
-    out: dict[str, str] = {}
-    for cid, text in rows:
-        if len(text) > len(out.get(cid, "")):
-            out[cid] = text
-    return out
+        return verdicts.read_descriptions(conn, ids)
 
 
 def row_concert(i: int, row: dict) -> dict:
