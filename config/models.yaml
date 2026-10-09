@@ -25,3 +25,20 @@ tasks:
       # pages into chunks of llm_chunk_chars (3,200, config/zone.yaml) so every call stays
       # within the evaluated input size (eval pages <= 3,234 chars).
       max_input_chars: 7000
+
+  judge_taste:
+    adr: docs/adr/0006-model-selection-judge-taste.md
+    # ADR-0006 (accepted 2026-10-09, William): recall first. Same request as eval candidate
+    # `mistral-small-3.2-scaleway` (eval/judge/models.yaml), condition `nn` (nearest ratings).
+    # The prompt holds personal data (written taste, ratings): EU host only (Scaleway, Paris).
+    primary:
+      provider: scaleway              # Generative APIs, Paris; key SCW_GENAI_SECRET_KEY
+      model: mistral-small-3.2-24b-instruct-2506   # served as mistral/...:fp8 (supported models)
+    # No fallback: schema-valid on 100 % of answers in runs 2–5 (ADR-0006).
+    temperature: 0.0
+    # Gate in the Judge eval workflow (eval/judge/__main__.py): in condition `nn`, the share of
+    # William's positives that judge.section() shows on the home page must reach this.
+    min_quality: 0.85
+    limits:
+      max_output_tokens: 400
+      timeout_ms: 120000

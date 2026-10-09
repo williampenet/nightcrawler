@@ -496,3 +496,28 @@ def test_default_conditions_run_the_learning_curve(monkeypatch, tmp_path, capsys
     assert set(res) == {f"mistral-small-3.2-scaleway [{c}]" for c in runner.DEFAULT_CONDITIONS}
     assert set(res["mistral-small-3.2-scaleway [nn]"]["cv"]) == {"80%", "90%"}
     assert "cut-off cross-validated @80%" in capsys.readouterr().out
+
+
+def test_shown_metrics_per_section():
+    answers = [ans("must_see"), ans("discovery", 40), ans("for_you"), ans("discovery", 10),
+               ans(None)]  # fmt: skip
+    sh = runner.shown_metrics(cases(), answers)
+    # positives: LIKED (must_see, shown), REFONLY (discovery 10: not shown), ref0 (invalid)
+    assert sh["recall"] == round(1 / 3, 3)
+    assert sh["share_shown"] == 1.0  # the 3 rated concerts are all shown
+    secs = sh["sections"]
+    assert (secs["ne_pas_rater"]["n"], secs["ne_pas_rater"]["liked"]) == (1, 1)
+    assert (secs["decouvertes"]["n"], secs["pour_toi"]["n"], secs["tout_voir"]["n"]) == (1, 1, 0)
+
+
+def _gate_results(recall):
+    return {"mistral-small-3.2-scaleway [nn]": {"shown": {"recall": recall}}}
+
+
+def test_gate_on_the_routed_model():
+    conds = list(runner.DEFAULT_CONDITIONS)
+    assert runner.gate(_gate_results(0.9), {}, conds, "") == 0
+    assert runner.gate(_gate_results(0.84), {}, conds, "") == 1  # min_quality 0.85
+    assert runner.gate({}, {"mistral-small-3.2-scaleway": "no key"}, conds, "") == 1
+    assert runner.gate({}, {}, ["profile"], "") == 0  # condition left out: nothing to gate
+    assert runner.gate({}, {}, conds, "gemma-4-26b-a4b-scaleway") == 0  # routed left out

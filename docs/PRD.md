@@ -143,14 +143,15 @@ v2 text, kept as complement:
 - Model chosen by a model-selection ADR: shortlist from the [QuelLLM.fr catalogue](https://quelllm.fr/catalogue), ≥ 3 open-weight candidates (European, Chinese or other; licence checked on the model card) + Claude as proprietary baseline, measured on FR-11. If no candidate is close enough to the baseline, a small model may be adapted to the task (fine-tuning, e.g. LoRA) — only with its own ADR (method, data, cost).
 - Only new or changed concerts are judged (cached by content hash); verdicts are stored.
 - The UI marks reasons as AI-generated (AI Act).
-- AC: on FR-11, the chosen model's "must_see + for_you" recall ≥ 80 % of reference positives, with precision reported against the PM's labelled negatives; every judged concert shows its reason.
+- AC (amended 2026-10-09, PM decision: recall first, "the app must not let pass a concert I am likely to like; suggestions I end up not liking are fine"): of the PM's liked concerts and the reference positives, ≥ 85 % (aim 90 %) are shown on the home page by the routed rule (`must_see`, `for_you`, or `discovery` with confidence ≥ 30, ADR-0006), checked by the Judge eval in CI; precision is reported per section, not gated; every judged concert shows its reason.
+- ~~AC: on FR-11, the chosen model's "must_see + for_you" recall ≥ 80 % of reference positives, with precision reported against the PM's labelled negatives; every judged concert shows its reason.~~ Superseded 2026-10-09 (above).
 
 v2 text (artist similarity), kept as a complementary signal for concerts with an identified artist:
 - A cascade according to what is known about the artist: co-listening similarity (ListenBrainz, Deezer) for known artists; audio similarity of extracts for lesser-known ones; references extracted from the venue's text ("in the vein of…"), co-billing and venue affinity for the rest. Signals are combined into one score; weights are tuned by user feedback.
 - ~~No LLM is used to judge musical similarity; LLMs only extract information from text.~~ Superseded by v3: the judgement is against a written profile, not artist-to-artist similarity, and it is measured on FR-11 before use.
 - AC: on the backtest (hidden artists of the listening history), the combination beats the best single signal; every recommendation shows at least one human-readable reason.
 
-**FR-6 Feed and concert page (US-05, US-06, US-07, US-08)** — v3: home = "À ne pas rater" (1–4 per week, verdict `must_see`), "Pour toi", "Découvertes" (artists unknown to the profile, in a relevant venue), then "Tout voir"; a "nouveau" badge on concerts added since the last visit (replaces the watch's memory of reported events).
+**FR-6 Feed and concert page (US-05, US-06, US-07, US-08)** — v3: home = "À ne pas rater" (1–4 per week, verdict `must_see`), "Pour toi", "Découvertes" (artists unknown to the profile, in a relevant venue), then "Tout voir" (nothing is hidden: concerts the judge leaves out stay there); "À ne pas rater" and "Pour toi" are merged if the former is not measured as more precise (PM, 2026-10-09); a "nouveau" badge on concerts added since the last visit (replaces the watch's memory of reported events).
 - List view sorted by score, calendar view by date, filters by date and venue.
 - Concert page: date, venue, artists, reason, audio preview (Deezer extracts, kept in v3), official ticket link, share button (FR-10).
 - AC: from the home page (v3; v2 said "from the digest"), reaching a playing preview takes ≤ 2 taps.
