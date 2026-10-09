@@ -39,7 +39,9 @@
     const current = list.map((c) => c.id).filter((id) => ID_RE.test(id)).slice(0, MAX_IDS);
     const prev = parse(stored);
     if (!prev || now < prev.at) return { store: { base: current, seen: current, at: now }, isNew: new Set() };
-    const base = now - prev.at >= VISIT_GAP ? prev.seen : prev.base;
+    // a new visit knows every id seen so far (capped, most recent first), so a concert missing
+    // for one run (WIP-59) is not « Nouveau » again when it comes back
+    const base = now - prev.at >= VISIT_GAP ? [...new Set([...prev.seen, ...prev.base])].slice(0, MAX_IDS) : prev.base;
     const known = new Set(base);
     const isNew = new Set();
     for (const c of list) {

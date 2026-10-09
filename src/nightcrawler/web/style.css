@@ -86,6 +86,11 @@ h3.row-title { margin: 0; font: 600 19px/1.15 var(--font-display); min-width: 0;
   padding: 0; margin: 0; cursor: pointer; overflow-wrap: anywhere; min-height: 24px;
 }
 .title-btn:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+.title-btn svg { display: inline-block; margin-left: 4px; vertical-align: middle; color: var(--ink-muted); transition: transform 0.15s; }
+.card .title-btn svg { color: var(--ink); }
+.title-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .title-btn svg { transition: none; } }
+.ai-read { white-space: nowrap; }
 
 /* ReasonTag + sentence: never truncated */
 .reason {

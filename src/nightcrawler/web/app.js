@@ -359,6 +359,12 @@ function feedback(concert, kind, li) {
   const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
   applyRating(concert, kind);
   if (routeOf(location.hash) === "calendrier") renderDays();
+  if (kind === "like") {
+    // the same button, so its new pressed state is announced
+    const row = visibleRows().find((r) => r.dataset.id === concert.id);
+    const like = row && row.querySelector("button[aria-pressed]");
+    if (like) return like.focus();
+  }
   // a rated row may leave its section: then the next row
   refocus(...(kind === "like" ? [concert.id, next] : [next]));
 }
@@ -507,9 +513,8 @@ function showPending() {
 }
 
 function askFeedbackKey() {
-  goTo("gouts");
   document.getElementById("feedback-row").hidden = false;
-  document.getElementById("feedback-key").focus();
+  goTo("gouts", "feedback-key");
 }
 
 async function flushFeedback() {
@@ -697,9 +702,13 @@ const routeOf = (hash) => {
   return ROUTES.includes(h) ? h : "concerts";
 };
 
-function goTo(route) {
-  if (routeOf(location.hash) !== route) location.hash = route; // hashchange shows it
-  else showRoute(false);
+// Programmatic route change: synchronous (pushState fires no hashchange), so the caller's
+// focus target wins over the heading; Back still works through popstate.
+function goTo(route, focusId) {
+  if (routeOf(location.hash) !== route) history.pushState(null, "", `#${route}`);
+  showRoute(!focusId);
+  const target = focusId && document.getElementById(focusId);
+  if (target) target.focus();
 }
 
 function showRoute(moveFocus) {
@@ -805,6 +814,7 @@ const ICONS = {
   share: '<path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
 };
 function icon(name, size) {
   const svg = document.createElementNS(SVG_NS, "svg");
@@ -924,12 +934,13 @@ function titleButton(c, panel, cls) {
   const b = button(c.title, "title-btn", () => {
     const open = panel.hidden;
     panel.hidden = !open;
-    b.setAttribute("aria-expanded", String(open));
+    b.setAttribute("aria-expanded", String(open)); // the chevron turns with it (style.css)
     if (open) openIds.add(c.id);
     else openIds.delete(c.id);
   });
   b.setAttribute("aria-expanded", String(!panel.hidden));
   b.setAttribute("aria-controls", panel.id);
+  b.append(icon("chevron", 16));
   h.append(b);
   return h;
 }
@@ -948,9 +959,16 @@ function actionBar(x, item, slot, onCard) {
   return bar;
 }
 
+// Venue and line-up; a listing read by a language model says so (ADR-0004, WIP-66, EU AI Act).
 function venueLine(c) {
   const lineup = S.lineupText(c); // every act of the evening (WIP-72)
-  return lineup ? `${c.venue_name} · ${lineup}` : c.venue_name;
+  const p = el("p", lineup ? `${c.venue_name} · ${lineup}` : c.venue_name, "venue");
+  if (c.ai_extracted) {
+    const ai = el("span", "Lu par IA", "ai-read");
+    ai.title = "Cette annonce a été lue sur le site du lieu par un modèle d'IA.";
+    p.append(" · ", ai);
+  }
+  return p;
 }
 
 // MustSeeCard (design system): apricot card, text only.
@@ -965,7 +983,7 @@ function mustSeeCard(x) {
   if (NEW_IDS.has(c.id)) top.append(newBadge());
   const panel = detailsPanel(x, li);
   const slot = el("div", null, "slot");
-  li.append(top, titleButton(c, panel, "card-title"), el("p", venueLine(c), "venue"));
+  li.append(top, titleButton(c, panel, "card-title"), venueLine(c));
   const why = reasonLine(x, true);
   if (why) li.append(why);
   li.append(actionBar(x, li, slot, true), panel, slot);
@@ -982,15 +1000,15 @@ function concertRow(x, showUnjudged) {
   const date = el("div", null, "date");
   date.append(el("span", wdFmt.format(d).toUpperCase(), "wd"), el("span", numFmt.format(d), "num"));
   if (t !== "00:00") date.append(el("span", t, "hour"));
-  date.setAttribute("aria-label", dayFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`));
   for (const n of date.children) n.setAttribute("aria-hidden", "true");
+  date.append(el("span", dayFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`), "visually-hidden"));
   const body = el("div", null, "body");
   const panel = detailsPanel(x, li);
   const head = el("div", null, "head");
   head.append(titleButton(c, panel, "row-title"));
   if (NEW_IDS.has(c.id)) head.append(newBadge());
   const slot = el("div", null, "slot");
-  body.append(head, el("p", venueLine(c), "venue"));
+  body.append(head, venueLine(c));
   const why = reasonLine(x, showUnjudged);
   if (why) body.append(why);
   body.append(actionBar(x, li, slot, false), panel, slot);
@@ -1000,10 +1018,10 @@ function concertRow(x, showUnjudged) {
 
 // Period filter (state.when) on every view; style and venue filters only in « Tout », where
 // their controls are.
-function filtered() {
+function filtered(forView = view) {
   const now = new Date();
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden)); // display only: saved ids stay
-  const all = view === "tout";
+  const all = forView === "tout";
   return DATA.concerts.filter((c) => {
     if (c.id === deepLinkId) return true; // a shared link always shows its concert
     if (hidden.has(c.id)) return false;
@@ -1044,7 +1062,8 @@ function rowList(items, showUnjudged, labelId) {
 }
 
 function seeAll(root, n) {
-  const b = button(`Voir les ${n} concert${n > 1 ? "s" : ""}`, "see-all", () => setView("tout", true));
+  if (!n) return;
+  const b = button(n > 1 ? `Voir les ${n} concerts` : "Voir le concert", "see-all", () => setView("tout", true));
   b.append(icon("arrow", 18));
   root.append(b);
 }
@@ -1121,11 +1140,7 @@ function render() {
   }
   document.getElementById("tout-tools").hidden = view !== "tout";
   // « Tout » counts the concerts of the period (style and venue filters aside)
-  const saved = view;
-  view = "pour_toi";
-  const periodCount = filtered().length;
-  view = saved;
-  document.getElementById("count").textContent = String(periodCount);
+  document.getElementById("count").textContent = String(filtered("pour_toi").length);
   if (!list.length) {
     root.append(el("p", "Aucun concert pour ces filtres.", "muted empty"));
     return;
@@ -1325,6 +1340,8 @@ function setupControls() {
       tasteText: "", tasteTextAt: Date.now(),
     });
     dropVerdicts(); // this browser's copy of the judgements (the stored rows: separate ticket)
+    if (window.NCVisits) fbStore(() => localStorage.removeItem(window.NCVisits.KEY)); // « Nouveau » memory
+    NEW_IDS = new Set();
     saveState();
     box.value = "";
     taste.value = "";
@@ -1333,7 +1350,7 @@ function setupControls() {
     render();
   });
 
-  window.addEventListener("hashchange", () => {
+  const onHash = () => {
     const m = DEEP_LINK_RE.exec(location.hash);
     if (m) {
       deepLinkId = S.currentIds(DATA.concerts, [m[1]])[0] || null;
@@ -1341,7 +1358,9 @@ function setupControls() {
     }
     showRoute(true);
     if (m && deepLinkId) focusDeepLink();
-  });
+  };
+  window.addEventListener("hashchange", onHash);
+  window.addEventListener("popstate", onHash); // Back after goTo()'s pushState
 }
 
 // A shared concert: on the home, in the view that shows it (« Tout » when the sections do not).

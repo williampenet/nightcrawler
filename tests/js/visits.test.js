@@ -55,3 +55,10 @@ test("the stored lists are capped", () => {
   const r = V.visit(null, many, 0);
   assert.equal(r.store.seen.length, V.MAX_IDS);
 });
+
+test("a concert missing for one run is not new when it comes back", () => {
+  const v1 = V.visit(null, [c(1), c(2)], 0).store;
+  const v2 = V.visit(v1, [c(1)], 5 * H).store; // concert 2 absent from that run
+  const v3 = V.visit(v2, [c(1), c(2)], 10 * H);
+  assert.equal(v3.isNew.size, 0);
+});
