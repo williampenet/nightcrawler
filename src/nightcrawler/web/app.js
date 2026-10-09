@@ -15,7 +15,7 @@ const MB_API = "https://musicbrainz.org/ws/2/artist";
 const LB_API = "https://api.listenbrainz.org/1/stats/user/";
 
 // Time zone comes from the zone config (report.json); formatters are built once it is known.
-let TZ, dayFmt, shortFmt, timeFmt, keyFmt, wdFmt, numFmt;
+let TZ, dayFmt, shortFmt, timeFmt, keyFmt, wdFmt, numFmt, monthFmt;
 function setTimeZone(tz) {
   TZ = tz;
   dayFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
@@ -23,6 +23,7 @@ function setTimeZone(tz) {
   timeFmt = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
   wdFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", timeZone: TZ }); // "sam."
   numFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", timeZone: TZ });
+  monthFmt = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
   keyFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }); // YYYY-MM-DD
 }
 const dayKey = (d) => keyFmt.format(d);
@@ -993,18 +994,22 @@ function mustSeeCard(x) {
   return li;
 }
 
-const itemNode = (x) => (x.must ? mustSeeCard(x) : concertRow(x));
+// opts.timeOnly: the date column shows only the time (calendar, where the day is the heading)
+const itemNode = (x, opts) => (x.must ? mustSeeCard(x) : concertRow(x, opts));
 
 // ConcertRow (design system): date column, then title, venue, reason and actions.
-function concertRow(x) {
+function concertRow(x, opts = {}) {
   const c = x.c;
   const li = el("li", null, "crow");
   li.dataset.id = c.id;
   const d = new Date(c.start);
   const t = timeFmt.format(d);
-  const date = el("div", null, "date");
-  date.append(el("span", wdFmt.format(d).toUpperCase(), "wd"), el("span", numFmt.format(d), "num"));
-  if (t !== "00:00") date.append(el("span", t, "hour"));
+  const date = el("div", null, opts.timeOnly ? "date time-only" : "date");
+  if (opts.timeOnly) date.append(el("span", t === "00:00" ? "—" : t, "clock"));
+  else {
+    date.append(el("span", wdFmt.format(d).toUpperCase(), "wd"), el("span", numFmt.format(d), "num"));
+    if (t !== "00:00") date.append(el("span", t, "hour"));
+  }
   for (const n of date.children) n.setAttribute("aria-hidden", "true");
   date.append(el("span", dayFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`), "visually-hidden"));
   const body = el("div", null, "body");
@@ -1128,7 +1133,7 @@ function render() {
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
   const list = scored(profile);
-  for (const b of document.querySelectorAll(".views button")) {
+  for (const b of document.querySelectorAll("#route-concerts .views button")) {
     if (b.dataset.view === view) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   }
@@ -1166,34 +1171,136 @@ function setView(v, moveFocus) {
   render();
   if (moveFocus) {
     window.scrollTo(0, 0);
-    const b = document.querySelector(`.views button[data-view="${v}"]`);
+    const b = document.querySelector(`#route-concerts .views button[data-view="${v}"]`);
     if (b) b.focus();
   }
 }
 
 // « Calendrier » until the month grid (WIP-97): every concert, day by day, no filter.
-function renderDays() {
+// « Calendrier » (WIP-97, artboard Calendrier): month grid with one taste marker per day (shape,
+// not colour alone: bar = À ne pas rater, dot = Pour toi, ring = Découverte), then the selected
+// day's concerts. « Pour toi » shows the « Pour toi » picks (WIP-102 rule), « Tout » every concert.
+const CAL = window.NCCalendar;
+const cal = { month: null, day: null, mode: "pour_toi" };
+const MARK_LABEL = { must: "à ne pas rater", forYou: "pour toi", discovery: "découverte" };
+const keyDate = (key) => new Date(`${key}T12:00:00Z`); // noon UTC: the same day in any zone of Europe
+const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+// "dimanche 1 novembre" -> "dimanche 1er novembre" (French ordinal for the first of the month)
+const dayLabel = (key) => dayFmt.format(keyDate(key)).replace(/(^|\s)1(\s)/, "$11er$2");
+
+function renderDays(focusKey) {
   const root = document.getElementById("days");
-  root.replaceChildren();
+  const grid = document.getElementById("cal-grid");
+  if (!root || !grid || !CAL) return;
   const profile = S.buildProfile(state, DATA.artists);
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden));
   const now = new Date();
   const list = DATA.concerts
     .filter((c) => !hidden.has(c.id) && !S.isPastDay(c.start, now, dayKey))
     .map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
-  let currentDay = null;
-  let ul = null;
-  for (const x of decorate(list, profile).items) {
-    const start = new Date(x.c.start);
-    const key = dayKey(start);
-    if (key !== currentDay) {
-      currentDay = key;
-      const h = el("h3", dayFmt.format(start), "day");
-      root.append(h);
-      ul = el("ul", null, "rows");
-      root.append(ul);
+  const { items, picks } = decorate(list, profile);
+  const pickIds = new Set((picks || []).map((x) => x.c.id));
+  const flagged = items.map((x) => ({ ...x, pick: pickIds.has(x.c.id), discovery: !!(x.v && x.v.verdict === "discovery") }));
+  const days = CAL.byDay(flagged, (x) => dayKey(new Date(x.c.start)));
+  const today = dayKey(now);
+  const first = CAL.monthOf(today);
+  const lastKey = [...days.keys()].sort().pop() || today;
+  const last = CAL.monthOf(lastKey) > first ? CAL.monthOf(lastKey) : first;
+  if (!cal.day || cal.day < today) cal.day = today;
+  if (!cal.month || cal.month < first || cal.month > last) cal.month = CAL.monthOf(cal.day);
+
+  // header: month, arrows, mode
+  const [y, m] = cal.month.split("-").map(Number);
+  document.getElementById("cal-month").textContent = capital(monthFmt.format(new Date(Date.UTC(y, m - 1, 15))));
+  document.getElementById("cal-prev").disabled = cal.month <= first;
+  document.getElementById("cal-next").disabled = cal.month >= last;
+  for (const b of document.querySelectorAll("[data-cal]")) {
+    if (b.dataset.cal === cal.mode) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  }
+
+  // grid
+  grid.replaceChildren();
+  for (const key of CAL.monthGrid(cal.month)) {
+    const cell = el("div", null, "cal-cell");
+    grid.append(cell);
+    if (!key) continue;
+    const dayItems = days.get(key) || [];
+    const kind = CAL.marker(dayItems);
+    const n = Number(key.slice(8));
+    if (key < today) {
+      cell.append(el("span", String(n), "cal-day past")); // over: no concert left to show
+      continue;
     }
-    ul.append(itemNode(x));
+    const b = button(String(n), "cal-day", () => {
+      cal.day = key;
+      renderDays(key);
+    });
+    b.dataset.day = key;
+    if (key === today) b.classList.add("today");
+    if (key === cal.day) b.setAttribute("aria-pressed", "true");
+    const count = dayItems.length;
+    b.setAttribute("aria-label", [
+      dayLabel(key),
+      key === today ? "aujourd'hui" : null,
+      kind ? MARK_LABEL[kind] : null,
+      count ? `${count} concert${count > 1 ? "s" : ""}` : "aucun concert",
+    ].filter(Boolean).join(", "));
+    cell.append(b);
+    const mark = el("span", null, kind ? `mark ${kind}` : "mark");
+    mark.setAttribute("aria-hidden", "true");
+    cell.append(mark);
+  }
+
+  // the selected day's concerts
+  root.replaceChildren();
+  const all = days.get(cal.day) || [];
+  const shown = cal.mode === "tout" ? all : all.filter((x) => x.pick);
+  const h = el("h3", capital(dayLabel(cal.day)), "cal-day-title");
+  h.id = "cal-day-title";
+  root.append(h);
+  if (!all.length) root.append(el("p", "Aucun concert ce jour-là.", "muted empty"));
+  else if (!shown.length) root.append(el("p", "Rien pour toi ce jour-là.", "muted empty"));
+  if (shown.length) {
+    const ul = el("ul", null, "rows");
+    ul.setAttribute("aria-labelledby", h.id);
+    for (const x of shown) ul.append(itemNode(x, { timeOnly: true }));
+    root.append(ul);
+  }
+  const others = all.length - shown.length;
+  if (others > 0) {
+    const more = button(`${others} autre${others > 1 ? "s" : ""} concert${others > 1 ? "s" : ""} ce jour-là`, "more-day", () => {
+      cal.mode = "tout";
+      renderDays();
+      const first = root.querySelector("li button");
+      if (first) first.focus();
+    });
+    more.append(icon("arrow", 18));
+    root.append(more);
+  }
+  if (focusKey) {
+    const again = grid.querySelector(`[data-day="${focusKey}"]`);
+    if (again) again.focus();
+  }
+}
+
+function setupCalendar() {
+  if (!CAL) return;
+  const step = (n) => () => {
+    cal.month = CAL.addMonths(cal.month, n);
+    // the selected day follows the month: its first day still to come
+    const today = dayKey(new Date());
+    const firstDay = `${cal.month}-01`;
+    cal.day = firstDay < today ? today : firstDay;
+    renderDays();
+  };
+  document.getElementById("cal-prev").addEventListener("click", step(-1));
+  document.getElementById("cal-next").addEventListener("click", step(1));
+  for (const b of document.querySelectorAll("[data-cal]")) {
+    b.addEventListener("click", () => {
+      cal.mode = b.dataset.cal;
+      renderDays();
+    });
   }
 }
 
@@ -1277,7 +1384,7 @@ function setupControls() {
       render();
     });
   }
-  for (const b of document.querySelectorAll(".views button")) b.addEventListener("click", () => setView(b.dataset.view, false));
+  for (const b of document.querySelectorAll("#route-concerts .views button")) b.addEventListener("click", () => setView(b.dataset.view, false));
   // a saved id may be an alias since sources were merged (WIP-42): its current id is added.
   // Ids absent today are kept: a concert can be missing for one run (WIP-59).
   state.hidden = S.keepIds(DATA.concerts, state.hidden);
@@ -1426,6 +1533,7 @@ async function main() {
       fbStore(() => localStorage.setItem(VS.KEY, JSON.stringify(seen.store)));
     }
     setupControls();
+    setupCalendar();
     setupSorter();
     if (deepLinkId) openDeepLink();
     else render();

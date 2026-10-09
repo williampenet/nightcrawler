@@ -97,6 +97,13 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
 
+## Calendrier (WIP-97)
+
+Built from artboard Calendrier:
+- Title, month switcher (44px round arrows, disabled before the current month and after the last month with concerts), « Pour toi » / « Tout » toggle.
+- Monday-first grid (`web/calendar.js`, pure, tested): 44px day buttons, today outlined (2px ink), selected day filled ink; past days are plain text. One marker per day, the strongest of its concerts, told apart by shape: apricot bar outlined in ink = « À ne pas rater », filled dot = « Pour toi », ring = « Découverte »; legend under the grid. Each day button's name gives the date, « aujourd'hui », the marker and the number of concerts.
+- Under the grid, the selected day: heading (« Mardi 13 octobre », « 1er » for the first of the month), then its concerts: rows with the time in the date column, « À ne pas rater » as MustSeeCards. « Pour toi » shows the WIP-102 picks; « N autres concerts ce jour-là » switches to « Tout ». Changing month selects its first day still to come.
+
 ## MustSeeCard back (WIP-106)
 
 The PM rejected the compact-row proposal (WIP-105, PR #95 closed) and chose the design system's MustSeeCard from his screenshot (2026-10-09 22:19):
