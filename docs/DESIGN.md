@@ -21,10 +21,10 @@ The links are private Claude artifacts. So that the app and future agents do not
 1. **Text first.** The layout must look finished with no image: in [Pipeline run 37918562968](https://github.com/williampenet/nightcrawler/actions/runs/37918562968), 102 of 398 concerts had only their title.
 2. **One dominant colour, used as a fill.** `accent` (apricot #f6b461) fills the must-see cards, the "Nouveau" badge on rows, the wordmark's full stop and the active period underline. It is never text and never under white text. When the accent must be text, use `accent-ink`.
 3. **Colour is never the only signal.** The active period filter is also bold; the active navigation item is also bold ink.
-4. **The reason is always visible**, with a tag naming its origin: `IA` when the `judge_taste` model wrote it, `Tes goûts` when the known-artist rule did ([WIP-88](https://linear.app/wip-coding/issue/WIP-88)). This is the EU AI Act transparency requirement of the PRD (FR-5).
-5. **Two taps to music**: the listen button sits on the card or row when an extract exists (PRD FR-6).
+4. **The reason is always visible**, with a tag naming its origin: `IA` when the `judge_taste` model wrote it, `Tes goûts` when the known-artist rule did ([WIP-88](https://linear.app/wip-coding/issue/WIP-88)). This is the EU AI Act transparency requirement of the PRD (FR-5). The `Tes goûts` tag arrives with the home screen ([WIP-95](https://linear.app/wip-coding/issue/WIP-95)).
+5. **Two taps to music**: the listen button sits on the card or row when an extract exists (PRD FR-6); its design-system look (accent-ink text in rows, ink pill on cards) also arrives with WIP-95.
 6. **Calm density**: hairlines between rows, no shadows, no gradients.
-7. **Touch targets ≥ 44px** (`--touch-target`); WCAG 2.1 AA on the main flows (PRD §7).
+7. **Touch targets ≥ 44px** (`--touch-target`); WCAG 2.1 AA on the main flows (PRD §7). 44px is the design system's own rule (WCAG 2.1 AA has no target size; [SC 2.5.5](https://www.w3.org/TR/WCAG21/#target-size) is AAA). Two exceptions come from the design system itself: view tabs are 40px pills (ViewTabs), and text links inside a sentence. Since WIP-94 every button and form field is at least 44px; the row links (Page, Billets) and the "Mauvais rapprochement" text button get their final form in WIP-95.
 8. **Light theme only**: the design system defines one theme (`color.themes` in `tokens.json`), so the page sets `color-scheme: light` and the former dark palette is gone.
 
 Voice: French, informal (*tu*), short; reasons are one sentence about the music; no exclamation marks, no emoji.
@@ -44,7 +44,14 @@ Voice: French, informal (*tu*), short; reasons are one sentence about the music;
 | `on-ink` | #ffffff | text on ink |
 | `veil` | rgba(255,255,255,0.35) | round icon buttons on an accent card |
 
-The page needed two colours the design system does not define (error banner, venue status in "Sources"). Rather than invent them, the error banner is `ink` with `on-ink` text and the status is carried by its wording and weight.
+The page needed two colours the design system does not define (error banner, venue status in "Sources"). Rather than invent them, the error banner is `ink` with `on-ink` text and the status is carried by its wording and weight. Two colours are **derived** from tokens with `color-mix()`, no new literal:
+
+| Use | Value | Text on it |
+|---|---|---|
+| row opened from a shared link | 30 % `accent` in `ground` (≈ #fce8d0) | `accent-ink` 5.1:1, `ink-muted` 6.1:1 (measured by the WIP-94 review) |
+| dialog backdrop | 45 % `ink` over the page | none |
+
+Focus: a 3px `ink` ring everywhere, `on-ink` on the error banner (`on-ink`/`ink` pair below).
 
 ### Contrast pairs (measured)
 

@@ -68,6 +68,7 @@ button.ghost.on { background: var(--ink); color: var(--on-ink); }
 .why { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; color: var(--ink-soft); }
 /* the judge's reason, labelled "IA" (WIP-86) */
 .judge { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; font-size: 14px; color: var(--ink-soft); overflow-wrap: anywhere; }
+.judge.muted { color: var(--ink-muted); } /* "pas encore jugé" */
 .badge {
   font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
   padding: 1px 6px; border-radius: var(--radius-sm); background: var(--ink); color: var(--on-ink);
@@ -96,8 +97,10 @@ button.linkish {
   background: var(--ink); color: var(--on-ink);
 }
 .banner .linkish { color: inherit; }
+.banner :focus-visible { outline-color: var(--on-ink); } /* ink ring on ink is 1:1 (WCAG 2.4.7) */
 .banner.info { background: var(--surface); color: var(--ink); }
 .banner.info .linkish { color: var(--ink-muted); }
+.banner.info :focus-visible { outline-color: var(--ink); }
 .banner.inline { position: static; margin: 0 0 var(--space-2); } /* pending ratings (WIP-70) */
 .banner[hidden] { display: none; }
 

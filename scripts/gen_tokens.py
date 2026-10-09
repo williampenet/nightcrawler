@@ -27,7 +27,7 @@ CONTRAST_PAIRS = [
     ("ink-muted", "ground"),
     ("accent-ink", "ground"),
     ("ink", "accent"),
-    ("on-ink", "ink"),
+    ("on-ink", "ink"),  # also the focus ring on the error banner
     ("ink", "surface"),
     ("ink-muted", "surface"),
     ("accent", "ground"),
@@ -58,6 +58,8 @@ def _channel(c: float) -> float:
 def luminance(hex_colour: str) -> float:
     """Relative luminance, WCAG 2.1 definition (https://www.w3.org/TR/WCAG21/#dfn-relative-luminance)."""
     h = hex_colour.lstrip("#")
+    if len(h) != 6 or not all(ch in "0123456789abcdefABCDEF" for ch in h):
+        raise ValueError(f"contrast needs an opaque #rrggbb colour, got {hex_colour!r}")
     r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
     return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
 
