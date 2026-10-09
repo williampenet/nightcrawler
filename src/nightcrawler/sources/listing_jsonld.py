@@ -5,7 +5,8 @@ page (capture of 2026-10-07: L'Épicerie Moderne, Marché Gare, Auditorium de Ly
 Underground). Which listing URLs, which links count as events, and how many detail pages to
 read are set per venue under `priority_venues` in `config/zone.yaml` (WIP-62).
 
-- A URL may hold `{yyyymm}`: it is read once per month of the run window.
+- A URL may hold `{yyyymm}`: it is read once per month of the run window. A month listing
+  answering 404 is a month not published yet: counted as `unpublished months: N`, not an error.
 - `paginate: {param, start, max}` also reads `param=start`, `start+1`... (at most `max`
   more pages per listing URL, existing query kept) until a page brings no new link.
 - Links are kept when they stay on the listing's host and their path matches `include` and
@@ -99,6 +100,8 @@ def read(
     """(events in the window, pages read, status). A broken listing or detail page is counted
     in the status; the venue fails only when no listing page could be read."""
     urls = listing_urls(reader, now, window_days)
+    fixed = set(reader["urls"])  # a URL not in the config came from {yyyymm}
+    unpublished = 0
     host = urlsplit(urls[0]).netloc.lower()
     source = f"listing_jsonld:{host}"
     cap = int(reader.get("max_details", DEFAULT_MAX_DETAILS))
@@ -108,7 +111,10 @@ def read(
     pages, listing_errors, first_error = 0, 0, ""
     for url in urls:  # robots.txt refusing a listing page fails the venue (robots_blocked)
         found, error = _listing_links(fetcher, url, url, reader)
-        if error:  # e.g. a month not published yet: the other pages still count
+        if error == "HTTP 404" and url not in fixed:  # a month not published yet
+            unpublished += 1
+            continue
+        if error:  # the other pages still count
             listing_errors += 1
             first_error = first_error or error
             continue
@@ -129,7 +135,7 @@ def read(
         else:
             notes.append(f"page_cap: {url}")  # the last page allowed still brought new links
     if not pages:
-        raise ValueError(f"no listing page read ({first_error})")
+        raise ValueError(f"no listing page read ({first_error or 'HTTP 404'})")
     if len(links) > cap:
         notes.append(f"detail_cap: {cap} of {len(links)} links")
     if not links:
@@ -159,6 +165,8 @@ def read(
         notes.append("no_events")  # detail pages read, none holds a JSON-LD Event
     if listing_errors:
         notes.append(f"listing errors: {listing_errors} ({first_error})")
+    if unpublished:
+        notes.append(f"unpublished months: {unpublished}")
     if detail_errors:
         notes.append(f"detail errors: {detail_errors}")
     return events, pages, "; ".join(notes) or "ok"

@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from bs4 import BeautifulSoup, Comment
 
 from . import llm
+from .events import MAX_HORIZON_DAYS
 
 TASK = "extract_events"
 # Default cap. The routed task's `limits.max_input_chars` (config/models.yaml) will be passed
@@ -168,7 +169,7 @@ def grounded(ev: dict, text: str, today: date) -> tuple[dict | None, str]:
         d = date.fromisoformat(ev["date"])
     except (KeyError, TypeError, ValueError):
         return None, "bad date"
-    if not today - timedelta(days=1) <= d <= today + timedelta(days=400):
+    if not today - timedelta(days=1) <= d <= today + timedelta(days=MAX_HORIZON_DAYS):
         return None, "date out of range"
     lines = [plain(line) for line in text.split("\n")]
     found = title_lines(ev.get("title", ""), lines)

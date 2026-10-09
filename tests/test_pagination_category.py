@@ -92,9 +92,10 @@ def test_pagination_cap_and_listing_errors_are_reported(tz):
     }
     _, pages, status = _read(reader, tz)
     assert status == (
-        "page_cap: https://v.example/agenda/202610; no_events; listing errors: 2 (HTTP 404)"
+        "page_cap: https://v.example/agenda/202610; no_events; listing errors: 1 (HTTP 500); "
+        "unpublished months: 1"
     )
-    # 202611 (404) and 202612?p=1 (500) are the two errors
+    # 202612?p=1 (500) is the error; 202611 (404) is a month not published yet (WIP-107)
     assert pages == 6  # 202610, its ?p=1, 202612, then /e/1 /e/2 /e/3
 
 
@@ -202,7 +203,8 @@ def test_zone_config_opera_and_pagination_entries():
     readers = {e["name"]: e["reader"] for e in ZONE.priority_venues}
     assert OPERA["category"] == "music_venue" and "latitude" not in OPERA
     assert OPERA["coordinates_from"] == "Opéra de Lyon"
-    assert readers["Opéra Underground"]["paginate"] == {"param": "page", "start": 2, "max": 5}
+    # WIP-107: pagination stops at the first page with no new link; 20 bounds a runaway site
+    assert readers["Opéra Underground"]["paginate"] == {"param": "page", "start": 2, "max": 20}
     # the Épicerie and Marché Gare "Afficher plus" links are ?page=1: pages count from 0
     for name in ("L'Épicerie Moderne", "Le Marché Gare"):
         assert readers[name]["paginate"]["start"] == 1 and len(readers[name]["urls"]) == 1

@@ -123,6 +123,7 @@ def test_pagination_stops_on_short_page(items, tz):
     assert rows == [
         {"name": "Venue", "venue": "Le Transbordeur", "reader": "wp_json"}
         | {"status": "ok", "events": 3, "pages": 3}
+        | {"last": max(e.start.date() for e in events).isoformat()}  # WIP-107
     ]
 
 

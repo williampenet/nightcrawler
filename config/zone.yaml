@@ -4,7 +4,14 @@ latitude: 45.7578   # Place Bellecour
 longitude: 4.8320
 radius_km: 15
 timezone: Europe/Paris
-window_days: 60     # how far ahead concerts are collected
+# Collection horizon in days: every date the sources publish up to this far ahead is kept
+# (PM, 2026-10-09, WIP-107: see the programme beyond the coming week and big announcements
+# early). At most 400 (events.MAX_HORIZON_DAYS), the bound extract.py already applies to a
+# model-read date: a later date is a parse error, not a concert. Caps below are sized so this
+# horizon, not a cap, decides what is kept; a cap hit is a `*_cap` note in the venue status and
+# is counted in the run annotation ("caps:"). Per-host rate limit (1 request / s) and robots.txt
+# Crawl-delay are never relaxed (http.Fetcher).
+window_days: 400
 # Regional OpenStreetMap extract covering the zone (download.geofabrik.de), refreshed weekly in CI
 osm_extract_url: https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf
 # Gancio community agendas (open-source federated event calendars) covering the zone
@@ -29,6 +36,12 @@ excluded_venues:
 # pages; `{yyyymm}` in a URL is read for every month of the run window (WIP-62).
 # `paginate: {param, start, max}` also reads param=start, start+1... (at most `max` more pages
 # per URL) until a page brings no new link (WIP-64).
+# Caps of the listing_jsonld readers (WIP-107): the detail page is where the event is read, so a
+# link past `max_details` is a concert lost, not a shorter text. Pagination already stops at the
+# first page with no new link, so `max: 20` only bounds a site serving new links forever;
+# `max_details: 400` (one per day of the horizon) is above what any of these venues lists
+# (largest: Auditorium, see below) and costs at most 400 s per host at 1 request / s. A month
+# listing answering 404 is "not published yet", not an error.
 # Optional per venue (WIP-64): `category` (e.g. music_venue: its events pass the venue-based
 # concert rule) and `latitude`/`longitude`. `venue` is matched against known venues as
 # events are attributed (words in a row, closest name first). A match keeps its category
@@ -41,9 +54,14 @@ excluded_venues:
 # to the extract_events task (config/models.yaml), in chunks of at most `llm_chunk_chars`
 # (cut before a date line, 8 lines overlapping). Hosts' robots.txt Crawl-delay is honoured.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
-llm_calls_per_run: 40  # extract_events calls per run (one per chunk), all venues together
+# extract_events calls per run (one per chunk), all venues together. Not raised by WIP-107: the
+# chunk count depends on the page length, not on the horizon (the agenda pages are read whole;
+# dates beyond 60 days used to be dropped after extraction). A hit is the `llm_cap` note.
+llm_calls_per_run: 40
 # judge_taste calls per run (ADR-0007): only new or changed inputs are judged; 600 × €0.28 per
-# 1,000 (ADR-0006, run 4 measured tokens) ≈ €0.17 per run at most
+# 1,000 (ADR-0006, run 4 measured tokens) ≈ €0.17 per run at most. Kept at 600 with the
+# 400-day horizon (WIP-107): verdicts are cached by input hash, so only the first run after the
+# change judges the newly collected concerts; what is left is judged on the next runs (`capped`)
 judge_calls_per_run: 600
 # the largest page of the eval set is 3,234 characters (eval/cases.jsonl): chunks stay within
 # the evaluated input size; models.yaml `max_input_chars` (else 7,000) is an upper bound
@@ -74,6 +92,9 @@ priority_venues:
       date_format: "%Y%m%d"
       time_format: "%H:%M:%S"
       per_page: 50
+      # the endpoint has no date filter: every item is read whatever the horizon (97 items on
+      # 2026-10-06 = 2 pages), so 5 pages (250 items) is not sized by the horizon; `page_cap`
+      # in the status if the venue ever lists more
       max_pages: 5
   - name: Opéra Underground
     # no OSM venue of that name (run of 2026-10-07 08:10): a configured music venue, so its
@@ -91,8 +112,8 @@ priority_venues:
       urls:
         - https://www.opera-lyon.com/programmation-reservations/saison-2026-2027?tag%5B0%5D=opera-underground
       include: ^/fr/programmation/[^/]+/opera-underground/[^/]+$
-      paginate: {param: page, start: 2, max: 5}
-      max_details: 60
+      paginate: {param: page, start: 2, max: 20}
+      max_details: 400
   - name: L'Épicerie Moderne
     venue: L'Épicerie Moderne
     # the run knows this place twice: OSM "L'épicerie moderne Place René Lescot, 69320
@@ -104,10 +125,10 @@ priority_venues:
       # 24 links on /agenda, "Afficher plus" = ?page=1 (pages count from 0); one Event object
       # per detail page. "...scolaire" slugs are school sessions, not open to the public.
       urls: [https://epiceriemoderne.com/agenda]
-      paginate: {param: page, start: 1, max: 3}
+      paginate: {param: page, start: 1, max: 20}
       include: ^/agenda/20\d\d-\d\d-\d\d-
       exclude: scolaire
-      max_details: 60
+      max_details: 400
   - name: Le Marché Gare
     venue: Le Marché Gare
     reader:
@@ -116,9 +137,9 @@ priority_venues:
       # workshops are listed too and left to the concert filter. "Afficher plus" links to
       # ?page=1 (seen through WebFetch on 2026-10-07; whether it holds new links: unverified).
       urls: [https://marchegare.fr/agenda]
-      paginate: {param: page, start: 1, max: 3}
+      paginate: {param: page, start: 1, max: 20}
       include: ^/agenda/[a-z0-9-]+$
-      max_details: 60
+      max_details: 400
   - name: Auditorium de Lyon
     venue: Auditorium Maurice-Ravel  # OSM name (osm:way/62336964)
     reader:
@@ -130,7 +151,8 @@ priority_venues:
       urls: ["https://www.auditorium-lyon.com/fr/agenda/{yyyymm}"]
       include: ^/fr/saison-\d{4}-\d{2}/[a-z-]+/[^/]+$
       exclude: ^/fr/saison-\d{4}-\d{2}/(scolaires|atelier-[a-z-]+)/
-      max_details: 80
+      # 14 monthly listings at 400 days; 26 links in 202611 × 14 ≈ 364 (later months unverified)
+      max_details: 400
   # page_llm venues: URLs answered WebFetch on 2026-10-07; robots.txt read the same day.
   - name: La Rayonne
     venue: La Rayonne
@@ -147,6 +169,10 @@ priority_venues:
       # artist-only titles (Robert Finley, LADANIVA) were dropped by the music-word rule (WIP-68).
       # Unverified: how well the model separates talks here (page not in the eval set).
       trust_is_concert: true
+      # event pages for descriptions (WIP-92): Crawl-delay 10 s makes each one cost 10 s, so 40
+      # (≈ 7 min) stays the cap with the 400-day horizon. It bounds descriptions only: every
+      # concert of the agenda is kept, the later ones title-only (`detail_cap: 40` note)
+      max_details: 40
   - name: Le Périscope
     # WP REST types `kelkii_concert` / `periscope_event` carry no event date field
     # (checked 2026-10-06), so the concerts page is read by the model.

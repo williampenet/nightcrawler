@@ -197,6 +197,7 @@ def test_geocoder_is_capped():
 
     geocode = gancio.Geocoder(NoFetch(), limit=0)
     assert geocode("1 rue X") is None
+    assert geocode.refused == 1  # reported as geocode_cap in the Gancio status (WIP-107)
 
 
 @respx.mock

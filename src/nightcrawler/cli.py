@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import content, judging
+from . import completeness, content, judging
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
@@ -91,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     annotate("notice", one_line(report))
     # what the taste judge can read per concert (WIP-89): counts only
     annotate("notice", "Content: " + content.text(report.get("content")))
+    # how far ahead each source reads and the cap hits (WIP-107): dates, counts and the
+    # configured "Mes salles" names (public in config/zone.yaml), never an event
+    annotate("notice", "Horizon: " + completeness.text(report.get("completeness")))
     summary = summary_markdown(report)
     print(summary)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
