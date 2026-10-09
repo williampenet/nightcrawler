@@ -88,12 +88,14 @@ def load_inputs(conn, ids: list[str]) -> Inputs:
         )
 
 
-def save(conn, rows: list[dict[str, Any]]) -> int:
+def save(conn, rows: list[dict[str, Any]], delete: list[str] = ()) -> int:
     """Upserts one judgement per concert ({concert_id, input_hash, verdict, confidence, reason,
     section, model, starts_at}) and deletes those of concerts started more than RETENTION_DAYS
     ago; one transaction. Every concert_id must be stored in `concerts` (foreign key): one
     unknown id rolls the whole batch back, so the caller saves only concerts the sync stored.
-    Returns the number of rows written."""
+    `delete`: concerts whose stored judgement must go in the same transaction (a new answer was
+    rejected, WIP-90: the old reason must not stay on the page). Returns the number of rows
+    written."""
     with conn.transaction():
         conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
         if rows:
@@ -107,6 +109,8 @@ def save(conn, rows: list[dict[str, Any]]) -> int:
                 "starts_at = EXCLUDED.starts_at, judged_at = now()",
                 rows,
             )
+        if delete:
+            conn.execute("DELETE FROM verdicts WHERE concert_id = ANY(%s)", (list(delete),))
         conn.execute(
             "DELETE FROM verdicts WHERE starts_at < now() - make_interval(days => %s)",
             (RETENTION_DAYS,),

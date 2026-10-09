@@ -124,6 +124,7 @@ def run(
     todo = todo[: ctx.calls]
     lock = threading.Lock()
     state = {"failed_in_a_row": 0}
+    rejected: list[str] = []  # concerts whose new reason was unfaithful (WIP-90)
     failures: Counter = Counter()
     tokens = Counter()
 
@@ -134,7 +135,7 @@ def run(
                 failures["aborted"] += 1
                 return None
         try:
-            a = run_task(ctx.task, messages, judge.SCHEMA, judge.check)
+            a = run_task(ctx.task, messages, judge.SCHEMA, judge.check_for(messages))
         except llm.ModelError:
             code = "transport"
             a = None
@@ -143,14 +144,25 @@ def run(
             code = "error"
             a = None
         else:
-            code = None if a.data is not None and not a.errors else (a.reason or "check")
+            if a.data is not None and not a.errors:
+                code = None
+            elif a.data is not None and judge.UNFAITHFUL in a.errors:
+                # left unjudged, its stored verdict (older prompt or inputs) deleted below: the
+                # page shows it in « Pour toi », « pas encore jugé » (WIP-90)
+                code = "unfaithful"
+                rejected.append(c.id)
+            else:
+                code = a.reason or "check"
         with lock:
             if a is not None:
                 tokens["in"] += a.tokens_in or 0
                 tokens["out"] += a.tokens_out or 0
             if code:
                 failures[code] += 1
-                state["failed_in_a_row"] += 1
+                # an unfaithful reason is about one concert's data, not a broken model or an
+                # outage: it never stops the run (schema and transport failures still do)
+                if code != "unfaithful":
+                    state["failed_in_a_row"] += 1
                 return None
             state["failed_in_a_row"] = 0
         return {
@@ -168,7 +180,7 @@ def run(
         rows = [r for r in pool.map(one, todo) if r]
     try:
         with connect(database_url) as conn:
-            verdicts.save(conn, rows)
+            verdicts.save(conn, rows, delete=[cid for cid in rejected if cid in inputs.known])
             verdicts.update_sections(conn, refresh)
     except Exception as exc:
         return {"status": f"error: store write ({type(exc).__name__})", "unsaved": len(rows)}
@@ -179,6 +191,7 @@ def run(
         "cached": cached,
         "capped": capped,
         "sections_refreshed": len(refresh),
+        "unjudged_deleted": len([cid for cid in rejected if cid in inputs.known]),
         "failed": dict(failures),
         "ratings_used": dict(Counter(labels.values())),
         "tokens_in": tokens["in"],

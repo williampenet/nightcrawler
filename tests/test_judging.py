@@ -48,7 +48,8 @@ def task(monkeypatch):
 
 def setup(monkeypatch, inputs, saved):
     monkeypatch.setattr(verdicts, "load_inputs", lambda conn, ids: inputs)
-    monkeypatch.setattr(verdicts, "save", lambda conn, rows: saved.setdefault("rows", rows))
+    monkeypatch.setattr(verdicts, "save",
+                        lambda conn, rows, delete=(): saved.setdefault("rows", rows))  # fmt: skip
     monkeypatch.setattr(verdicts, "update_sections",
                         lambda conn, ch: saved.setdefault("refresh", ch))  # fmt: skip
     return lambda url: contextlib.nullcontext(object())
@@ -159,3 +160,40 @@ def test_an_unexpected_error_keeps_the_other_judgements(monkeypatch, task):
     monkeypatch.setattr(judging, "WORKERS", 1)
     rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, flaky)
     assert rep["failed"] == {"error": 1} and rep["judged"] == 2 and len(saved["rows"]) == 2
+
+
+def test_unfaithful_reasons_are_left_unjudged_without_stopping(monkeypatch, task):
+    """WIP-90: a reason naming a profile artist absent from the concert is rejected; the
+    concert stays unjudged (« Pour toi » on the page) and rejections never stop the run."""
+    saved: dict = {}
+    profile = {"taste_text": "J'aime Acid Arab."}
+    connect = setup(monkeypatch, verdicts.Inputs(profile=profile), saved)
+    monkeypatch.setattr(judging, "STOP_AFTER", 2)
+    monkeypatch.setattr(judging, "WORKERS", 1)
+    d = {"verdict": "for_you", "reason": "Proche de ses goûts comme Acid Arab.", "confidence": 60}
+
+    def fake(t, messages, schema, check):
+        return llm.Answer(d, check(d), "m", 0.5, 2000, 40)
+
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, fake)
+    assert rep["failed"] == {"unfaithful": 3} and saved["rows"] == []
+    # an older judgement of a rejected concert is deleted with the save: never left on the page
+    old = {"input_hash": "old", "verdict": "for_you", "confidence": 70, "section": "pour_toi"}
+    inputs = verdicts.Inputs(profile=profile, known={"bbbbbbbbbbb1": "old"},
+                             stored={"bbbbbbbbbbb1": old})  # fmt: skip
+    calls = {}
+    monkeypatch.setattr(verdicts, "load_inputs", lambda conn, ids: inputs)
+
+    def save(conn, rows, delete=()):
+        calls.update(rows=rows, delete=delete)
+
+    monkeypatch.setattr(verdicts, "save", save)
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, fake)
+    assert calls == {"rows": [], "delete": ["bbbbbbbbbbb1"]} and rep["unjudged_deleted"] == 1
+    no = d | {"verdict": "no", "reason": "Loin d'Acid Arab que tu aimes."}  # a "no" may contrast
+
+    def contrast(t, messages, schema, check):
+        return llm.Answer(no, check(no), "m", 0.5, 2000, 40)
+
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, contrast)
+    assert rep["failed"] == {} and len(calls["rows"]) == 3

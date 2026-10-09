@@ -203,3 +203,66 @@ def test_section_follows_the_accepted_rule():
     assert s({"verdict": "discovery", "confidence": 29}) == "tout_voir"
     assert s({"verdict": "no", "confidence": 100}) == "tout_voir"
     assert s(None) == "tout_voir" and s({"verdict": "maybe"}) == "tout_voir"
+
+
+# ---------------------------------------------------------------- faithful reasons (WIP-90)
+
+GOUYAD = {"id": "g", "title": "La Nuit du Gouyad 2", "venue_name": "Le Transbordeur",
+          "lineup": ["LA NUIT DU GOUYAD 2"], "artists": ["earth"]}  # fmt: skip
+PROFILE = {"taste_text": "J'aime Acid Arab, Steve Reich et le jazz à Lyon.", "seeds": ["Boris"]}
+
+
+def test_reason_names_are_proper_nouns_of_the_reason():
+    names = judge.reason_names("Programmation groovy, avec des artistes proches comme Acid Arab.")
+    assert "Acid Arab" in names and "Programmation" not in names
+    assert judge.reason_names("Du Jazz et de la Soul, comme Coltrane.") == ["Coltrane"]
+    assert "Earth" in judge.reason_names("Proche de Earth, Wind & Fire.")
+    assert judge.reason_names("") == []
+
+
+def test_unfaithful_reason_names_a_profile_artist_missing_from_the_concert():
+    """The Gouyad case (William, 2026-10-09): Acid Arab is in the written taste, not in the
+    concert; a related artist or a billed act is fine; the error never names the artist."""
+    artists = {"earth": {"name": "Earth", "confident": True, "tags": ["drone"],
+                         "related": ["Boris"]}}  # fmt: skip
+    m = judge.messages_for(GOUYAD, artists, PROFILE)
+    check = judge.check_for(m)
+    bad = {
+        "verdict": "for_you",
+        "confidence": 60,
+        "reason": "Programmation pointue et groovy, avec des artistes proches comme Acid Arab.",
+    }
+    assert check(bad) == [judge.UNFAITHFUL] and "Acid" not in judge.UNFAITHFUL
+    related = bad | {"reason": "Earth est proche de Boris, que tu écoutes."}
+    assert check(related) == []  # Boris is in the concert block (related artists)
+    plain = bad | {"reason": "Soirée au Transbordeur, programme non détaillé."}
+    assert check(plain) == []
+    unknown = bad | {"reason": "Rien à voir avec Radiohead."}  # not in the profile: not checked
+    assert check(unknown) == []
+    assert check(bad | {"confidence": 101}) == ["confidence out of 0-100", judge.UNFAITHFUL]
+
+
+def test_elision_one_word_names_and_no_verdicts():
+    taste = "J'aime Acid Arab, Higelin et Ibeyi, pas la variété ni les concerts à Lyon."
+    m = judge.messages_for(GOUYAD, {}, {"taste_text": taste})
+    check = judge.check_for(m)
+    shown = {"verdict": "for_you", "confidence": 60}
+    for r in ("Dans l'esprit d'Higelin.", "Proche d'Ibeyi.", "À la manière d'Acid Arab."):
+        assert check(shown | {"reason": r}) == [judge.UNFAITHFUL], r
+    # a word the taste uses in passing is not a name: "Variété" capitalised in the reason only
+    assert check(shown | {"reason": "Hors de la Variété, programme non détaillé."}) == []
+    # a "no" may name what it is far from
+    assert check({"verdict": "no", "confidence": 80, "reason": "Loin d'Acid Arab."}) == []
+    # known limit (ADR-0006): a place the taste writes as a name is taken for one
+    assert check(shown | {"reason": "Une soirée à Lyon, programme non détaillé."}) != []
+
+
+def test_first_seed_counts_as_a_name():
+    m = judge.messages_for(GOUYAD, {}, {"taste_text": "", "seeds": ["Boris", "Moderat"]})
+    check = judge.check_for(m)
+    for r in ("Proche de Boris, drone lourd.", "Proche de Moderat."):
+        assert check({"verdict": "for_you", "confidence": 60, "reason": r}) == [judge.UNFAITHFUL]
+
+
+def test_prompt_states_the_faithfulness_rule():
+    assert "Ne nomme un artiste que s'il apparaît dans le bloc CONCERT" in judge.SYSTEM

@@ -19,6 +19,7 @@ import hashlib
 import html
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -91,6 +92,10 @@ Règles :
 - N'invente rien sur un artiste. Si tu ne le connais pas, appuie-toi sur les styles, les artistes
   proches, la salle et le titre fournis, et dis-le dans la raison (« artiste que je ne connais
   pas »). Une confiance basse est alors normale.
+- Ne nomme un artiste que s'il apparaît dans le bloc CONCERT (affiche, artistes identifiés,
+  leurs proches, présentation). Ne rapproche jamais le concert d'un artiste de son goût ou de
+  ses avis qui n'y apparaît pas. Si l'affiche et la présentation manquent, dis-le dans la
+  raison (« programme non détaillé »).
 - La notoriété n'est pas un critère en soi ; suis ce que la personne écrit sur le mainstream.
 - reason : une seule phrase en français, ≤ 200 caractères, qui dit pourquoi pour elle.
 - confidence : entier de 0 à 100, ta certitude sur le verdict.
@@ -243,7 +248,7 @@ def messages_for(
     taste = taste.strip()[:MAX_TASTE_CHARS]
     parts = ["Son goût, dans ses mots :", taste or "(pas encore écrit)"]
     if seeds := seed_names(profile):
-        parts += ["", "Artistes qu'elle écoute : " + ", ".join(seeds)]
+        parts += ["", SEEDS_LABEL + ", ".join(seeds)]
     ex = list(examples)
     liked = [_short(e.concert) for e in ex if e.label == "liked"]
     disliked = [_short(e.concert) for e in ex if e.label == "disliked"]
@@ -270,6 +275,107 @@ def check(data: dict) -> list[str]:
     if not str(data.get("reason") or "").strip():
         errors.append("empty reason")
     return errors
+
+
+# --------------------------------------------------------------- faithful reasons (WIP-90)
+# A reason must not tie the concert to an artist of the listener's profile that the concert's
+# data does not hold ("La Nuit du Gouyad 2": "artistes proches de ses goûts comme Acid Arab",
+# William 2026-10-09). Candidates are the proper nouns of the reason itself (short model text),
+# so nothing is parsed out of the free written taste; the error never names the artist (the
+# profile is personal data and errors reach counts and logs).
+UNFAITHFUL = "reason names a profile artist absent from the concert"
+SEEDS_LABEL = "Artistes qu'elle écoute : "  # prompt line of the seed artists (messages_for)
+_WORD = re.compile(r"[^\W_][\w'’&.-]*", re.UNICODE)
+_SENTENCE_END = re.compile(r"[.!?:;«»\"(]\s*$")
+_CONNECTORS = {"&", "and", "et", "de", "du", "des", "of", "the", "y"}
+_ELISION = re.compile(r"^(?:qu|[cdjlmnst])['’]", re.IGNORECASE)
+MIN_NAME = 3  # normalised characters of a one-word name ("Air" is the shortest kept)
+
+
+def _plain(text: str) -> str:
+    """Lower case, no accents, words separated by single spaces, padded: " acid arab "."""
+    t = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode().lower()
+    return " " + " ".join(re.sub(r"[^a-z0-9]+", " ", t).split()) + " "
+
+
+def reason_names(reason: str) -> list[str]:
+    """Proper-noun runs of a reason and their sub-runs: "comme Acid Arab ou Steve Reich" gives
+    "Acid Arab", "Acid", "Arab", "Steve Reich"… A one-word run opening a sentence ("Programmation
+    pointue") or naming a genre ("Jazz") is not a name."""
+    from .events import MUSIC_WORDS  # genre words, kept in one place
+
+    runs: list[list[tuple[str, bool]]] = []  # (word, opens a sentence)
+    current: list[tuple[str, bool]] = []
+    for m in _WORD.finditer(reason or ""):
+        w = _ELISION.sub("", m.group(0)).rstrip(".")  # "d'Higelin" -> "Higelin"
+        start = m.start() == 0 or bool(_SENTENCE_END.search(reason[: m.start()]))
+        if w[:1].isupper() or w[:1].isdigit() and current:
+            current.append((w, start))
+        elif current and w.lower() in _CONNECTORS:
+            current.append((w, False))
+        else:
+            if current:
+                runs.append(current)
+            current = []
+        gap = reason[m.end() : m.end() + 2]
+        if current and ("," in gap or any(ch in gap for ch in ".;:!?()")):
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    out: list[str] = []
+    for run in runs:
+        while run and run[-1][0].lower() in _CONNECTORS:
+            run = run[:-1]
+        for i in range(len(run)):
+            for j in range(i + 1, len(run) + 1):
+                words = [w for w, _ in run[i:j]]
+                if words[0].lower() in _CONNECTORS or words[-1].lower() in _CONNECTORS:
+                    continue
+                if j - i == 1:
+                    w, opens = run[i]
+                    if opens or len(_plain(w).strip()) < MIN_NAME or MUSIC_WORDS.fullmatch(w):
+                        continue
+                if (name := " ".join(words)) not in out:
+                    out.append(name)
+    return out
+
+
+def unfaithful(reason: str, messages: list[dict]) -> bool:
+    """True when the reason names something of the profile part of the prompt (written taste,
+    seeds, examples) found nowhere in the CONCERT block (acts, identified artists, their styles
+    and related artists, venue, description). A several-word name counts wherever the profile
+    holds it; a one-word name only when the profile writes it as a name too (capitalised, not
+    opening a sentence), so a word the taste uses in passing ("variété") is not one."""
+    user = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+    profile, _, rest = user.partition("<<<CONCERT")
+    concert = rest.partition("CONCERT>>>")[0]
+    in_profile, in_concert = _plain(profile), _plain(concert)
+    profile_words = {_plain(n) for n in reason_names(profile) if " " not in n.strip()}
+    for line in profile.splitlines():  # the seeds line: its first name follows a colon
+        if line.startswith(SEEDS_LABEL):
+            profile_words |= {_plain(n) for n in line[len(SEEDS_LABEL) :].split(", ")}
+    for name in reason_names(reason):
+        key = _plain(name)
+        if not key.strip() or key in in_concert:
+            continue
+        if key in (profile_words if " " not in name.strip() else in_profile):
+            return True
+    return False
+
+
+def check_for(messages: list[dict]):
+    """`check` plus the faithfulness rule for the judgement of these messages."""
+
+    def run(data: dict) -> list[str]:
+        errors = check(data)
+        # a "no" may name what the taste sets aside ("loin de …"): only a shown verdict ties the
+        # concert to an artist
+        if data.get("verdict") != "no" and unfaithful(str(data.get("reason") or ""), messages):
+            errors.append(UNFAITHFUL)
+        return errors
+
+    return run
 
 
 def score(data: dict) -> float:

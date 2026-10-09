@@ -291,6 +291,7 @@ def judge_text(j: dict | None) -> str:
     return (
         f"judged={j['judged']} cached={j['cached']} capped={j['capped']} "
         f"refreshed={j['sections_refreshed']} failed={failed} "
+        f"unjudged_deleted={j.get('unjudged_deleted', 0)} "
         f"tokens={j['tokens_in']}/{j['tokens_out']}"
     )
 
