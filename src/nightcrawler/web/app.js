@@ -15,12 +15,14 @@ const MB_API = "https://musicbrainz.org/ws/2/artist";
 const LB_API = "https://api.listenbrainz.org/1/stats/user/";
 
 // Time zone comes from the zone config (report.json); formatters are built once it is known.
-let TZ, dayFmt, shortFmt, timeFmt, keyFmt;
+let TZ, dayFmt, shortFmt, timeFmt, keyFmt, wdFmt, numFmt;
 function setTimeZone(tz) {
   TZ = tz;
   dayFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
   shortFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short", timeZone: TZ });
   timeFmt = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  wdFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", timeZone: TZ }); // "sam."
+  numFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", timeZone: TZ });
   keyFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }); // YYYY-MM-DD
 }
 const dayKey = (d) => keyFmt.format(d);
@@ -64,8 +66,6 @@ function showBanner(text, kind = "error") {
 
 function notify(text, kind = "error") {
   setStatus(text);
-  const taste = document.getElementById("taste");
-  if (taste) taste.open = true;
   showBanner(text, kind);
 }
 
@@ -273,7 +273,7 @@ async function connectSpotify(ev, probe = false) {
 async function finishSpotify() {
   const cb = SPOTIFY_CALLBACK;
   if (cb.status === "none") return;
-  document.getElementById("taste").open = true;
+  goTo("gouts");
   if (cb.status === "error") {
     return notify(
       cb.reason === "denied"
@@ -358,7 +358,8 @@ function applyRating(concert, kind) {
 function feedback(concert, kind, li) {
   const next = li && li.nextElementSibling && li.nextElementSibling.dataset.id;
   applyRating(concert, kind);
-  // an un-liked row may move into a collapsed "Tout voir" (WIP-53): then the next row
+  if (routeOf(location.hash) === "calendrier") renderDays();
+  // a rated row may leave its section: then the next row
   refocus(...(kind === "like" ? [concert.id, next] : [next]));
 }
 
@@ -506,7 +507,7 @@ function showPending() {
 }
 
 function askFeedbackKey() {
-  document.getElementById("taste").open = true;
+  goTo("gouts");
   document.getElementById("feedback-row").hidden = false;
   document.getElementById("feedback-key").focus();
 }
@@ -685,17 +686,62 @@ window.addEventListener("online", () => {
 });
 
 
-// rows the listener can see: not inside a collapsed "Tout voir" (WIP-53)
-const visibleRows = () => [...document.querySelectorAll("#concerts li")].filter((r) => !r.closest("[hidden]"));
+// ---------------------------------------------------------------- routes (WIP-95)
+// Bottom navigation: #concerts (home), #calendrier, #gouts; #sources opens « Mes goûts » at the
+// sources table; a shared concert (#c-<id>) opens the home on it.
 
-// Render again after a background change. The focused row and a shared concert stay
-// reachable: if either now lands in the collapsed "Tout voir", it is opened first.
+const ROUTES = ["concerts", "calendrier", "gouts"];
+const routeOf = (hash) => {
+  const h = String(hash || "").replace(/^#/, "");
+  if (h === "sources") return "gouts";
+  return ROUTES.includes(h) ? h : "concerts";
+};
+
+function goTo(route) {
+  if (routeOf(location.hash) !== route) location.hash = route; // hashchange shows it
+  else showRoute(false);
+}
+
+function showRoute(moveFocus) {
+  const route = routeOf(location.hash);
+  for (const r of ROUTES) document.getElementById(`route-${r}`).hidden = r !== route;
+  for (const a of document.querySelectorAll(".tabbar a")) {
+    if (a.dataset.route === route) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
+  if (route === "calendrier") renderDays();
+  if (location.hash === "#sources") document.getElementById("sources").scrollIntoView();
+  else if (moveFocus) window.scrollTo(0, 0);
+  if (moveFocus) {
+    // the new screen's heading, so screen readers hear where they landed
+    const h = document.querySelector(`#route-${route} h2`);
+    if (h && !(route === "concerts" && deepLinkId)) {
+      h.tabIndex = -1;
+      h.focus({ preventScroll: true });
+    }
+  }
+}
+
+// ---------------------------------------------------------------- home state
+
+// view: "pour_toi" | "nouveaux" | "tout"; not saved, the home always opens on « Pour toi »
+let view = "pour_toi";
+let NEW_IDS = new Set(); // concerts added since the last visit (visits.js), set once per load
+let showAllMust = false; // « À ne pas rater » beyond the first MUST_CARDS cards
+const MUST_CARDS = 4; // PRD FR-6: 1 to 4 must-see concerts a week
+const openIds = new Set(); // rows whose details are open, kept across re-renders
+let panelSeq = 0;
+const PERIODS = { tonight: "ce soir", weekend: "ce week-end", "7d": "cette semaine" };
+
+// rows of the screen on show (home or calendar)
+const visibleRows = () => [...document.querySelectorAll("main > section:not([hidden]) [data-id]")];
+
+// Render again after a background change (verdicts, profile sync); keyboard focus stays on its row.
 function rerender() {
   const a = document.activeElement;
-  const row = a && a.closest ? a.closest("#concerts li") : null;
-  const wanted = [row && row.dataset.id, deepLinkId].filter(Boolean);
-  if (wanted.length && restIds().some((id) => wanted.includes(id))) showAll = true;
+  const row = a && a.closest ? a.closest("main [data-id]") : null;
   render();
+  if (routeOf(location.hash) === "calendrier") renderDays();
   if (row) refocus(row.dataset.id);
 }
 
@@ -704,7 +750,7 @@ function rerender() {
 function refocus(...wanted) {
   const rows = visibleRows();
   const row = wanted.map((id) => rows.find((r) => r.dataset.id === id)).find(Boolean);
-  const target = (row && row.querySelector("button")) || document.querySelector("#concerts button");
+  const target = (row && row.querySelector("button")) || document.querySelector("main > section:not([hidden]) button");
   if (target) target.focus();
 }
 
@@ -712,7 +758,7 @@ function refocus(...wanted) {
 
 function focusDeepLink() {
   if (!deepLinkId) return;
-  const row = [...document.querySelectorAll("#concerts li")].find((r) => r.dataset.id === deepLinkId);
+  const row = visibleRows().find((r) => r.dataset.id === deepLinkId);
   if (!row) return;
   row.classList.add("target");
   row.tabIndex = -1;
@@ -736,45 +782,60 @@ function shareMessage(c) {
   return { title: c.title, text: `${c.title} — ${c.venue_name}, ${when}`, url: concertLink(c) };
 }
 
-function shareControls(c) {
+// Share icon (FR-10): the phone's share sheet; on desktop the link is copied (the WhatsApp link
+// is in the row's details).
+function share(c) {
   const msg = shareMessage(c);
-  const wrap = el("span", null, "share");
-  if (navigator.share) {
-    // phones: the native share sheet (WhatsApp, Signal, SMS, mail…)
-    wrap.append(
-      button("Partager", "ghost", () => navigator.share(msg).catch(() => {})),
-    );
-    return wrap;
-  }
-  const wa = safeLink("https://wa.me/?text=" + encodeURIComponent(`${msg.text} ${msg.url}`), "WhatsApp");
-  if (wa) wrap.append(wa);
+  if (navigator.share) return navigator.share(msg).catch(() => {});
+  const text = `${msg.text} ${msg.url}`;
   if (navigator.clipboard) {
-    const copy = button("Copier le lien", "ghost", () =>
-      navigator.clipboard.writeText(`${msg.text} ${msg.url}`).then(
-        () => {
-          copy.textContent = "Copié";
-          setTimeout(() => (copy.textContent = "Copier le lien"), 2000);
-        },
-        () => {},
-      ),
+    return navigator.clipboard.writeText(text).then(
+      () => showBanner("Lien copié : colle-le dans une conversation.", "info"),
+      () => showBanner(`Copie impossible. Le lien : ${msg.url}`, "info"),
     );
-    wrap.append(copy);
   }
-  return wrap;
+  showBanner(`Le lien : ${msg.url}`, "info");
 }
 
-function listenButton(c, body) {
+// Inline stroke icons of the design system (24px grid, currentColor). Constant markup only.
+const SVG_NS = "http://www.w3.org/2000/svg";
+const ICONS = {
+  play: '<path d="M7 4l13 8-13 8z" fill="currentColor" stroke="none"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  share: '<path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+};
+function icon(name, size) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  for (const [k, v] of Object.entries({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.9", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" })) svg.setAttribute(k, String(v));
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
+
+function iconButton(name, label, size, onClick) {
+  const b = button("", "icon", onClick);
+  b.setAttribute("aria-label", label);
+  b.append(icon(name, size));
+  return b;
+}
+
+// ListenButton (design system): Deezer's own widget for now (PM decision 2026-10-09, player in
+// WIP-99), loaded only on click so nothing third-party loads before. filled: on a must-see card.
+function listenButton(c, slot, filled) {
   const a = (c.artists || []).map((k) => DATA.artists[k]).find((x) => x && x.deezer_id);
-  if (!a || !/^[0-9]+$/.test(String(a.deezer_id))) return null;
-  const b = button("Écouter", "ghost", (ev) => {
-    const open = body.querySelector("iframe");
+  if (!a || !/^[0-9]+$/.test(String(a.deezer_id))) return null; // no extract: no button
+  const label = el("span", "Écouter");
+  const b = button("", filled ? "listen filled" : "listen", () => {
+    const open = slot.querySelector("iframe");
     if (open) {
       open.remove();
-      ev.target.textContent = "Écouter";
-      ev.target.setAttribute("aria-expanded", "false");
+      label.textContent = "Écouter";
+      b.replaceChild(icon("play", filled ? 14 : 12), b.firstChild);
+      b.setAttribute("aria-expanded", "false");
       return;
     }
-    const f = document.createElement("iframe"); // loaded only on click: nothing third-party before
+    const f = document.createElement("iframe");
     f.src = `https://widget.deezer.com/widget/auto/artist/${a.deezer_id}/top_tracks`;
     f.title = `Extraits de ${a.name} sur Deezer`;
     f.loading = "lazy";
@@ -782,108 +843,172 @@ function listenButton(c, body) {
     f.className = "player";
     f.referrerPolicy = "no-referrer";
     f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
-    body.append(f);
-    ev.target.textContent = "Fermer";
-    ev.target.setAttribute("aria-expanded", "true");
+    slot.append(f);
+    label.textContent = "Fermer";
+    b.replaceChild(icon("close", filled ? 14 : 12), b.firstChild);
+    b.setAttribute("aria-expanded", "true");
   });
+  b.append(icon("play", filled ? 14 : 12), label);
   b.setAttribute("aria-expanded", "false");
   return b;
 }
 
-// The judge's reason under a concert (WIP-86): model output, set as text only, with a visible
-// "IA" label and its meaning for screen readers (EU AI Act, ADR-0007 Security).
-function judgeLine(judged) {
-  if (!judged || !judged.v) return judged && judged.unjudged ? el("span", "pas encore jugé", "judge muted") : null;
-  const line = el("span", null, "judge");
-  const ai = el("span", "IA", "badge ai");
-  ai.title = "Raison écrite par un modèle d'IA d'après « Mon goût en mots ».";
-  ai.setAttribute("aria-hidden", "true");
-  line.append(ai, el("span", "Raison écrite par IA : ", "visually-hidden"), el("span", judged.v.reason));
-  return line;
+// The reason under a concert and its origin (ReasonTag): "IA" for the judge's sentence
+// (judge_taste, WIP-86), "Tes goûts" for a fixed rule (known artist WIP-88, rule-based match
+// WIP-25). Model output is set as text only (ADR-0007 Security); the tag is also spelt out for
+// screen readers (EU AI Act transparency, PRD FR-5).
+function reasonOf(x) {
+  if (x.known && x.m && x.m.reason) return { ia: false, text: x.m.reason };
+  if (x.v) return { ia: true, text: x.v.reason };
+  if (x.m && x.m.reason) return { ia: false, text: x.m.reason };
+  return null;
 }
 
-function concertRow(c, match, showDate, judged) {
-  const li = el("li");
+function reasonLine(x, showUnjudged) {
+  const r = reasonOf(x);
+  if (!r) return showUnjudged && x.unjudged ? el("p", "Pas encore jugé.", "reason muted") : null;
+  const p = el("p", null, "reason");
+  const tag = el("span", r.ia ? "IA" : "Tes goûts", "tag");
+  tag.setAttribute("aria-hidden", "true");
+  tag.title = r.ia ? "Raison écrite par un modèle d'IA d'après « Mon goût en mots »." : "Raison tirée de tes goûts par une règle fixe, sans IA.";
+  const spoken = el("span", r.ia ? "Raison écrite par IA : " : "Raison tirée de tes goûts : ", "visually-hidden");
+  p.append(tag, spoken, el("span", r.text));
+  return p;
+}
+
+const newBadge = () => el("span", "Nouveau", "new");
+
+// Details under the title (until the concert page, WIP-96): source and ticket links, the WhatsApp
+// link, "Pas pour moi", "Mauvais rapprochement" and the "Lu par IA" mention (WIP-66).
+function detailsPanel(x, item) {
+  const c = x.c;
+  const box = el("div", null, "more");
+  box.id = `more-${++panelSeq}`; // a concert can be on the home and in the calendar
+  const links = el("p", null, "links");
+  for (const l of S.concertLinks(c)) {
+    const a = safeLink(l.url, l.label); // merged sources (WIP-42)
+    if (a) links.append(a);
+  }
+  const msg = shareMessage(c);
+  const wa = safeLink("https://wa.me/?text=" + encodeURIComponent(`${msg.text} ${msg.url}`), "WhatsApp");
+  if (wa) links.append(wa);
+  if (links.childNodes.length) box.append(links);
+  if (c.ai_extracted) box.append(el("p", "Annonce lue sur le site du lieu par un modèle d'IA : vérifie la date et l'heure.", "muted small"));
+  const acts = el("p", null, "row");
+  acts.append(button("Pas pour moi", "ghost", () => feedback(c, "dislike", item)));
+  const m = x.m || {};
+  if (m.inferred && m.artist) {
+    // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
+    const wrong = button("Mauvais rapprochement", "ghost", () => {
+      if (c.id === deepLinkId) deepLinkId = null;
+      const next = item.nextElementSibling && item.nextElementSibling.dataset.id;
+      if (!state.wrong.includes(m.artist)) state.wrong.push(m.artist);
+      saveState();
+      sendFeedback("wrong", c.id, [m.artist]);
+      render();
+      refocus(c.id, next); // the row may leave its section: same row if still there, else the next
+      showBanner("Noté : ce rapprochement ne sera plus utilisé.", "info");
+    });
+    wrong.setAttribute("aria-label", `Mauvais rapprochement : ${m.reason}`);
+    acts.append(wrong);
+  }
+  box.append(acts);
+  box.hidden = !openIds.has(c.id);
+  return box;
+}
+
+// Title as a disclosure button (WAI-ARIA APG Disclosure pattern,
+// https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) opening the details panel.
+function titleButton(c, panel, cls) {
+  const h = el("h3", null, cls);
+  const b = button(c.title, "title-btn", () => {
+    const open = panel.hidden;
+    panel.hidden = !open;
+    b.setAttribute("aria-expanded", String(open));
+    if (open) openIds.add(c.id);
+    else openIds.delete(c.id);
+  });
+  b.setAttribute("aria-expanded", String(!panel.hidden));
+  b.setAttribute("aria-controls", panel.id);
+  h.append(b);
+  return h;
+}
+
+function actionBar(x, item, slot, onCard) {
+  const c = x.c;
+  const bar = el("div", null, "actions");
+  const listen = listenButton(c, slot, onCard);
+  if (listen) bar.append(listen);
+  bar.append(el("span", null, "sp"));
+  const liked = S.isLiked(state, c);
+  const like = iconButton("heart", "J'aime", onCard ? 20 : 18, () => feedback(c, "like", item));
+  like.setAttribute("aria-pressed", String(liked));
+  if (liked) like.classList.add("on");
+  bar.append(like, iconButton("share", "Partager", onCard ? 20 : 18, () => share(c)));
+  return bar;
+}
+
+function venueLine(c) {
+  const lineup = S.lineupText(c); // every act of the evening (WIP-72)
+  return lineup ? `${c.venue_name} · ${lineup}` : c.venue_name;
+}
+
+// MustSeeCard (design system): apricot card, text only.
+function mustSeeCard(x) {
+  const c = x.c;
+  const li = el("li", null, "card");
   li.dataset.id = c.id;
-  const start = new Date(c.start);
-  const t = timeFmt.format(start);
-  li.append(el("span", showDate ? shortFmt.format(start) : t === "00:00" ? "—" : t, "time"));
-  const body = el("div", null, "body");
-  body.append(el("strong", c.title));
-  body.append(el("span", c.venue_name + (showDate && t !== "00:00" ? ` · ${t}` : ""), "venue"));
-  const avec = S.lineupText(c); // every act of the evening (WIP-72)
-  if (avec) body.append(el("span", avec, "performers lineup"));
-  else {
-    const names = (c.artists || []).map((k) => DATA.artists[k] && DATA.artists[k].name).filter(Boolean);
-    const perf = names.length ? names : c.performers || [];
-    if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
-  }
-  const judge = judgeLine(judged);
-  // With the judge's reason (WIP-86), the rule-based reason and badge are not shown; only the
-  // "Mauvais rapprochement" action stays, named with the guess it refers to.
-  const contest = match.inferred && match.artist;
-  // a known artist (WIP-88) keeps its rule reason ("Tu écoutes …"), first: it is why the concert
-  // is in "À ne pas rater", and it is not AI-written
-  const known = !!(judged && judged.known);
-  let why = null;
-  if (match.reason && (!judge || contest || known)) {
-    why = el("span", null, "why");
-    if (!judge || known) why.append(el("span", match.reason));
-    if (!judge && match.discovery) why.append(el("span", "Découverte", "badge"));
-    if (contest) {
-      // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
-      const wrong = button("Mauvais rapprochement", "linkish", () => {
-        if (c.id === deepLinkId) deepLinkId = null;
-        const next = li.nextElementSibling && li.nextElementSibling.dataset.id;
-        if (!state.wrong.includes(match.artist)) state.wrong.push(match.artist);
-        saveState();
-        sendFeedback("wrong", c.id, [match.artist]);
-        render();
-        // the row may leave the "Pour moi" list: same row if still there, else the next one
-        refocus(c.id, next);
-        setStatus("Noté : ce rapprochement ne sera plus utilisé.");
-      });
-      if (judge) {
-        // the guess is not shown: the name carries it (starts with the visible text)
-        wrong.title = `Mauvais rapprochement : ${match.reason}`;
-        wrong.setAttribute("aria-label", wrong.title);
-      }
-      why.append(wrong);
-    }
-  }
-  if (known && why) body.append(why);
-  if (judge) body.append(judge);
-  if (why && !known) body.append(why);
-  const actions = el("span", null, "links");
-  const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
-  if (c.ai_extracted) {
-    // EU AI Act transparency (WIP-66): this listing was read from the venue page by a model
-    const ai = el("span", "Lu par IA", "badge ai");
-    ai.title = "Cette annonce a été lue par un modèle d'IA.";
-    links.push(ai);
-  }
-  for (const x of [...links, listenButton(c, body), shareControls(c)]) if (x) actions.append(x);
-  {
-    // every row can be rated; without an identified artist the concert itself is (WIP-47)
-    const liked = S.isLiked(state, c);
-    const like = button("J'aime", liked ? "ghost on" : "ghost", () => feedback(c, "like", li));
-    like.setAttribute("aria-pressed", String(liked));
-    actions.append(like);
-    actions.append(button("Pas pour moi", "ghost", () => feedback(c, "dislike", li)));
-  }
-  body.append(actions);
-  li.append(body);
+  const d = new Date(c.start);
+  const t = timeFmt.format(d);
+  const top = el("div", null, "card-top");
+  top.append(el("span", shortFmt.format(d) + (t === "00:00" ? "" : ` · ${t}`), "when"));
+  if (NEW_IDS.has(c.id)) top.append(newBadge());
+  const panel = detailsPanel(x, li);
+  const slot = el("div", null, "slot");
+  li.append(top, titleButton(c, panel, "card-title"), el("p", venueLine(c), "venue"));
+  const why = reasonLine(x, true);
+  if (why) li.append(why);
+  li.append(actionBar(x, li, slot, true), panel, slot);
   return li;
 }
 
+// ConcertRow (design system): date column, then title, venue, reason and actions.
+function concertRow(x, showUnjudged) {
+  const c = x.c;
+  const li = el("li", null, "crow");
+  li.dataset.id = c.id;
+  const d = new Date(c.start);
+  const t = timeFmt.format(d);
+  const date = el("div", null, "date");
+  date.append(el("span", wdFmt.format(d).toUpperCase(), "wd"), el("span", numFmt.format(d), "num"));
+  if (t !== "00:00") date.append(el("span", t, "hour"));
+  date.setAttribute("aria-label", dayFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`));
+  for (const n of date.children) n.setAttribute("aria-hidden", "true");
+  const body = el("div", null, "body");
+  const panel = detailsPanel(x, li);
+  const head = el("div", null, "head");
+  head.append(titleButton(c, panel, "row-title"));
+  if (NEW_IDS.has(c.id)) head.append(newBadge());
+  const slot = el("div", null, "slot");
+  body.append(head, el("p", venueLine(c), "venue"));
+  const why = reasonLine(x, showUnjudged);
+  if (why) body.append(why);
+  body.append(actionBar(x, li, slot, false), panel, slot);
+  li.append(date, body);
+  return li;
+}
+
+// Period filter (state.when) on every view; style and venue filters only in « Tout », where
+// their controls are.
 function filtered() {
   const now = new Date();
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden)); // display only: saved ids stay
+  const all = view === "tout";
   return DATA.concerts.filter((c) => {
     if (c.id === deepLinkId) return true; // a shared link always shows its concert
     if (hidden.has(c.id)) return false;
-    if (state.venue && c.venue_id !== state.venue) return false;
-    if (state.style) {
+    if (all && state.venue && c.venue_id !== state.venue) return false;
+    if (all && state.style) {
       const tags = (c.artists || []).flatMap((k) => (DATA.artists[k] && DATA.artists[k].tags) || []);
       if (!tags.includes(state.style)) return false;
     }
@@ -891,117 +1016,94 @@ function filtered() {
   });
 }
 
-// "Tout voir" open state (WIP-53): kept across re-renders (ratings, filters), not saved.
-let showAll = false;
-// a shared link to a concert outside "Sûrs" / "À découvrir" opens "Tout voir" once
-let revealDeepLink = true;
-
-// One list of concerts under a heading: the "Sûrs" and "À découvrir" sections (WIP-53).
-function tierSection(root, id, title, items, empty) {
-  const h = el("h2", `${title} (${items.length})`);
-  h.id = id;
-  root.append(h);
-  if (!items.length) {
-    root.append(el("p", empty, "muted"));
-    return;
-  }
-  const ul = el("ul", null, "concerts");
-  ul.setAttribute("aria-labelledby", id);
-  for (const x of items) ul.append(concertRow(x.c, x.m, true, x));
-  root.append(ul);
-}
-
-// Default view once the profile is not empty (WIP-53): "Sûrs" (direct matches, by date),
-// "À découvrir" (best inferred matches, by score) and "Tout voir" (every other concert).
-// The tiers ignore the sort control; the sort applies inside "Tout voir": "Par date"
-// groups the rest by day, "Pour moi" lists it by score (the inferred matches beyond
-// the cap first) then date. Filters and hidden concerts apply to all three sections.
-function renderTiers(root, list) {
-  const { sure, discover, rest } = S.tiers(list);
-  const filtering = state.when !== "all" || !!state.style || !!state.venue;
-  const suffix = filtering ? " pour ces filtres." : ".";
-  tierSection(root, "tier-sure", "Sûrs", sure, "Aucun concert d'un artiste que tu écoutes, ni d'un artiste ou d'un concert que tu as aimé" + suffix);
-  tierSection(root, "tier-discover", "À découvrir", discover, "Aucun rapprochement" + suffix);
-  renderRest(root, rest, !sure.length && !discover.length);
-}
-
 // An artist the listener listens to (seeds) or has liked: the rule-based "sure" match (WIP-53),
 // by name, so an identity flagged as a possible homonym or reported as wrong is left to the
 // judge (S.HOMONYM_DOUBTS). Such a concert is always in "À ne pas rater" (WIP-88, William 2026-10-09).
 const isKnownArtist = (x) => S.isKnownMatch(x.m);
 
-// The judge's sections (WIP-86, PRD FR-6): "À ne pas rater", "Pour toi" (with the concerts not
-// judged yet), "Découvertes", each in the list's order (by date), then "Tout voir" as above.
-function renderJudged(root, list) {
-  const sec = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
-  const filtering = state.when !== "all" || !!state.style || !!state.venue;
-  const suffix = filtering ? " pour ces filtres." : ".";
-  tierSection(root, "judge-must", "À ne pas rater", sec.ne_pas_rater, "Aucun concert à ne pas rater" + suffix);
-  tierSection(root, "judge-for-you", "Pour toi", sec.pour_toi, "Aucun concert pour toi" + suffix);
-  tierSection(root, "judge-discover", "Découvertes", sec.decouvertes, "Aucune découverte" + suffix);
-  renderRest(root, sec.tout_voir, !sec.ne_pas_rater.length && !sec.pour_toi.length && !sec.decouvertes.length);
-}
-
-// "Tout voir" (WIP-53): collapsed unless opened, or unless nothing is shown above it.
-function renderRest(root, rest, nothingAbove) {
-  if (!rest.length) return;
-  if (revealDeepLink && deepLinkId && rest.some((x) => x.c.id === deepLinkId)) showAll = true;
-  revealDeepLink = false;
-  // nothing above: "Tout voir" opens by itself, else the page would look empty while
-  // the header counts N concerts. The listener can still close it until the next render.
-  let open = showAll || nothingAbove;
-  const box = el("div", null, "tier-rest");
-  box.id = "tier-rest";
-  box.hidden = !open;
-  // disclosure button inside the heading (WAI-ARIA APG, Disclosure pattern:
-  // https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/): fixed label, the state is
-  // carried by aria-expanded. Toggling does not re-render, so focus stays on the button.
-  const toggle = button(`Tout voir (${rest.length})`, "ghost", () => {
-    open = !open;
-    showAll = open;
-    box.hidden = !open;
-    toggle.setAttribute("aria-expanded", String(open));
-  });
-  toggle.id = "tier-toggle";
-  toggle.setAttribute("aria-controls", box.id);
-  toggle.setAttribute("aria-expanded", String(open));
-  const h = el("h2");
-  h.append(toggle);
-  root.append(h);
-  if (state.sort === "me") {
-    const ul = el("ul", null, "concerts");
-    const sorted = [...rest].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start));
-    for (const x of sorted) ul.append(concertRow(x.c, x.m, true, x));
-    box.append(ul);
-  } else renderByDay(box, rest, "h3");
-  root.append(box);
-}
-
-// The list grouped by day, in the data's order (by date).
-function renderByDay(root, list, tag) {
-  let currentDay = null;
-  let ul = null;
-  for (const x of list) {
-    const start = new Date(x.c.start);
-    const key = dayKey(start);
-    if (key !== currentDay) {
-      currentDay = key;
-      root.append(el(tag, dayFmt.format(start)));
-      ul = el("ul", null, "concerts");
-      root.append(ul);
-    }
-    ul.append(concertRow(x.c, x.m, false, x));
-  }
-}
-
 const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
 
-// Ids render() would put in "Tout voir" now (WIP-86: used to open it before a re-render).
-function restIds() {
-  const profile = S.buildProfile(state, DATA.artists);
-  const list = scored(profile);
-  if (judgeOn()) return V.sectionsFor(list, verdicts.verdicts, isKnownArtist).tout_voir.map((x) => x.c.id);
-  return S.isEmpty(profile, DATA.concerts) ? [] : S.tiers(list).rest.map((x) => x.c.id);
+// The home sections. With the judge (WIP-86, PRD FR-6): « À ne pas rater », « Pour toi » (with
+// the concerts not judged yet), « Découvertes ». Without it, fixed rules (WIP-53): the sure
+// matches are « À ne pas rater », the best inferred ones « Pour toi ». null: empty profile.
+function homeSections(list, profile) {
+  if (judgeOn()) {
+    const s = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
+    return { must: s.ne_pas_rater, forYou: s.pour_toi, discover: s.decouvertes, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
+  }
+  if (S.isEmpty(profile, DATA.concerts)) return null;
+  const t = S.tiers(list);
+  return { must: t.sure, forYou: t.discover, discover: [], all: list };
+}
+
+function rowList(items, showUnjudged, labelId) {
+  const ul = el("ul", null, "rows");
+  if (labelId) ul.setAttribute("aria-labelledby", labelId);
+  for (const x of items) ul.append(concertRow(x, showUnjudged));
+  return ul;
+}
+
+function seeAll(root, n) {
+  const b = button(`Voir les ${n} concert${n > 1 ? "s" : ""}`, "see-all", () => setView("tout", true));
+  b.append(icon("arrow", 18));
+  root.append(b);
+}
+
+function heading(root, id, text, sub) {
+  const h = el("h2", text);
+  h.id = id;
+  root.append(h);
+  if (sub) root.append(el("p", sub, "section-sub"));
+}
+
+function renderPourToi(root, list, profile) {
+  const sec = homeSections(list, profile);
+  const period = PERIODS[state.when];
+  if (!sec) {
+    const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
+    const link = el("a", "« Mes goûts »");
+    link.href = "#gouts";
+    hint.append(link, " : des artistes, ou ton goût en quelques phrases. Les concerts pour toi apparaîtront ici.");
+    root.append(hint);
+    return seeAll(root, list.length);
+  }
+  if (!sec.must.length && !sec.forYou.length && !sec.discover.length) {
+    root.append(el("p", `Rien à te proposer ${period || "pour l'instant"}.`, "muted empty"));
+    return seeAll(root, list.length);
+  }
+  if (sec.must.length) {
+    const box = el("section", null, "home-section");
+    heading(box, "sec-must", "À ne pas rater");
+    const ul = el("ul", null, "cards");
+    ul.setAttribute("aria-labelledby", "sec-must");
+    const shown = showAllMust ? sec.must : sec.must.slice(0, MUST_CARDS);
+    for (const x of shown) ul.append(mustSeeCard(x));
+    box.append(ul);
+    const more = sec.must.length - shown.length;
+    if (more > 0) box.append(button(`Voir ${more} autre${more > 1 ? "s" : ""} à ne pas rater`, "ghost wide", () => { showAllMust = true; render(); refocus(sec.must[MUST_CARDS].c.id); }));
+    root.append(box);
+  }
+  if (sec.forYou.length) {
+    const box = el("section", null, "home-section");
+    heading(box, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi");
+    box.append(rowList(sec.forYou, true, "sec-for-you"));
+    root.append(box);
+  }
+  if (sec.discover.length) {
+    const box = el("section", null, "home-section");
+    heading(box, "sec-discover", "Découvertes", "Des artistes que ton profil ne cite pas, dans des lieux qui te ressemblent.");
+    box.append(rowList(sec.discover, false, "sec-discover"));
+    root.append(box);
+  }
+  seeAll(root, list.length);
+}
+
+// Items with the judge's verdicts attached (reasons in « Nouveaux » and « Tout » too).
+function judged(list, profile) {
+  const sec = homeSections(list, profile);
+  if (!sec || !judgeOn()) return list;
+  const byId = new Map(sec.all.map((x) => [x.c.id, x]));
+  return list.map((x) => byId.get(x.c.id) || x);
 }
 
 function render() {
@@ -1009,34 +1111,70 @@ function render() {
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
   const list = scored(profile);
-  document.getElementById("count").textContent = `${list.length} concert${list.length > 1 ? "s" : ""}`;
+  for (const b of document.querySelectorAll(".views button")) {
+    if (b.dataset.view === view) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  }
+  for (const b of document.querySelectorAll(".periods button")) {
+    if (b.dataset.when === state.when) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  }
+  document.getElementById("tout-tools").hidden = view !== "tout";
+  // « Tout » counts the concerts of the period (style and venue filters aside)
+  const saved = view;
+  view = "pour_toi";
+  const periodCount = filtered().length;
+  view = saved;
+  document.getElementById("count").textContent = String(periodCount);
   if (!list.length) {
-    root.append(el("p", "Aucun concert pour ces filtres.", "muted"));
+    root.append(el("p", "Aucun concert pour ces filtres.", "muted empty"));
     return;
   }
-  if (judgeOn()) return renderJudged(root, list);
-  // an empty profile keeps the views below unchanged
-  if (!S.isEmpty(profile, DATA.concerts)) return renderTiers(root, list);
-  if (state.sort === "me") {
-    // the profile is empty here (tiers above otherwise): invite to fill it
-    root.append(el("p", "Ajoute quelques artistes dans « Mes goûts » pour trier les concerts pour toi.", "hint"));
-    const matched = list.filter((x) => x.m.score > 0).sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start));
-    const rest = list.filter((x) => x.m.score === 0);
-    if (matched.length) {
-      root.append(el("h2", `Pour toi (${matched.length})`));
-      const ul = el("ul", null, "concerts");
-      for (const x of matched) ul.append(concertRow(x.c, x.m, true));
-      root.append(ul);
-    }
-    if (rest.length) {
-      root.append(el("h2", `Autres concerts (${rest.length})`));
-      const ul = el("ul", null, "concerts");
-      for (const x of rest) ul.append(concertRow(x.c, x.m, true));
-      root.append(ul);
-    }
+  if (view === "pour_toi") return renderPourToi(root, list, profile);
+  const items = judged(list, profile);
+  if (view === "nouveaux") {
+    const fresh = items.filter((x) => NEW_IDS.has(x.c.id));
+    heading(root, "sec-new", "Nouveaux depuis ta dernière visite");
+    if (!fresh.length) root.append(el("p", "Rien de nouveau depuis ta dernière visite.", "muted empty"));
+    else root.append(rowList(fresh, false, "sec-new"));
     return;
   }
-  renderByDay(root, list, "h2");
+  heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts");
+  const sorted = state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start)) : items;
+  root.append(rowList(sorted, false, "sec-all"));
+}
+
+function setView(v, moveFocus) {
+  view = v;
+  render();
+  if (moveFocus) {
+    window.scrollTo(0, 0);
+    const b = document.querySelector(`.views button[data-view="${v}"]`);
+    if (b) b.focus();
+  }
+}
+
+// « Calendrier » until the month grid (WIP-97): every concert, day by day, no filter.
+function renderDays() {
+  const root = document.getElementById("days");
+  root.replaceChildren();
+  const profile = S.buildProfile(state, DATA.artists);
+  const hidden = new Set(S.currentIds(DATA.concerts, state.hidden));
+  const list = DATA.concerts.filter((c) => !hidden.has(c.id)).map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+  let currentDay = null;
+  let ul = null;
+  for (const x of judged(list, profile)) {
+    const start = new Date(x.c.start);
+    const key = dayKey(start);
+    if (key !== currentDay) {
+      currentDay = key;
+      const h = el("h3", dayFmt.format(start), "day");
+      root.append(h);
+      ul = el("ul", null, "rows");
+      root.append(ul);
+    }
+    ul.append(concertRow(x, false));
+  }
 }
 
 // Community agendas (Gancio instances from the zone config) credited in the footer.
@@ -1103,13 +1241,23 @@ function setupControls() {
       render();
     });
   fillSelect("sort", [["date", "Par date"], ["me", "Pour moi"]], state.sort);
-  fillSelect("when", [["all", "Toutes les dates"], ["tonight", "Ce soir"], ["weekend", "Ce week-end"], ["7d", "7 prochains jours"]], state.when);
   fillSelect("style", [["", "Tous les styles"], ...styles], state.style);
   fillSelect("venue", [["", "Tous les lieux"], ...venues], state.venue);
-  for (const [id, key] of [["sort", "sort"], ["when", "when"], ["style", "style"], ["venue", "venue"]]) {
+  for (const [id, key] of [["sort", "sort"], ["style", "style"], ["venue", "venue"]]) {
     bind(id, key);
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
   }
+  // period filters (WIP-95): tapping the active one again shows every date
+  if (!Object.hasOwn(PERIODS, state.when)) state.when = "all";
+  for (const b of document.querySelectorAll(".periods button")) {
+    b.addEventListener("click", () => {
+      state.when = state.when === b.dataset.when ? "all" : b.dataset.when;
+      showAllMust = false;
+      saveState();
+      render();
+    });
+  }
+  for (const b of document.querySelectorAll(".views button")) b.addEventListener("click", () => setView(b.dataset.view, false));
   // a saved id may be an alias since sources were merged (WIP-42): its current id is added.
   // Ids absent today are kept: a concert can be missing for one run (WIP-59).
   state.hidden = S.keepIds(DATA.concerts, state.hidden);
@@ -1185,14 +1333,24 @@ function setupControls() {
     render();
   });
 
-  for (const btn of document.querySelectorAll("nav button")) {
-    btn.addEventListener("click", () => {
-      for (const other of document.querySelectorAll("nav button")) {
-        const on = other === btn;
-        other.setAttribute("aria-pressed", String(on));
-        document.getElementById(other.dataset.tab).hidden = !on;
-      }
-    });
+  window.addEventListener("hashchange", () => {
+    const m = DEEP_LINK_RE.exec(location.hash);
+    if (m) {
+      deepLinkId = S.currentIds(DATA.concerts, [m[1]])[0] || null;
+      if (deepLinkId) openDeepLink();
+    }
+    showRoute(true);
+    if (m && deepLinkId) focusDeepLink();
+  });
+}
+
+// A shared concert: on the home, in the view that shows it (« Tout » when the sections do not).
+function openDeepLink() {
+  view = "pour_toi";
+  render();
+  if (!visibleRows().some((r) => r.dataset.id === deepLinkId)) {
+    view = "tout";
+    render();
   }
 }
 
@@ -1211,16 +1369,25 @@ async function main() {
       .catch(() => ({}));
     if (!APP_CONFIG || typeof APP_CONFIG !== "object") APP_CONFIG = {};
     setTimeZone(report.zone.timezone || "Europe/Paris");
-    document.getElementById("zone").textContent =
-      `${concerts.length} concerts dans les ${report.zone.window_days} prochains jours · ${report.zone.name}`;
+    const today = dayFmt.format(new Date());
+    document.getElementById("today").textContent = `${today.charAt(0).toUpperCase()}${today.slice(1)} · ${report.zone.name}`;
     document.getElementById("generated").textContent =
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
     const m = DEEP_LINK_RE.exec(location.hash);
     deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
     if (V && profileOn()) verdicts = fbStore(() => V.load(localStorage), null); // shown at once
+    if (window.NCVisits) {
+      // « Nouveau » badges (WIP-95): the list compared with the last visit's, in this browser only
+      const VS = window.NCVisits;
+      const seen = VS.visit(fbStore(() => localStorage.getItem(VS.KEY), null), concerts, Date.now());
+      NEW_IDS = seen.isNew;
+      fbStore(() => localStorage.setItem(VS.KEY, JSON.stringify(seen.store)));
+    }
     setupControls();
     setupSorter();
-    render();
+    if (deepLinkId) openDeepLink();
+    else render();
+    showRoute(false);
     renderSources(venues, report);
     renderAgendaCredits(report);
     focusDeepLink();

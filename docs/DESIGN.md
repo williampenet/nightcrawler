@@ -21,10 +21,10 @@ The links are private Claude artifacts. So that the app and future agents do not
 1. **Text first.** The layout must look finished with no image: in [Pipeline run 37918562968](https://github.com/williampenet/nightcrawler/actions/runs/37918562968), 102 of 398 concerts had only their title.
 2. **One dominant colour, used as a fill.** `accent` (apricot #f6b461) fills the must-see cards, the "Nouveau" badge on rows, the wordmark's full stop and the active period underline. It is never text and never under white text. When the accent must be text, use `accent-ink`.
 3. **Colour is never the only signal.** The active period filter is also bold; the active navigation item is also bold ink.
-4. **The reason is always visible**, with a tag naming its origin: `IA` when the `judge_taste` model wrote it, `Tes goûts` when the known-artist rule did ([WIP-88](https://linear.app/wip-coding/issue/WIP-88)). This is the EU AI Act transparency requirement of the PRD (FR-5). The `Tes goûts` tag arrives with the home screen ([WIP-95](https://linear.app/wip-coding/issue/WIP-95)).
-5. **Two taps to music**: the listen button sits on the card or row when an extract exists (PRD FR-6); its design-system look (accent-ink text in rows, ink pill on cards) also arrives with WIP-95.
+4. **The reason is always visible**, with a tag naming its origin: `IA` when the `judge_taste` model wrote it, `Tes goûts` when the known-artist rule did ([WIP-88](https://linear.app/wip-coding/issue/WIP-88)). This is the EU AI Act transparency requirement of the PRD (FR-5). Rule-based reasons (known artist, or a match computed in the browser without a send key) carry `Tes goûts`.
+5. **Two taps to music**: the listen button sits on the card or row when an extract exists (PRD FR-6): `accent-ink` text in rows, `ink` pill on must-see cards. It opens Deezer's own widget under the concert until the player of [WIP-99](https://linear.app/wip-coding/issue/WIP-99).
 6. **Calm density**: hairlines between rows, no shadows, no gradients.
-7. **Touch targets ≥ 44px** (`--touch-target`); WCAG 2.1 AA on the main flows (PRD §7). 44px is the design system's own rule (WCAG 2.1 AA has no target size; [SC 2.5.5](https://www.w3.org/TR/WCAG21/#target-size) is AAA). Two exceptions come from the design system itself: view tabs are 40px pills (ViewTabs), and text links inside a sentence. Since WIP-94 every button and form field is at least 44px; the row links (Page, Billets) and the "Mauvais rapprochement" text button get their final form in WIP-95.
+7. **Touch targets ≥ 44px** (`--touch-target`); WCAG 2.1 AA on the main flows (PRD §7). 44px is the design system's own rule (WCAG 2.1 AA has no target size; [SC 2.5.5](https://www.w3.org/TR/WCAG21/#target-size) is AAA). Two exceptions come from the design system itself: view tabs are 40px pills (ViewTabs), and text links inside a sentence. Every button, form field and link of the home rows is at least 44px tall (WIP-95, measured with Playwright at 390px); links inside running text, such as the footer credits, are not.
 8. **Light theme only**: the design system defines one theme (`color.themes` in `tokens.json`), so the page sets `color-scheme: light` and the former dark palette is gone.
 
 Voice: French, informal (*tu*), short; reasons are one sentence about the music; no exclamation marks, no emoji.
@@ -96,3 +96,14 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 ## Components
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
+
+## Home screen (WIP-95)
+
+Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (sections), « Nouveaux » (added since the last visit, computed in the browser by `web/visits.js`: a visit is a run of loads less than 3 h apart, the first visit flags nothing), « Tout » (count of the period); period filters « Ce soir », « Ce week-end », « Cette semaine » (tapping the active one again shows every date); « À ne pas rater » as MustSeeCards (4 shown, the rest behind a button), « Pour toi {période} » and « Découvertes » as ConcertRows; « Voir les N concerts »; bottom navigation with hash routes `#concerts`, `#calendrier`, `#gouts` (`#sources` opens « Mes goûts » at the sources table).
+
+Deliberate gaps, each owned by a ticket:
+- The concert title is a disclosure button opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement », « Lu par IA »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96).
+- « Calendrier » lists every concert day by day until the month grid of [WIP-97](https://linear.app/wip-coding/issue/WIP-97); « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98).
+- The artboard's search button is left out: search is not in the PRD.
+- Without a send key there is no judge, so « Découvertes » stays empty: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts`.
+- Style, venue and sort filters appear in « Tout » only, and apply there only.
