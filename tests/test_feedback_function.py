@@ -47,6 +47,43 @@ def call(method="POST", body=None, token="s3cret", origin=ORIGIN, store=None):
     return resp, rows
 
 
+def test_every_answer_is_no_store():
+    # WIP-85 review: /profile carries the written taste, /verdicts the judgements; errors and
+    # the preflight are not cached either (preflight caching is Access-Control-Max-Age)
+    def down(*a):
+        raise RuntimeError("down")
+
+    def busy(*a):
+        raise handler.RateLimited
+
+    good = {"Origin": ORIGIN, "Authorization": "Bearer s3cret"}
+    rating = json.dumps({"items": [{"kind": "like", "artist_keys": ["a"]}]}).encode()
+    profile_put = json.dumps({"data": {}, "base_version": 3}).encode()
+
+    class DownProfile:
+        get = put = down
+
+    answers = [
+        handler.process("GET", {"Origin": "https://evil.example"}, b"", None, "/verdicts"),  # 403
+        handler.process("OPTIONS", {"Origin": ORIGIN}, b"", None, "/profile"),  # 204
+        handler.process("GET", good, b"", None, "/"),  # 405
+        handler.process("POST", {"Origin": ORIGIN}, rating, None),  # 401
+        handler.process("POST", good, b"{}", None),  # 400
+        handler.process("POST", good, rating, lambda rows: len(rows)),  # 202
+        handler.process("POST", good, rating, busy),  # 429
+        handler.process("POST", good, rating, down),  # 503
+        handler.process("GET", good, b"", None, "/profile", FakeProfile()),  # 200
+        handler.process("PUT", good, profile_put, None, "/profile", FakeProfile()),  # 409
+        handler.process("GET", good, b"", None, "/profile", DownProfile()),  # 503
+        handler.process("GET", good, b"", None, "/verdicts", None, dict),  # 200
+        handler.process("PUT", good, b"", None, "/verdicts", None, dict),  # 405
+        handler.process("GET", good, b"", None, "/verdicts", None, down),  # 503
+    ]
+    statuses = [r["statusCode"] for r in answers]
+    assert statuses == [403, 204, 405, 401, 400, 202, 429, 503, 200, 409, 503, 200, 405, 503]
+    assert all(r["headers"]["Cache-Control"] == "no-store" for r in answers)
+
+
 def test_preflight_and_cors():
     resp, _ = call("OPTIONS", token=None)
     assert resp["statusCode"] == 204
@@ -430,6 +467,210 @@ def test_pg_profile_on_real_postgres(monkeypatch):
     assert pg.get()["version"] == 2
 
 
+# ---------------------------------------------------------------- verdicts (WIP-85)
+
+VERDICT = {"section": "pour_toi", "verdict": "for_you", "confidence": 72, "reason": "drone"}
+
+
+def vcall(method="GET", path="/verdicts", read=None, token="s3cret", origin=ORIGIN):
+    headers = {"Origin": origin} if origin else {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    calls = []
+
+    def fake():
+        calls.append(1)
+        return {CID: VERDICT}
+
+    resp = handler.process(method, headers, b"", None, path, None, read or fake)
+    return resp, calls
+
+
+def test_verdicts_get_with_or_without_slash():
+    for path in ("/verdicts", "verdicts", "/feedback/verdicts/"):
+        resp, calls = vcall(path=path)
+        assert resp["statusCode"] == 200 and calls == [1]
+        body = json.loads(resp["body"])
+        assert body["verdicts"] == {CID: VERDICT}
+        assert body["generated_at"].endswith("+00:00")
+        assert resp["headers"]["Cache-Control"] == "no-store"
+        assert resp["headers"]["Access-Control-Allow-Origin"] == ORIGIN
+
+
+def test_verdicts_empty_is_200_not_404():
+    resp, _ = vcall(read=lambda: {})
+    assert resp["statusCode"] == 200 and json.loads(resp["body"])["verdicts"] == {}
+
+
+def test_verdicts_auth_and_origin(monkeypatch):
+    resp, calls = vcall(token="wrong")
+    assert resp["statusCode"] == 401 and calls == []  # nothing read without the key
+    assert json.loads(resp["body"]) == {"error": "unauthorized"}
+    assert vcall(token=None)[0]["statusCode"] == 401
+    assert vcall(origin="https://evil.example")[0]["statusCode"] == 403
+    assert vcall(origin=None)[0]["statusCode"] == 403
+    monkeypatch.setenv("FEEDBACK_TOKEN_SHA256", "")
+    assert vcall()[0]["statusCode"] == 401
+    # the preflight already allows GET on every path
+    preflight = handler.process("OPTIONS", {"Origin": ORIGIN}, b"", None, "/verdicts")
+    assert preflight["statusCode"] == 204
+    assert "GET" in preflight["headers"]["Access-Control-Allow-Methods"]
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
+def test_verdicts_other_methods_are_405_without_reading(method):
+    resp, calls = vcall(method)
+    assert resp["statusCode"] == 405 and calls == []
+    assert resp["headers"]["Cache-Control"] == "no-store"
+
+
+def test_verdicts_reader_error_is_503_and_logs_no_content(caplog):
+    def down():
+        raise RuntimeError("password=hunter2 du free jazz comme tu aimes")
+
+    with caplog.at_level(logging.DEBUG):
+        resp, _ = vcall(read=down)
+    assert resp["statusCode"] == 503 and json.loads(resp["body"]) == {
+        "error": "storage unavailable"
+    }
+    assert resp["headers"]["Cache-Control"] == "no-store"
+    assert "RuntimeError" in caplog.text
+    assert "hunter2" not in caplog.text + resp["body"] and "jazz" not in caplog.text
+
+
+def test_verdicts_logs_a_count_only(caplog):
+    with caplog.at_level(logging.DEBUG):
+        resp, _ = vcall()
+    assert resp["statusCode"] == 200
+    assert "verdicts served: 1" in caplog.text
+    assert "drone" not in caplog.text and CID not in caplog.text
+
+
+@pytest.mark.skipif(
+    urlsplit(os.environ.get("TEST_DATABASE_URL", "")).hostname not in ("localhost", "127.0.0.1"),
+    reason="needs a local TEST_DATABASE_URL (the test empties the verdicts table)",
+)
+def test_pg_verdicts_on_real_postgres(monkeypatch):
+    import psycopg
+
+    from nightcrawler.store.migrate import migrate
+
+    url = os.environ["TEST_DATABASE_URL"]
+    ids = {"later": "aaaaaaaaaaa1", "23h_ago": "aaaaaaaaaaa2", "25h_ago": "aaaaaaaaaaa3"}
+    starts = {"later": "2 hours", "23h_ago": "-23 hours", "25h_ago": "-25 hours"}
+    with psycopg.connect(url, autocommit=True) as conn:
+        migrate(conn)
+        conn.execute("DELETE FROM verdicts")
+        conn.execute("DELETE FROM concerts WHERE id = ANY(%s)", (list(ids.values()),))
+        for key, cid in ids.items():
+            conn.execute("INSERT INTO concerts (id, data) VALUES (%s, '{}')", (cid,))
+            conn.execute(
+                "INSERT INTO verdicts (concert_id, input_hash, verdict, confidence, reason, "
+                "section, model, starts_at) VALUES (%s, 'h', 'must_see', 91, %s, "
+                "'ne_pas_rater', 'm', now() + %s::interval)",
+                (cid, f"reason {key}", starts[key]),
+            )
+    monkeypatch.setenv("DATABASE_URL", url)
+    got = handler.pg_verdicts()
+    assert got == {
+        ids["later"]: {
+            "section": "ne_pas_rater",
+            "verdict": "must_see",
+            "confidence": 91,
+            "reason": "reason later",
+        },
+        ids["23h_ago"]: {
+            "section": "ne_pas_rater",
+            "verdict": "must_see",
+            "confidence": 91,
+            "reason": "reason 23h_ago",
+        },
+    }
+    assert isinstance(got[ids["later"]]["confidence"], int)
+    resp = handler.process(
+        "GET",
+        {"Origin": ORIGIN, "Authorization": "Bearer s3cret"},
+        b"",
+        None,
+        "/verdicts",
+    )  # the default reader is pg_verdicts
+    assert resp["statusCode"] == 200 and set(json.loads(resp["body"])["verdicts"]) == {
+        ids["later"],
+        ids["23h_ago"],
+    }
+    # read-only for real: inside pg_verdicts' transaction, just before its SELECT, the session
+    # reports transaction_read_only = on and the 10 s timeout, and a write is refused
+    real_connect, checks = psycopg.connect, {}
+
+    class Spy:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            self.conn.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self.conn.__exit__(*exc)
+
+        def transaction(self):
+            return self.conn.transaction()
+
+        def execute(self, sql, *args):
+            if "FROM verdicts" in sql:
+                checks["read_only"] = self.conn.execute("SHOW transaction_read_only").fetchone()[0]
+                checks["timeout"] = self.conn.execute("SHOW statement_timeout").fetchone()[0]
+                try:
+                    with self.conn.transaction():  # a savepoint: the SELECT still runs after
+                        self.conn.execute("DELETE FROM verdicts")
+                except psycopg.errors.ReadOnlySqlTransaction:
+                    checks["write"] = "refused"
+            return self.conn.execute(sql, *args)
+
+    with monkeypatch.context() as m:
+        m.setattr(handler.psycopg, "connect", lambda u, **kw: Spy(real_connect(u, **kw)))
+        assert set(handler.pg_verdicts()) == {ids["later"], ids["23h_ago"]}
+    assert checks == {"read_only": "on", "timeout": "10s", "write": "refused"}
+    with psycopg.connect(url) as conn:
+        assert conn.execute("SELECT count(*) FROM verdicts").fetchone()[0] == 3
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("DELETE FROM concerts WHERE id = ANY(%s)", (list(ids.values()),))
+    assert handler.pg_verdicts() == {}  # ON DELETE CASCADE; empty is {}
+
+
+def test_pg_verdicts_reads_in_a_read_only_transaction(monkeypatch):
+    seen = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def transaction(self):
+            return self
+
+        def execute(self, sql, *args):
+            seen.append(sql)
+            return self
+
+        def fetchall(self):
+            return [(CID, "pour_toi", "for_you", 72, "drone")]
+
+    def connect(url, **kwargs):
+        seen.append(kwargs)
+        return Conn()
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u@h/db")
+    monkeypatch.setattr(handler.psycopg, "connect", connect)
+    assert handler.pg_verdicts() == {CID: VERDICT}
+    assert seen[0] == {"connect_timeout": 15, "autocommit": True}
+    assert seen[1] == "SET TRANSACTION READ ONLY"
+    assert seen[2].startswith("SET LOCAL statement_timeout")
+    assert "starts_at >= now() - interval '1 day'" in seen[3]
+
+
 # ---------------------------------------------------------------- packaging and deploy
 
 CREDS = provision.Credentials("SCWACCESS", "secret/key", "proj-1")
@@ -523,12 +764,15 @@ def test_smoke_test(monkeypatch):
     )
     post = respx.post("https://d.fn").respond(401)
     profile = respx.get("https://d.fn/profile").respond(401)
+    verdicts = respx.get("https://d.fn/verdicts").respond(401)
     respx.get("https://d.fn/").respond(405)
-    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401, 401, 405)
-    assert (
-        profile.calls[0].request.headers["Authorization"]
-        == post.calls[0].request.headers["Authorization"]
-    )
+    assert dfn.smoke_test("https://d.fn", ORIGIN) == (204, 401, 401, 401, 405)
+    for sub in (profile, verdicts):
+        assert (
+            sub.calls[0].request.headers["Authorization"]
+            == post.calls[0].request.headers["Authorization"]
+        )
+        assert sub.calls[0].request.headers["Origin"] == ORIGIN
     assert route.calls[1].request.headers["Origin"] == ORIGIN
     sent = post.calls[0].request.headers["Authorization"]
     assert sent.startswith("Bearer ") and len(sent) > 20
@@ -555,7 +799,7 @@ def test_cli_deploys_with_hashed_token_and_masked_url(monkeypatch, capsys):
         return {"status": "ready", "domain_name": "d.fn", "runtime": "python312"}
 
     monkeypatch.setattr(dfn, "deploy", fake_deploy)
-    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401, 401, 405))
+    monkeypatch.setattr(dfn, "smoke_test", lambda url, origin: (204, 401, 401, 401, 405))
     assert cli.main(["deploy-feedback"]) == 0
     out = capsys.readouterr().out
     assert "::add-mask::postgresql://u:pw@h/db" in out and "https://d.fn" in out
@@ -572,7 +816,13 @@ def test_cli_fails_when_wrong_token_is_accepted(monkeypatch, capsys):
     monkeypatch.setattr(provision, "ensure", lambda creds: ({}, "postgresql://u:pw@h/db"))
     monkeypatch.setattr(dfn, "build_zip", lambda dest: dest)
     monkeypatch.setattr(dfn, "deploy", lambda c, s, a: {"domain_name": "d.fn"})
-    for statuses in ((204, 202, 401, 405), (204, 401, 404, 405), (204, 401, 401, 401)):
+    for statuses in (
+        (204, 202, 401, 401, 405),  # wrong token accepted
+        (204, 401, 404, 401, 405),  # /profile not routed
+        (204, 401, 401, 404, 405),  # /verdicts not routed (WIP-85)
+        (204, 401, 401, 200, 405),  # /verdicts served without the key
+        (204, 401, 401, 401, 401),
+    ):
         monkeypatch.setattr(dfn, "smoke_test", lambda url, origin, s=statuses: s)
         assert cli.main(["deploy-feedback"]) == 1  # wrong token accepted, or sub-path not routed
         assert "::error::" in capsys.readouterr().out

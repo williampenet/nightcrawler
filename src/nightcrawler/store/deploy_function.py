@@ -164,11 +164,12 @@ def deploy(creds: Credentials, settings: dict, archive: Path, wait_s: float = 60
         return _wait(client, path, "function", wait_s)
 
 
-def smoke_test(url: str, origin: str, tries: int = 6) -> tuple[int, int, int, int]:
+def smoke_test(url: str, origin: str, tries: int = 6) -> tuple[int, int, int, int, int]:
     """CORS preflight (cold start allowed), then a POST with a random wrong token, which must
     be refused (401) before anything is written; then, with the same wrong token, GET
-    <url>/profile (401 expected: proves sub-paths reach the function, WIP-46) and GET <url>/
-    (405 expected). Returns the four HTTP statuses (0: no answer)."""
+    <url>/profile and GET <url>/verdicts (401 expected: proves sub-paths reach the function,
+    WIP-46, WIP-85) and GET <url>/ (405 expected). Returns the five HTTP statuses (0: no
+    answer)."""
     preflight = 0
     for _ in range(tries):
         try:
@@ -193,7 +194,8 @@ def smoke_test(url: str, origin: str, tries: int = 6) -> tuple[int, int, int, in
     except httpx.HTTPError:
         refused = 0
     gets = []
-    for target in (url.rstrip("/") + "/profile", url.rstrip("/") + "/"):
+    for sub in ("/profile", "/verdicts", "/"):
+        target = url.rstrip("/") + sub
         try:
             gets.append(
                 httpx.get(
@@ -204,4 +206,4 @@ def smoke_test(url: str, origin: str, tries: int = 6) -> tuple[int, int, int, in
             )
         except httpx.HTTPError:
             gets.append(0)
-    return preflight, refused, gets[0], gets[1]
+    return preflight, refused, gets[0], gets[1], gets[2]
