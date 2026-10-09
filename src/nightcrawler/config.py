@@ -164,7 +164,7 @@ def _check_listing_jsonld(name: str, reader: dict) -> None:
 
 
 def _check_page_llm(name: str, reader: dict) -> None:
-    """reader {urls: [https], paginate?} (WIP-66)"""
+    """reader {urls: [https], paginate?, trust_is_concert?, max_details?} (WIP-66, WIP-92)"""
     urls = reader.get("urls")
     if not isinstance(urls, list) or not urls:
         raise ValueError(f"priority venue {name}: urls must be a non-empty list")
@@ -172,6 +172,7 @@ def _check_page_llm(name: str, reader: dict) -> None:
         raise ValueError(f"priority venue {name}: urls must be https")
     if "trust_is_concert" in reader and not isinstance(reader["trust_is_concert"], bool):
         raise ValueError(f"priority venue {name}: trust_is_concert must be true or false")
+    _check_ints(name, reader, {"max_details": None})
     _check_paginate(name, reader)
 
 

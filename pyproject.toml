@@ -15,6 +15,10 @@ dependencies = [
     "python-dateutil>=2.9,<3",
     "pyyaml>=6,<7",
     "psycopg[binary]>=3.2,<3.4",  # event store (ADR-0005)
+    # event pages' main text (WIP-92); Apache-2.0 since 1.8.0 (earlier versions were GPL)
+    "trafilatura==2.2.0",
+    # trafilatura dependency, held to a release at least two weeks old (1.11.0: 2026-10-02)
+    "htmldate==1.10.0",
 ]
 
 [project.optional-dependencies]

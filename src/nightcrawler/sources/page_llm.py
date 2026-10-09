@@ -42,6 +42,14 @@ model is never named here: `extract.extract_events` goes through the task router
   `max_output_tokens` (which would need an eval).
 - No key, or a model error: the venue gets a `skipped: no key` / `error: <Type> (transport)`
   status and the run goes on (llm.chat_json already retried transient failures).
+- Each kept event's own page (WIP-92, sources/event_page.py): its link is found in the agenda
+  HTML without a model (unique match on the title, same host), becomes the event's `url`
+  (concert ids do not use it: dedup.concert_id), and the page's JSON-LD description, else its
+  main text, becomes the event's description. At most `max_details` requests per venue (reader
+  key, default 40) and `DEFAULT_DETAIL_RUN_CAP` per run; cached pages are always used. Status
+  counts: `links` (events with their own page), `detail pages` read (`detail cached` of them),
+  `with text` (events described), `detail errors`, `other day` (the page's JSON-LD Events are
+  on other days: agenda URL kept).
 """
 
 from __future__ import annotations
@@ -66,12 +74,16 @@ from .. import extract, llm
 from ..events import in_window
 from ..http import Fetcher, RobotsBlocked
 from ..models import RawEvent
+from . import event_page
 from .listing_jsonld import with_param
 
 log = logging.getLogger(__name__)
 
 SOURCE = "page_llm"
 DEFAULT_RUN_CAP = 40
+# event pages per run, all page_llm venues together: the 4 page_llm venues of config/zone.yaml
+# (2026-10-09) at the default of 40 each
+DEFAULT_DETAIL_RUN_CAP = 160
 DEFAULT_CHUNK_CHARS = 3200  # largest eval page: 3,234 characters (eval/cases.jsonl)
 DEFAULT_CHUNKS_PER_PAGE = 6
 OVERLAP_LINES = extract.BEFORE  # check_events looks this many lines above a title
@@ -259,6 +271,7 @@ class Context:
     client: httpx.Client | None = None
     chunks_per_page: int = DEFAULT_CHUNKS_PER_PAGE
     chunk_chars: int = DEFAULT_CHUNK_CHARS
+    detail_budget: CallBudget = field(default_factory=lambda: CallBudget(DEFAULT_DETAIL_RUN_CAP))
 
     @property
     def limit(self) -> int:
@@ -356,9 +369,13 @@ def read(
     seen: set[tuple[str, str]] = set()  # (date, normalised title): chunks overlap
     error = ""
     capped = False
+    hosts = {h for u in reader["urls"] if (h := event_page.host(u))}
+    agenda = {event_page.page_key(u) for u in [*reader["urls"], *(u for u, _ in pages)]}
+    own: list[tuple[RawEvent, str]] = []  # (event with its own page, agenda page URL)
     for url, html in pages:
         if error or capped:
             break
+        links = event_page.page_links(html, url, hosts, agenda)
         chunks, left = chunk_text(
             extract.page_text(html, FULL_TEXT_CHARS), ctx.limit, ctx.chunks_per_page
         )
@@ -413,11 +430,21 @@ def read(
                     )
                     if in_window(raw, now, window_days):
                         events.append(raw)
+                        if link := event_page.event_link(raw.title, links):
+                            own.append((raw, url))
+                            raw.url = link
             if error or capped:
                 break
+    cap = int(reader.get("max_details", event_page.DEFAULT_MAX_DETAILS))
+    found, detail_notes = event_page.read_details(
+        own, fetcher, tz, cap, ctx.detail_budget.take, hosts
+    )
+    notes += detail_notes
     counts = (
         f"chunks {chunk_count}, model {asked}, cached {cached}, ungrounded {ungrounded}, "
-        f"not concert {not_concert}"
+        f"not concert {not_concert}, links {len(own) - found.other_day}, "
+        f"detail pages {found.pages}, detail cached {found.cached}, "
+        f"with text {found.described}, detail errors {found.errors}, other day {found.other_day}"
     )
     if invalid:
         reasons = ", ".join(f"{r} {n}" for r, n in sorted(invalid.items()))
