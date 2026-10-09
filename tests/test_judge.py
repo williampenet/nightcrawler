@@ -192,3 +192,14 @@ def test_pick_nearest_orders_by_related_styles_and_venue():
     assert judge.pick_nearest(target, rated, NN_ARTISTS) == judge.pick_nearest(
         target, rated, NN_ARTISTS
     )
+
+
+def test_section_follows_the_accepted_rule():
+    """ADR-0006 (accepted 2026-10-09): recall first, a discovery is shown from confidence 30."""
+    s = judge.section
+    assert s({"verdict": "must_see", "confidence": 5}) == "ne_pas_rater"
+    assert s({"verdict": "for_you", "confidence": 0}) == "pour_toi"
+    assert s({"verdict": "discovery", "confidence": 30}) == "decouvertes"
+    assert s({"verdict": "discovery", "confidence": 29}) == "tout_voir"
+    assert s({"verdict": "no", "confidence": 100}) == "tout_voir"
+    assert s(None) == "tout_voir" and s({"verdict": "maybe"}) == "tout_voir"

@@ -28,7 +28,26 @@ TASK = "judge_taste"
 VERDICTS = ("must_see", "for_you", "discovery", "no")
 # ranking score per verdict; confidence (0-100) breaks ties inside a verdict
 VERDICT_RANK = {"must_see": 3, "for_you": 2, "discovery": 1, "no": 0}
-PICKED = frozenset({"must_see", "for_you"})  # FR-5 AC: "must_see + for_you" recall
+PICKED = frozenset({"must_see", "for_you"})  # verdicts that are always shown on the home page
+# A discovery is shown from this confidence on (ADR-0006, accepted 2026-10-09): the cut-off the
+# cross-validation of run 5 learnt for 80 % recall, giving 90 % (82–94 %) out of fold
+DISCOVERY_MIN_CONFIDENCE = 30
+SECTIONS = {"must_see": "ne_pas_rater", "for_you": "pour_toi", "discovery": "decouvertes"}
+
+
+def section(data: dict | None) -> str:
+    """Home-page section of a judgement (PRD FR-6): "ne_pas_rater", "pour_toi",
+    "decouvertes" or "tout_voir" (also for a missing or unusable judgement). Recall first
+    (William, 2026-10-09): a discovery is shown from DISCOVERY_MIN_CONFIDENCE."""
+    if not data or data.get("verdict") not in SECTIONS:
+        return "tout_voir"
+    if (
+        data["verdict"] == "discovery"
+        and int(data.get("confidence") or 0) < DISCOVERY_MIN_CONFIDENCE
+    ):
+        return "tout_voir"
+    return SECTIONS[data["verdict"]]
+
 
 SCHEMA = {
     "type": "object",

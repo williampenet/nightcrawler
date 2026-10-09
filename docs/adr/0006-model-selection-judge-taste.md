@@ -1,7 +1,8 @@
 # ADR-0006: Model selection — taste judgement (`judge_taste`)
 
-- **Status:** Proposed (method and decision rule fixed before any result, WIP-57). Decision to
-  be filled from the eval run, then ✋ William.
+- **Status:** ✋ Accepted — Mistral Small 3.2 24B on Scaleway, nearest-rating examples, recall
+  first (William, 2026-10-09 07:02 and 07:06, WIP-82). Proposed 2026-10-08 with the method and
+  decision rules fixed before each run.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner
@@ -255,10 +256,51 @@ lands at "discovery ≥ 30" and gives 90 % recall; bar 40 %); gate 2 passes narr
 fine-tuning cost study (William to confirm).
 
 ## Decision
-To fill (✋ William). Routing entry once accepted: `config/models.yaml` → `tasks.judge_taste`.
+**Mistral Small 3.2 24B Instruct 2506 (`mistral-small-3.2-24b-instruct-2506`) on Scaleway
+Generative APIs (Paris)**, temperature 0, with the written taste, the seeds, the listing's
+description and the 10 + 10 of William's ratings nearest to the concert (`judge.pick_nearest`).
+Routing: `config/models.yaml` → `tasks.judge_taste`.
 
-**Escalation:** to decide from the eval (a larger model on schema failure only matters if the
-small one fails the schema).
+**Recall first (William's decision, 2026-10-09 07:02):** "suggestions that turn out not to please
+me are fine; what matters is that the app does not let pass a concert I am likely to like". The
+iteration 2 gate on precision (≥ 40 %) is therefore dropped; precision is reported, not gated. A
+concert is shown on the home page when the verdict is `must_see`, `for_you`, or `discovery` with
+confidence ≥ 30 (`judge.section`, `DISCOVERY_MIN_CONFIDENCE`): the cut-off the run 5
+cross-validation learnt for 80 % recall in both halves of run 5, so the fixed rule picks exactly
+what the cross-validation picked: **90 % recall (82–94 %)**. The rule was fixed after seeing that
+run (slightly optimistic); the next run is its first measurement after the fact. About
+half of William's rated concerts shown, and a precision of 36 % (26–47 %) against a 22 % base rate.
+Everything else stays visible in "Tout voir".
+
+Why this model (runs 2–5, `docs/MODEL_EVAL.md`): the best recall and pairwise accuracy of every
+candidate in every run with the written taste (runs 4–5: pairwise 77–79 % against 52 % for the
+rule-based score on the same labels), schema-valid on 100 % of answers, p95 ≤ 3.4 s (run 2a; ≤ 2.5 s since run 2), €0.20–0.28 per 1,000
+judgements; EU publisher (Mistral AI, FR), Apache 2.0, EU host. The larger models picked fewer of
+William's concerts at 5–11 × the cost; Gemma 4 26B-A4B stayed 18–31 points below in recall (runs 2–4, with examples). More
+ratings went with a higher precision at a fixed recall in run 5 (30 → 31.5 → 36 %), but inside the
+±12-point noise and resting on one seed: **unverified**.
+
+**Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
+Judge eval reports the precision of each section, and if the difference does not hold the two
+sections are merged.
+
+**Gate:** the Judge eval fails when, in condition `nn`, the share of positives shown by
+`judge.section` falls below `min_quality: 0.85` (aim 0.90), or when the routed model was not
+measured in a run that included it. It runs on every change to the task, its runner, its
+candidates, `config/models.yaml` or `llm.py`. It does not run (and is not red) when the store
+secrets are missing or the written taste is empty (WIP-78: no paid call then). With a true shown
+recall of 90 %, a run on ~87 positives falls under 85 % about 5 % of the time (16 % at 88 %,
+binomial, computed by the reviewer), on top of up to 5 points of run-to-run variation: a red gate
+means investigate (re-run, look at the misses), not an automatic revert.
+**Sections check:** "À ne pas rater" counts as more precise than "Pour toi" when its precision is
+higher on the point estimate in two consecutive Judge eval runs with at least 10 concerts in each
+section; otherwise the two are merged (follow-up once the page shows them).
+
+**Escalation: none.** Schema-valid on 100 % of answers in runs 2–5; nothing for a fallback to fix.
+
+**Not chosen now:** fine-tuning on William's ratings (LoRA). Kept as the option if recall drops
+under the gate or precision becomes a problem; it needs its own ADR section (hosting a fine-tuned
+model is not offered serverless by Scaleway, ADR-0004).
 
 ## Security & compliance
 - **Data:** sent per judgement: the written taste, up to 60 seed artist names, up to 20 of

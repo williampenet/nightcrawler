@@ -37,6 +37,7 @@ from nightcrawler.cli import annotate
 from nightcrawler.coverage import load_reference
 
 ROOT = Path(__file__).resolve().parent
+CONFIG = ROOT.parent.parent / "config" / "models.yaml"  # routing (tasks.judge_taste)
 LABELS_JS = ROOT / "labels.js"
 REFERENCE = ROOT.parent / "reference" / "watch_events.csv"
 # condition -> (example selection, share of the rated pool kept, subsample seed); None = none
@@ -318,7 +319,7 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
             "recall_wilson95": None, "recall_with_discovery": None, "recall_by_kind": {},
             "precision": None, "precision_wilson95": None, "picked_rated": 0, "pairwise": None,
             "pairwise_valid": None, "verdicts": {}, "p50_s": None, "p95_s": None,
-            "tokens_in": None, "tokens_out": None, "eur_per_1000": None, "cv": {},
+            "tokens_in": None, "tokens_out": None, "eur_per_1000": None, "cv": {}, "shown": None,
         }  # fmt: skip
     liked_r = [i for i in rated if cases[i]["label"] == "liked"]
     disliked_r = [i for i in rated if cases[i]["label"] == "disliked"]
@@ -347,6 +348,7 @@ def metrics(cand: dict, cases: list[dict], answers: list[dict]) -> dict:
         "tokens_out": round(statistics.mean(tout)) if tout else None,
         "eur_per_1000": cost,
         "cv": {f"{t:.0%}": cv_operating_point(cases, sc, t) for t in TARGET_RECALLS},
+        "shown": shown_metrics(cases, answers),
     }
 
 
@@ -386,6 +388,28 @@ def cv_operating_point(cases: list[dict], sc: list[float], target: float) -> dic
         "precision_wilson95": wilson(liked, len(rp)),
         "picked_rated": len(rp),
         "cuts": cuts,
+    }
+
+
+def shown_metrics(cases: list[dict], answers: list[dict]) -> dict:
+    """The production rule (judge.section, ADR-0006): recall of the concerts shown on the home
+    page, the share of William's rated concerts shown, and the precision of each section."""
+    sec = [judge.section(a["data"]) for a in answers]
+    pos = [i for i, c in enumerate(cases) if c["label"] in ("liked", "positive")]
+    rated = [i for i, c in enumerate(cases) if c["kind"] == "rated"]
+    shown = [i for i in rated if sec[i] != "tout_voir"]
+    hits = sum(sec[i] != "tout_voir" for i in pos)
+    per = {}
+    for name in ("ne_pas_rater", "pour_toi", "decouvertes", "tout_voir"):
+        ids = [i for i in rated if sec[i] == name]
+        liked = sum(cases[i]["label"] == "liked" for i in ids)
+        per[name] = {"n": len(ids), "liked": liked, "precision": ratio(liked, len(ids)),
+                     "wilson95": wilson(liked, len(ids))}  # fmt: skip
+    return {
+        "recall": ratio(hits, len(pos)),
+        "recall_wilson95": wilson(hits, len(pos)),
+        "share_shown": ratio(len(shown), len(rated)),
+        "sections": per,
     }
 
 
@@ -440,7 +464,20 @@ def compact(cid: str, cond: str, m: dict) -> str:
         f"judge_taste {cid} [{cond}]: recall {pct(m['recall'])}, precision "
         f"{pct(m['precision'])} on {m['picked_rated']} picked, pairwise {pct(m['pairwise'])} "
         f"(valid only {pct(m['pairwise_valid'])}), valid {pct(m['valid'])} (errors: {errs(m)}), "
-        f"p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000{cv_text(m)}"
+        f"p95 {m['p95_s']} s, €{m['eur_per_1000']} / 1,000{shown_text(m)}{cv_text(m)}"
+    )
+
+
+def shown_text(m: dict) -> str:
+    sh = m.get("shown")
+    if not sh:
+        return ""
+    sec = "; ".join(
+        f"{k} {pct(v['precision'])} on {v['n']}" for k, v in sh["sections"].items() if v["n"]
+    )
+    return (
+        f"; shown (ADR-0006 rule): recall {pct(sh['recall'])}{ci(sh['recall_wilson95'])}, "
+        f"{pct(sh['share_shown'])} of rated concerts shown; precision by section: {sec}"
     )
 
 
@@ -497,6 +534,48 @@ def table(ref: dict, rows: list[tuple[str, str, dict]], skipped: dict[str, str])
         "",
     ]
     return "\n".join(out)
+
+
+GATE_CONDITION = "nn"  # the production setup: nearest ratings, all of them (ADR-0006)
+
+
+def gate(results: dict, skipped: dict, conds: list[str], only: str) -> int:
+    """Quality gate on the routed model (config/models.yaml tasks.judge_taste.min_quality):
+    in condition GATE_CONDITION, the recall of the concerts judge.section() shows. 1 when it is
+    below the bar or was not measured; 0 when this run left the routed model or the condition
+    out (--only, --conditions) or no task is routed."""
+    tasks = llm.load_tasks(CONFIG)
+    task = tasks.get("judge_taste")
+    if task is None or task.min_quality is None or GATE_CONDITION not in conds:
+        return 0
+    p = task.primary
+    cands = yaml.safe_load((ROOT / "models.yaml").read_text("utf-8"))["judge_taste"]
+    want = (p.provider, p.model, p.extra or {})
+    routed = next(
+        (
+            c
+            for c in cands
+            if not c.get("retired")
+            and (c.get("provider"), c.get("model"), c.get("extra") or {}) == want
+        ),
+        None,
+    )
+    if routed is None:
+        annotate("error", "Judge eval: no candidate matches the routed judge_taste model")
+        return 1
+    if only and routed["id"] not in {i.strip() for i in only.split(",")}:
+        return 0
+    key = f"{routed['id']} [{GATE_CONDITION}]"
+    shown = (results.get(key) or {}).get("shown")
+    if not shown or shown.get("recall") is None:
+        why = skipped.get(key) or skipped.get(routed["id"]) or "no result"
+        annotate("error", f"Judge eval gate: {key} not measured ({why})")
+        return 1
+    if shown["recall"] < task.min_quality:
+        annotate("error", f"Judge eval gate: {key} shown recall {pct(shown['recall'])} < "
+                 f"{pct(task.min_quality)}")  # fmt: skip
+        return 1
+    return 0
 
 
 def candidates(only: str) -> list[dict]:
@@ -626,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps({"references": ref, "results": results, "skipped": skipped}, indent=1),
             "utf-8",
         )
-    return 1 if failed else 0
+    return 1 if gate(results, skipped, conds, args.only) or failed else 0
 
 
 if __name__ == "__main__":
