@@ -193,3 +193,11 @@ test("a known artist goes to « À ne pas rater » whatever the judge says (WIP-
   assert.equal(s.tout_voir.length, 0);
   assert.equal(V.sectionsFor(list, verdicts).tout_voir.length, 1); // without the rule: unchanged
 });
+
+test("homePicks: must-see and judged « Pour toi » only, unjudged left out (WIP-102)", () => {
+  const it = (id, extra = {}) => ({ c: { id }, ...extra });
+  const { must, picks } = V.homePicks({ must: [it("a", { known: true }), it("b")], forYou: [it("c"), it("d", { unjudged: true })] });
+  assert.deepEqual([...must], ["a", "b"]);
+  assert.deepEqual([...picks].sort(), ["a", "b", "c"]);
+  assert.equal(V.homePicks({}).picks.size, 0);
+});

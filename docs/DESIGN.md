@@ -97,13 +97,22 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
 
-## Home screen (WIP-95)
+## Home screen (WIP-95, behaviour revised in WIP-102)
+
+After the PM's test on his phone (2026-10-09, 17:08):
+- The home opens on « Cette semaine » on every load; tapping the active period again shows every date.
+- « Pour toi » is one chronological list of the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. A summary line gives the count; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
+- « Tout » lists every concert of the period A → Z by title (French collation, `S.byTitle`), with « Par date » and « Pour moi » in the sort menu.
+- « À ne pas rater » concerts are rows on the `accent` fill with every text in `ink` and an « À ne pas rater » label (the fill alone would be colour only), on every view. The MustSeeCard of the artboard is no longer used.
+- Concerts of a past day are dropped on every view (`S.isPastDay`, on load and at each render), and a page kept in memory reloads when the user comes back to it on another day or more than 6 h later. The PM's phone showed concerts of 7 and 8 October on the 9th while the published file (generated 16:31) had none; the most likely cause is a page kept in memory and never reloaded, **unverified**. Data files are also fetched with `cache: "no-cache"` (revalidation).
+- The date line reads the zone's name from `config/zone.yaml`, now « Lyon et environs ».
+
+### First version (WIP-95)
 
 Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (sections), « Nouveaux » (added since the last visit, computed in the browser by `web/visits.js`: a visit is a run of loads less than 3 h apart, the first visit flags nothing), « Tout » (count of the period); period filters « Ce soir », « Ce week-end », « Cette semaine » (tapping the active one again shows every date); « À ne pas rater » as MustSeeCards (4 shown, the rest behind a button), « Pour toi {période} » and « Découvertes » as ConcertRows; « Voir les N concerts »; bottom navigation with hash routes `#concerts`, `#calendrier`, `#gouts` (`#sources` opens « Mes goûts » at the sources table).
 
 Deliberate gaps, each owned by a ticket:
 - The concert title is a disclosure button, marked by a chevron, opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96). « Lu par IA » stays visible on the venue line of rows and cards (ADR-0004, WIP-66).
-- No period is active by default (all dates), while the artboard shows « Cette semaine »: the listener's last choice is remembered; the default is a PM decision.
 - « Calendrier » lists every concert day by day until the month grid of [WIP-97](https://linear.app/wip-coding/issue/WIP-97); « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98).
 - The artboard's search button is left out: search is not in the PRD.
 - Without a send key there is no judge, so « Découvertes » stays empty: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts`.

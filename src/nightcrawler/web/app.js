@@ -737,8 +737,6 @@ function showRoute(moveFocus) {
 // view: "pour_toi" | "nouveaux" | "tout"; not saved, the home always opens on « Pour toi »
 let view = "pour_toi";
 let NEW_IDS = new Set(); // concerts added since the last visit (visits.js), set once per load
-let showAllMust = false; // « À ne pas rater » beyond the first MUST_CARDS cards
-const MUST_CARDS = 4; // PRD FR-6: 1 to 4 must-see concerts a week
 const openIds = new Set(); // rows whose details are open, kept across re-renders
 let panelSeq = 0;
 const PERIODS = { tonight: "ce soir", weekend: "ce week-end", "7d": "cette semaine" };
@@ -832,17 +830,17 @@ function iconButton(name, label, size, onClick) {
 }
 
 // ListenButton (design system): Deezer's own widget for now (PM decision 2026-10-09, player in
-// WIP-99), loaded only on click so nothing third-party loads before. filled: on a must-see card.
-function listenButton(c, slot, filled) {
+// WIP-99), loaded only on click so nothing third-party loads before.
+function listenButton(c, slot) {
   const a = (c.artists || []).map((k) => DATA.artists[k]).find((x) => x && x.deezer_id);
   if (!a || !/^[0-9]+$/.test(String(a.deezer_id))) return null; // no extract: no button
   const label = el("span", "Écouter");
-  const b = button("", filled ? "listen filled" : "listen", () => {
+  const b = button("", "listen", () => {
     const open = slot.querySelector("iframe");
     if (open) {
       open.remove();
       label.textContent = "Écouter";
-      b.replaceChild(icon("play", filled ? 14 : 12), b.firstChild);
+      b.replaceChild(icon("play", 12), b.firstChild);
       b.setAttribute("aria-expanded", "false");
       return;
     }
@@ -856,10 +854,10 @@ function listenButton(c, slot, filled) {
     f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
     slot.append(f);
     label.textContent = "Fermer";
-    b.replaceChild(icon("close", filled ? 14 : 12), b.firstChild);
+    b.replaceChild(icon("close", 12), b.firstChild);
     b.setAttribute("aria-expanded", "true");
   });
-  b.append(icon("play", filled ? 14 : 12), label);
+  b.append(icon("play", 12), label);
   b.setAttribute("aria-expanded", "false");
   return b;
 }
@@ -875,9 +873,9 @@ function reasonOf(x) {
   return null;
 }
 
-function reasonLine(x, showUnjudged) {
+function reasonLine(x) {
   const r = reasonOf(x);
-  if (!r) return showUnjudged && x.unjudged ? el("p", "Pas encore jugé.", "reason muted") : null;
+  if (!r) return null;
   const p = el("p", null, "reason");
   const tag = el("span", r.ia ? "IA" : "Tes goûts", "tag");
   tag.setAttribute("aria-hidden", "true");
@@ -946,17 +944,17 @@ function titleButton(c, panel, cls) {
   return h;
 }
 
-function actionBar(x, item, slot, onCard) {
+function actionBar(x, item, slot) {
   const c = x.c;
   const bar = el("div", null, "actions");
-  const listen = listenButton(c, slot, onCard);
+  const listen = listenButton(c, slot);
   if (listen) bar.append(listen);
   bar.append(el("span", null, "sp"));
   const liked = S.isLiked(state, c);
-  const like = iconButton("heart", "J'aime", onCard ? 20 : 18, () => feedback(c, "like", item));
+  const like = iconButton("heart", "J'aime", 18, () => feedback(c, "like", item));
   like.setAttribute("aria-pressed", String(liked));
   if (liked) like.classList.add("on");
-  bar.append(like, iconButton("share", "Partager", onCard ? 20 : 18, () => share(c)));
+  bar.append(like, iconButton("share", "Partager", 18, () => share(c)));
   return bar;
 }
 
@@ -972,29 +970,10 @@ function venueLine(c) {
   return p;
 }
 
-// MustSeeCard (design system): apricot card, text only.
-function mustSeeCard(x) {
-  const c = x.c;
-  const li = el("li", null, "card");
-  li.dataset.id = c.id;
-  const d = new Date(c.start);
-  const t = timeFmt.format(d);
-  const top = el("div", null, "card-top");
-  top.append(el("span", shortFmt.format(d) + (t === "00:00" ? "" : ` · ${t}`), "when"));
-  if (NEW_IDS.has(c.id)) top.append(newBadge());
-  const panel = detailsPanel(x, li);
-  const slot = el("div", null, "slot");
-  li.append(top, titleButton(c, panel, "card-title"), venueLine(c));
-  const why = reasonLine(x, true);
-  if (why) li.append(why);
-  li.append(actionBar(x, li, slot, true), panel, slot);
-  return li;
-}
-
 // ConcertRow (design system): date column, then title, venue, reason and actions.
-function concertRow(x, showUnjudged) {
+function concertRow(x) {
   const c = x.c;
-  const li = el("li", null, "crow");
+  const li = el("li", null, x.must ? "crow must" : "crow");
   li.dataset.id = c.id;
   const d = new Date(c.start);
   const t = timeFmt.format(d);
@@ -1009,10 +988,11 @@ function concertRow(x, showUnjudged) {
   head.append(titleButton(c, panel, "row-title"));
   if (NEW_IDS.has(c.id)) head.append(newBadge());
   const slot = el("div", null, "slot");
+  if (x.must) body.append(el("p", "À ne pas rater", "must-label")); // the fill alone would be colour only
   body.append(head, venueLine(c));
-  const why = reasonLine(x, showUnjudged);
+  const why = reasonLine(x);
   if (why) body.append(why);
-  body.append(actionBar(x, li, slot, false), panel, slot);
+  body.append(actionBar(x, li, slot), panel, slot);
   li.append(date, body);
   return li;
 }
@@ -1024,6 +1004,7 @@ function filtered(forView = view) {
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden)); // display only: saved ids stay
   const all = forView === "tout";
   return DATA.concerts.filter((c) => {
+    if (S.isPastDay(c.start, now, dayKey)) return false; // a page left open overnight
     if (c.id === deepLinkId) return true; // a shared link always shows its concert
     if (hidden.has(c.id)) return false;
     if (all && state.venue && c.venue_id !== state.venue) return false;
@@ -1048,17 +1029,17 @@ const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DAT
 function homeSections(list, profile) {
   if (judgeOn()) {
     const s = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
-    return { must: s.ne_pas_rater, forYou: s.pour_toi, discover: s.decouvertes, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
+    return { must: s.ne_pas_rater, forYou: s.pour_toi, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
   }
   if (S.isEmpty(profile, DATA.concerts)) return null;
   const t = S.tiers(list);
-  return { must: t.sure, forYou: t.discover, discover: [], all: list };
+  return { must: t.sure, forYou: t.discover, all: list };
 }
 
-function rowList(items, showUnjudged, labelId) {
+function rowList(items, labelId) {
   const ul = el("ul", null, "rows");
   if (labelId) ul.setAttribute("aria-labelledby", labelId);
-  for (const x of items) ul.append(concertRow(x, showUnjudged));
+  for (const x of items) ul.append(concertRow(x));
   return ul;
 }
 
@@ -1076,54 +1057,41 @@ function heading(root, id, text, sub) {
   if (sub) root.append(el("p", sub, "section-sub"));
 }
 
-function renderPourToi(root, list, profile) {
+// Every item with its verdict (judge) and a must flag (« À ne pas rater », highlighted on every
+// view), plus the picks of « Pour toi »: the concerts that very probably match, i.e. must-see and
+// the judge's « Pour toi », by date. Not judged yet, Découvertes and the rest stay in « Tout »
+// (PM, 2026-10-09 17:08, WIP-102; amends ADR-0007 §5).
+function decorate(list, profile) {
   const sec = homeSections(list, profile);
+  if (!sec) return { items: list, picks: null };
+  const { must, picks } = V.homePicks(sec); // the rule, tested in verdicts.test.js
+  const byId = new Map(sec.all.map((x) => [x.c.id, x]));
+  const items = list.map((x) => {
+    const y = byId.get(x.c.id) || x;
+    return must.has(x.c.id) ? { ...y, must: true } : y;
+  });
+  return { items, picks: items.filter((x) => picks.has(x.c.id)) };
+}
+
+function renderPourToi(root, picks, total) {
   const period = PERIODS[state.when];
-  if (!sec) {
+  if (!picks) {
     const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
     const link = el("a", "« Mes goûts »");
     link.href = "#gouts";
     hint.append(link, " : des artistes, ou ton goût en quelques phrases. Les concerts pour toi apparaîtront ici.");
     root.append(hint);
-    return seeAll(root, list.length);
+    return seeAll(root, total);
   }
-  if (!sec.must.length && !sec.forYou.length && !sec.discover.length) {
-    root.append(el("p", `Rien à te proposer ${period || "pour l'instant"}.`, "muted empty"));
-    return seeAll(root, list.length);
+  if (!picks.length) {
+    root.append(el("p", `Rien pour toi ${period || "pour l'instant"}.`, "muted empty"));
+    return seeAll(root, total);
   }
-  if (sec.must.length) {
-    const box = el("section", null, "home-section");
-    heading(box, "sec-must", "À ne pas rater");
-    const ul = el("ul", null, "cards");
-    ul.setAttribute("aria-labelledby", "sec-must");
-    const shown = showAllMust ? sec.must : sec.must.slice(0, MUST_CARDS);
-    for (const x of shown) ul.append(mustSeeCard(x));
-    box.append(ul);
-    const more = sec.must.length - shown.length;
-    if (more > 0) box.append(button(`Voir ${more} autre${more > 1 ? "s" : ""} à ne pas rater`, "ghost wide", () => { showAllMust = true; render(); refocus(sec.must[MUST_CARDS].c.id); }));
-    root.append(box);
-  }
-  if (sec.forYou.length) {
-    const box = el("section", null, "home-section");
-    heading(box, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi");
-    box.append(rowList(sec.forYou, true, "sec-for-you"));
-    root.append(box);
-  }
-  if (sec.discover.length) {
-    const box = el("section", null, "home-section");
-    heading(box, "sec-discover", "Découvertes", "Des artistes que ton profil ne cite pas, dans des lieux qui te ressemblent.");
-    box.append(rowList(sec.discover, false, "sec-discover"));
-    root.append(box);
-  }
-  seeAll(root, list.length);
-}
-
-// Items with the judge's verdicts attached (reasons in « Nouveaux » and « Tout » too).
-function judged(list, profile) {
-  const sec = homeSections(list, profile);
-  if (!sec || !judgeOn()) return list;
-  const byId = new Map(sec.all.map((x) => [x.c.id, x]));
-  return list.map((x) => byId.get(x.c.id) || x);
+  const n = picks.length;
+  const must = picks.filter((x) => x.must).length;
+  heading(root, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi",
+    `${n} concert${n > 1 ? "s" : ""}` + (must ? `, dont ${must} à ne pas rater` : ""));
+  root.append(rowList(picks, "sec-for-you"));
 }
 
 function render() {
@@ -1146,18 +1114,22 @@ function render() {
     root.append(el("p", "Aucun concert pour ces filtres.", "muted empty"));
     return;
   }
-  if (view === "pour_toi") return renderPourToi(root, list, profile);
-  const items = judged(list, profile);
+  const { items, picks } = decorate(list, profile);
+  if (view === "pour_toi") return renderPourToi(root, picks, list.length);
   if (view === "nouveaux") {
     const fresh = items.filter((x) => NEW_IDS.has(x.c.id));
     heading(root, "sec-new", "Nouveaux depuis ta dernière visite");
     if (!fresh.length) root.append(el("p", "Rien de nouveau depuis ta dernière visite.", "muted empty"));
-    else root.append(rowList(fresh, false, "sec-new"));
+    else root.append(rowList(fresh, "sec-new"));
     return;
   }
   heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts");
-  const sorted = state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start)) : items;
-  root.append(rowList(sorted, false, "sec-all"));
+  // A → Z by default (WIP-102); « Par date » keeps the data's order
+  const sorted =
+    state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start))
+    : state.sort === "date" ? items
+    : [...items].sort((a, b) => S.byTitle(a.c, b.c));
+  root.append(rowList(sorted, "sec-all"));
 }
 
 function setView(v, moveFocus) {
@@ -1176,10 +1148,13 @@ function renderDays() {
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden));
-  const list = DATA.concerts.filter((c) => !hidden.has(c.id)).map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+  const now = new Date();
+  const list = DATA.concerts
+    .filter((c) => !hidden.has(c.id) && !S.isPastDay(c.start, now, dayKey))
+    .map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
   let currentDay = null;
   let ul = null;
-  for (const x of judged(list, profile)) {
+  for (const x of decorate(list, profile).items) {
     const start = new Date(x.c.start);
     const key = dayKey(start);
     if (key !== currentDay) {
@@ -1189,7 +1164,7 @@ function renderDays() {
       ul = el("ul", null, "rows");
       root.append(ul);
     }
-    ul.append(concertRow(x, false));
+    ul.append(concertRow(x));
   }
 }
 
@@ -1256,7 +1231,8 @@ function setupControls() {
       saveState();
       render();
     });
-  fillSelect("sort", [["date", "Par date"], ["me", "Pour moi"]], state.sort);
+  state.sort = "az"; // « Tout » opens A → Z on every load (WIP-102)
+  fillSelect("sort", [["az", "A → Z"], ["date", "Par date"], ["me", "Pour moi"]], state.sort);
   fillSelect("style", [["", "Tous les styles"], ...styles], state.style);
   fillSelect("venue", [["", "Tous les lieux"], ...venues], state.venue);
   for (const [id, key] of [["sort", "sort"], ["style", "style"], ["venue", "venue"]]) {
@@ -1264,11 +1240,10 @@ function setupControls() {
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
   }
   // period filters (WIP-95): tapping the active one again shows every date
-  if (!Object.hasOwn(PERIODS, state.when)) state.when = "all";
+  state.when = "7d"; // the home opens on « Cette semaine » on every load (PM, 2026-10-09)
   for (const b of document.querySelectorAll(".periods button")) {
     b.addEventListener("click", () => {
       state.when = state.when === b.dataset.when ? "all" : b.dataset.when;
-      showAllMust = false;
       saveState();
       render();
     });
@@ -1374,11 +1349,26 @@ function openDeepLink() {
   }
 }
 
+// A page kept in memory (background tab, back/forward cache) shows the data of the day it was
+// loaded; on return it reloads when the day changed or the data may have been refreshed since
+// (two Pipeline runs a day). Unverified cause of the PM's 7–8 Oct concerts on the 9th (WIP-102).
+const LOADED_AT = Date.now();
+const STALE_AFTER = 6 * 3600e3;
+function reloadIfStale() {
+  if (document.visibilityState !== "visible" || !keyFmt) return;
+  if (dayKey(new Date()) !== dayKey(new Date(LOADED_AT)) || Date.now() - LOADED_AT > STALE_AFTER) location.reload();
+}
+document.addEventListener("visibilitychange", reloadIfStale);
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) reloadIfStale(); // restored from the back/forward cache
+});
+
 async function main() {
   try {
     const [concerts, venues, report, artists] = await Promise.all(
       ["concerts", "venues", "report", "artists"].map((n) => {
-        const load = fetch(`data/${n}.json`).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
+        // revalidate (ETag) instead of trusting a cached copy: the PM's phone showed old data (WIP-102)
+        const load = fetch(`data/${n}.json`, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
         return n === "artists" ? load.catch(() => ({})) : load; // the list works without artists
       }),
     );
@@ -1389,17 +1379,20 @@ async function main() {
       .catch(() => ({}));
     if (!APP_CONFIG || typeof APP_CONFIG !== "object") APP_CONFIG = {};
     setTimeZone(report.zone.timezone || "Europe/Paris");
+    // concerts of a past day are dropped whatever the file says (WIP-102)
+    DATA.concerts = DATA.concerts.filter((c) => !S.isPastDay(c.start, new Date(), dayKey));
     const today = dayFmt.format(new Date());
     document.getElementById("today").textContent = `${today.charAt(0).toUpperCase()}${today.slice(1)} · ${report.zone.name}`;
     document.getElementById("generated").textContent =
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
     const m = DEEP_LINK_RE.exec(location.hash);
-    deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
+    deepLinkId = (m && S.currentIds(DATA.concerts, [m[1]])[0]) || null; // an alias leads to its concert
+    if (m && !deepLinkId) showBanner("Ce concert est passé ou n'est plus annoncé.", "info");
     if (V && profileOn()) verdicts = fbStore(() => V.load(localStorage), null); // shown at once
     if (window.NCVisits) {
       // « Nouveau » badges (WIP-95): the list compared with the last visit's, in this browser only
       const VS = window.NCVisits;
-      const seen = VS.visit(fbStore(() => localStorage.getItem(VS.KEY), null), concerts, Date.now());
+      const seen = VS.visit(fbStore(() => localStorage.getItem(VS.KEY), null), DATA.concerts, Date.now());
       NEW_IDS = seen.isNew;
       fbStore(() => localStorage.setItem(VS.KEY, JSON.stringify(seen.store)));
     }

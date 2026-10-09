@@ -308,6 +308,19 @@
     return { sure, discover, rest: list.filter((x) => !picked.has(x)) };
   }
 
+  // A concert of a day before today (zone's day keys), dropped whatever the data says: the
+  // browser may hold an older copy of data/*.json (WIP-102, PM's phone on 2026-10-09).
+  // An invalid date is not past (it would throw in Intl.DateTimeFormat#format).
+  const isPastDay = (start, now, dayKey) => {
+    const d = new Date(start);
+    return !Number.isNaN(d.getTime()) && dayKey(d) < dayKey(now);
+  };
+
+  // Title order for « Tout » (WIP-102): French collation, case and accents ignored, numbers
+  // in numeric order (Intl.Collator, https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Collator)
+  const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true, ignorePunctuation: true });
+  const byTitle = (a, b) => titleCollator.compare(String(a.title || "").trim(), String(b.title || "").trim()) || String(a.start).localeCompare(String(b.start));
+
   // "when" filter on an ISO start, given now (Date) and day keys in the zone's time zone
   function inWhen(mode, start, now, dayKey) {
     if (mode === "all") return true;
@@ -384,7 +397,7 @@
     return acts.length >= 2 ? `Avec : ${acts.join(", ")}` : null;
   }
 
-  const api = { SURE_MIN, HOMONYM_DOUBTS, isKnownMatch, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { isPastDay, byTitle, SURE_MIN, HOMONYM_DOUBTS, isKnownMatch, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -5,6 +5,12 @@
   decision rules fixed before each run.
 - **Amended by:** [ADR-0007](0007-private-taste-judgements.md) (2026-10-09): production writes
   judgements to the event store; the read-only rule in Security applies to the eval.
+  Also amended by the PM on 2026-10-09 17:08 ([WIP-102](https://linear.app/wip-coding/issue/WIP-102)):
+  the home's « Pour toi » no longer shows Découvertes nor concerts not yet judged (they are in
+  « Tout »). The recall a listener meets on « Pour toi » is therefore that of `must_see` +
+  `for_you`, not the « shown recall » the CI gate measures (85 %, which counts Découvertes from
+  confidence 30 and unjudged answers as shown, `eval/judge/__main__.py`). That narrower recall is
+  not measured yet; aligning the eval with the new home is a follow-up ticket.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

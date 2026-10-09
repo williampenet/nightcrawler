@@ -336,3 +336,31 @@ test("isKnownMatch: a sure name match, unless the identity may be a homonym", ()
   assert.equal(S.isKnownMatch({ score: 0.8999 }), false);
   assert.equal(S.isKnownMatch(null), false);
 });
+
+test("isPastDay: days before today are past, earlier today is not (WIP-102)", () => {
+  const key = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(d);
+  const now = new Date("2026-10-09T17:06:00+02:00");
+  assert.equal(S.isPastDay("2026-10-08T19:00:00+02:00", now, key), true);
+  assert.equal(S.isPastDay("2026-10-08T23:59:00+02:00", now, key), true);
+  assert.equal(S.isPastDay("2026-10-09T00:00:00+02:00", now, key), false);
+  assert.equal(S.isPastDay("2026-10-09T14:00:00+02:00", now, key), false);
+  // 23:30 UTC on the 8th is already the 9th in Paris
+  assert.equal(S.isPastDay("2026-10-08T23:30:00Z", now, key), false);
+  assert.equal(S.isPastDay("not a date", now, key), false);
+  assert.equal(S.isPastDay(undefined, now, key), false);
+});
+
+test("byTitle: A to Z in French, accents, case and punctuation ignored, then by date (WIP-102)", () => {
+  const list = [
+    { title: "Zébra", start: "1" },
+    { title: "« Le Lac »", start: "1" },
+    { title: "école", start: "1" },
+    { title: "Concert 10", start: "1" },
+    { title: "Concert 2", start: "1" },
+    { title: "Abba", start: "2" },
+    { title: "abba", start: "1" },
+  ];
+  assert.deepEqual([...list].sort(S.byTitle).map((x) => `${x.title}@${x.start}`), [
+    "abba@1", "Abba@2", "Concert 2@1", "Concert 10@1", "école@1", "« Le Lac »@1", "Zébra@1",
+  ]);
+});

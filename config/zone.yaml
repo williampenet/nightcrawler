@@ -1,5 +1,5 @@
 # The area Nightcrawler watches. Change these values to run it for another city.
-name: Lyon metropolitan area
+name: Lyon et environs  # shown in the app's date line (French UI)
 latitude: 45.7578   # Place Bellecour
 longitude: 4.8320
 radius_km: 15
