@@ -47,6 +47,8 @@ ENTRY = _priority_venue(
     {"name": "La Rayonne", "venue": "La Rayonne", "reader": {"type": "page_llm", "urls": [URL]}}
 )
 NOW = (2026, 10, 7, 9)
+# these agendas link to no event page (WIP-92)
+NO_DETAILS = ", links 0, detail pages 0, with text 0, detail errors 0"
 
 
 def _task() -> llm.Task:
@@ -94,7 +96,7 @@ def test_happy_path_keeps_grounded_concerts_only(tz):
     assert ev.source == ev.venue_id == "page_llm:larayonne.org"
     assert (ev.location_name, ev.url, ev.performers) == ("La Rayonne", URL, ["Didier Super"])
     assert pages == 1
-    assert status == "ok; chunks 1, model 1, cached 0, ungrounded 1, not concert 1"
+    assert status == "ok; chunks 1, model 1, cached 0, ungrounded 1, not concert 1" + NO_DETAILS
     sent = json.loads(api.calls[0].request.content)
     assert sent["model"] == "test-model"
     assert "<<<PAGE" in sent["messages"][1]["content"]  # page text goes in as data
@@ -554,7 +556,7 @@ def test_invalid_chunk_is_split_and_every_event_found(tz, tmp_path, caplog):
     assert [(e.title, e.start.date().isoformat()) for e in events] == expected
     assert again.budget.used == 0 and api.call_count == n + 2  # 0 calls for that chunk
     assert status == (
-        f"ok; chunks {n}, model 0, cached {n + 2}, ungrounded 0, not concert 0; split 1"
+        f"ok; chunks {n}, model 0, cached {n + 2}, ungrounded 0, not concert 0{NO_DETAILS}; split 1"
     )  # no invalid answer this time: the marker is not one
 
 
