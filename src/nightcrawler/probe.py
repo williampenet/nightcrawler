@@ -226,7 +226,10 @@ def read_platform_page(
     if events:
         page |= {"status": "events", "events": len(events)}
     else:  # why nothing was read: which formats the page carries (WIP-89)
-        page["formats"] = page_formats(resp.text)
+        try:
+            page["formats"] = page_formats(resp.text)
+        except Exception as exc:  # a diagnostic never costs the page
+            page["formats"] = [f"error:{type(exc).__name__}"]
     return page, events
 
 

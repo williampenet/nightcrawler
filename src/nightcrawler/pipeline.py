@@ -150,14 +150,15 @@ def run(
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
     # what the judge can read per concert (WIP-89): counts only, texts stay in the store
-    descriptions = None
+    descriptions, desc_status = None, None
     if store["status"] == "ok" and database_url:
         try:
             descriptions = content.read_descriptions(database_url, [c.id for c in concerts])
         except Exception as exc:  # a measure must never fail the run
             log.warning("descriptions read failed: %s", type(exc).__name__)
+            desc_status = f"error: {type(exc).__name__}"
     try:
-        content_cover = content.measure(concerts, artists, descriptions)
+        content_cover = content.measure(concerts, artists, descriptions, desc_status)
     except Exception as exc:
         log.warning("content measure failed: %s", type(exc).__name__)
         content_cover = {"status": f"error: {type(exc).__name__}"}
@@ -289,4 +290,5 @@ def summary_markdown(report: dict) -> str:
             f"| Reference events found (FR-11) | {cov['found']} / {cov['in_window']} ({rate}) |",
             f"| … same date and venue, no artist match | {cov['date_venue_only']} |",
         ]
+    lines += content.summary_rows(report.get("content"))
     return "\n".join(lines) + "\n"

@@ -72,5 +72,7 @@ def test_page_formats_reports_type_names_only():
     flags = ["jsonld", "jsonld_invalid", "microdata", "next_data", "next_flight"]
     assert page_formats(html) == flags + ["jsonld:MusicEvent", "jsonld:Organization"]
     assert page_formats("<p>rien</p>") == []
-    weird = '<script type="application/ld+json">{"@type": "A b<script>"}</script>'
-    assert page_formats(weird) == ["jsonld"]  # odd type names are not reported
+    # @type is free text: only event types and a fixed list are named (the report is public)
+    free = ('<script type="application/ld+json">{"@type": ["Lyon", "SecretGuestList", '
+            '"MusicEvent\\n", "A b", "WebPage", "Festival"]}</script>')  # fmt: skip
+    assert page_formats(free) == ["jsonld", "jsonld:Festival", "jsonld:WebPage", "jsonld:other"]

@@ -153,34 +153,42 @@ def jsonld_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
     return events
 
 
-TYPE_RE = re.compile(r"^[A-Za-z]{1,40}$")
-MAX_FORMATS = 12
+# schema.org types reported by name (WIP-89); any other type is "jsonld:other": a publisher
+# writes @type freely, and the report is public
+REPORTED_TYPES = frozenset({"Organization", "Place", "WebSite", "WebPage", "ItemList",
+                            "BreadcrumbList", "Offer", "Product"})  # fmt: skip
+EVENT_TYPE_RE = re.compile(r"[A-Za-z]{1,40}")
+
+
+def _reported_type(t: str) -> str:
+    event = (t.endswith("Event") or t == "Festival") and EVENT_TYPE_RE.fullmatch(t)
+    return f"jsonld:{t}" if event or t in REPORTED_TYPES else "jsonld:other"
 
 
 def page_formats(html: str) -> list[str]:
-    """The structured formats a page carries, for a report (WIP-89): "jsonld" and
-    "jsonld:<schema.org type>" for each type found, "jsonld_invalid", "microdata",
-    "next_data" (Next.js pages router) and "next_flight" (app router). Type names only, never
-    page content."""
+    """The structured formats a page carries, for a public report (WIP-89): "jsonld",
+    "jsonld_invalid", "microdata", "next_data" (Next.js pages router), "next_flight" (app
+    router), then "jsonld:<type>" for event types and a fixed list of common schema.org types,
+    "jsonld:other" for any other type. Never page content."""
     soup = BeautifulSoup(html, "lxml")
-    found: set[str] = set()
+    flags: set[str] = set()
+    types: set[str] = set()
     for script in soup.find_all("script", type="application/ld+json"):
-        found.add("jsonld")
+        flags.add("jsonld")
         try:
             data = json.loads(script.string or script.get_text() or "")
         except ValueError:
-            found.add("jsonld_invalid")
+            flags.add("jsonld_invalid")
             continue
         for node in _walk(data):
-            found.update(f"jsonld:{t}" for t in _types(node) if TYPE_RE.match(t))
+            types.update(_reported_type(t) for t in _types(node))
     if soup.find(attrs={"itemscope": True, "itemtype": True}):
-        found.add("microdata")
+        flags.add("microdata")
     if soup.find("script", id="__NEXT_DATA__"):
-        found.add("next_data")
+        flags.add("next_data")
     if "self.__next_f" in html:
-        found.add("next_flight")
-    flags = sorted(f for f in found if ":" not in f)
-    return flags + sorted(f for f in found if ":" in f)[: MAX_FORMATS - len(flags)]
+        flags.add("next_flight")
+    return sorted(flags) + sorted(types)
 
 
 def microdata_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
