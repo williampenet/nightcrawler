@@ -15,25 +15,48 @@
     <span class="banner-text"></span>
     <button type="button" id="banner-close" class="linkish" aria-label="Fermer le message">Fermer</button>
   </div>
-  <header>
-    <h1>Nightcrawler</h1>
-    <p class="sub" id="zone">Concerts à venir</p>
-    <nav>
-      <button type="button" data-tab="list" aria-pressed="true">Concerts</button>
-      <button type="button" data-tab="sources" aria-pressed="false">Sources</button>
-    </nav>
+  <header class="top">
+    <h1 class="wordmark">nightcrawler<span class="dot" aria-hidden="true">.</span></h1>
+    <p class="meta" id="today"></p>
   </header>
 
   <main>
-    <section id="list">
+    <section id="route-concerts" aria-label="Concerts">
       <div id="pending-live" role="status">
         <div id="pending-banner" class="banner info inline" hidden>
           <span class="banner-text"></span>
           <button type="button" id="pending-key" class="ghost">Saisir la clé</button>
         </div>
       </div>
-      <details id="taste">
-        <summary>Mes goûts</summary>
+      <div class="views" role="group" aria-label="Vues">
+        <button type="button" data-view="pour_toi">Pour toi</button>
+        <button type="button" data-view="nouveaux">Nouveaux</button>
+        <button type="button" data-view="tout">Tout <span class="count" id="count"></span></button>
+      </div>
+      <div class="periods" role="group" aria-label="Période">
+        <button type="button" data-when="tonight">Ce soir</button>
+        <button type="button" data-when="weekend">Ce week-end</button>
+        <button type="button" data-when="7d">Cette semaine</button>
+      </div>
+      <div class="toolbar" id="tout-tools" hidden>
+        <label class="visually-hidden" for="sort">Tri</label><select id="sort"></select>
+        <label class="visually-hidden" for="style">Style</label><select id="style"></select>
+        <label class="visually-hidden" for="venue">Lieu</label><select id="venue"></select>
+      </div>
+      <div id="concerts">
+        <p class="muted">Chargement…</p>
+      </div>
+    </section>
+
+    <section id="route-calendrier" aria-labelledby="calendar-title" hidden>
+      <h2 id="calendar-title">Calendrier</h2>
+      <p class="muted">Tous les concerts, jour par jour. La grille du mois arrive avec l'écran Calendrier.</p>
+      <div id="days"></div>
+    </section>
+
+    <section id="route-gouts" aria-labelledby="taste-title" hidden>
+      <h2 id="taste-title">Mes goûts</h2>
+      <div id="taste">
         <p class="muted">
           Indique des artistes que tu aimes, un par ligne. Ils restent <span data-where>dans ce navigateur</span>.
           Leurs styles sont lus sur MusicBrainz. Tes avis (J'aime, Pas pour moi, Mauvais
@@ -77,15 +100,11 @@
         </div>
         <p id="feedback-status" class="muted" aria-live="polite" hidden></p>
         <p id="taste-status" class="muted" aria-live="polite"></p>
-      </details>
+      </div>
 
-      <div class="toolbar">
-        <label class="visually-hidden" for="sort">Tri</label><select id="sort"></select>
-        <label class="visually-hidden" for="when">Quand</label><select id="when"></select>
-        <label class="visually-hidden" for="style">Style</label><select id="style"></select>
-        <label class="visually-hidden" for="venue">Lieu</label><select id="venue"></select>
+      <div class="row">
         <button type="button" id="sorter-open" class="ghost" aria-haspopup="dialog" hidden>À trier</button>
-        <span id="count" class="muted" role="status"></span>
+        <span class="muted small">Note des concerts tirés au hasard pour affiner tes goûts.</span>
       </div>
 
       <dialog id="sorter" class="sorter" aria-labelledby="sorter-heading">
@@ -106,12 +125,8 @@
         <p id="sorter-count" class="muted small" role="status"></p>
       </dialog>
 
-      <div id="concerts">
-        <p class="muted">Chargement…</p>
-      </div>
-    </section>
 
-    <section id="sources" hidden>
+      <h2 id="sources">Sources</h2>
       <p id="coverage" class="muted"></p>
       <table>
         <thead>
@@ -127,13 +142,15 @@
       Liste collectée automatiquement sur les sites des lieux et des sources ouvertes.
       Pour certains lieux, l'agenda est lu par un modèle d'IA hébergé dans l'Union européenne ;
       ces concerts sont signalés comme lus par IA.
-      Le tri « Pour moi » et les sections « Sûrs » et « À découvrir » sont calculés dans ton navigateur
-      par des règles fixes, sans IA, à partir de données publiques et de tes choix.
+      Sans clé d'envoi, le tri « Pour moi » et les sections « À ne pas rater » et « Pour toi » sont calculés
+      dans ton navigateur par des règles fixes, sans IA, à partir de données publiques et de tes choix ;
+      leurs raisons sont marquées « Tes goûts ». Les badges « Nouveau » comparent la liste à celle de ta
+      dernière visite, gardée dans ce navigateur.
       Avec une clé d'envoi, les sections « À ne pas rater », « Pour toi » et « Découvertes » et leurs raisons
       (marquées « IA ») viennent d'un modèle d'IA (Mistral Small 3.2, hébergé par Scaleway à Paris) qui juge
       chaque concert d'après « Mon goût en mots » ; les concerts pas encore jugés restent dans « Pour toi ».
       Exception, par une règle fixe sans IA : un concert d'un artiste que tu écoutes ou que tu as aimé
-      (même nom) est toujours dans « À ne pas rater », avec sa raison non marquée « IA ».
+      (même nom) est toujours dans « À ne pas rater », avec sa raison marquée « Tes goûts ».
       Vérifie la date et le lieu sur la page de l'événement.
     </p>
     <p>
@@ -145,11 +162,21 @@
       <span id="generated"></span>
     </p>
   </footer>
+
+  <nav class="tabbar" aria-label="Navigation principale">
+    <a href="#concerts" data-route="concerts">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>Concerts</a>
+    <a href="#calendrier" data-route="calendrier">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="9" y1="3" x2="9" y2="7"/><line x1="15" y1="3" x2="15" y2="7"/></svg>Calendrier</a>
+    <a href="#gouts" data-route="gouts">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Mes goûts</a>
+  </nav>
   <script src="scoring.js"></script>
   <script src="spotify.js"></script>
   <script src="feedback.js"></script>
   <script src="profile.js"></script>
   <script src="verdicts.js"></script>
+  <script src="visits.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

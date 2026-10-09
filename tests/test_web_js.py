@@ -18,7 +18,7 @@ def test_scoring_js():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_page_scripts_parse():
-    for name in ("app.js", "scoring.js", "feedback.js", "profile.js", "verdicts.js"):
+    for name in ("app.js", "scoring.js", "feedback.js", "profile.js", "verdicts.js", "visits.js"):
         path = ROOT / "src" / "nightcrawler" / "web" / name
         result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
