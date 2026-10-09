@@ -102,7 +102,10 @@ def _reason(event: RawEvent, venue: Venue | None, text: str) -> str | None:
             return "model: concert, music venue"
         if event.trust_model_concert:  # this venue's agenda is a concert programme (config)
             return "model: concert, trusted programme"
-        return "model: concert, music keywords" if MUSIC_WORDS.search(text) else None
+        # weak words count in the title only: a page's text says "soirée", "tournée", "live"
+        # of any show, so the description counts through strong music words (WIP-92 review)
+        music = MUSIC_WORDS.search(event.title) or STRONG_MUSIC_WORDS.search(text)
+        return "model: concert, music keywords" if music else None
     if venue is not None and venue.is_music_venue:
         return "music venue"
     if MUSIC_WORDS.search(text):

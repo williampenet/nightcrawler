@@ -13,6 +13,7 @@ import pytest
 import respx
 
 from nightcrawler.config import _priority_venue
+from nightcrawler.events import concert_reason
 from nightcrawler.http import Fetcher
 from nightcrawler.models import RawEvent
 from nightcrawler.sources import event_page, page_llm
@@ -226,3 +227,34 @@ def test_existing_description_is_not_replaced(tz):
     ev = RawEvent("A", datetime(2026, 10, 8, tzinfo=tz), "s", "s", url=DIDIER, description="x")
     counts, notes = event_page.read_details([(ev, URL)], None, tz, 40, lambda: True, set())
     assert (ev.description, counts.pages, notes) == ("x", 0, [])
+
+
+@respx.mock
+def test_trusted_concert_stays_kept_whatever_its_page_says(tz):
+    # a presentation may mention improvisation or an exhibition in passing; the title and the
+    # reader's trust already keep the concert, so its description does not drop it (WIP-91)
+    page = (
+        "<html><body><main><article><h1>FAKEAR</h1><p>Improvisation libre en ouverture, puis"
+        " exposition photo dans le hall pendant toute la soirée. " + "Entrée libre. " * 30
+        + "</p></article></main></body></html>"
+    )  # fmt: skip
+    _site(fakear=200)
+    respx.get(FAKEAR).respond(200, html=page)
+    events, _, _ = _read(tz, trust_is_concert=True)
+    fakear = next(e for e in events if e.title == "FAKEAR")
+    assert "Improvisation libre" in fakear.description and "exposition" in fakear.description
+    assert concert_reason(fakear, None) == "model: concert, trusted programme"
+
+
+def test_description_counts_through_strong_music_words_only(tz):
+    # an undecided page_llm title at a non-music, non-trusted venue (review of WIP-92)
+    def reason(title: str, description: str) -> str | None:
+        start = datetime(2026, 10, 14, 19, tzinfo=tz)
+        ev = RawEvent(title, start, "page_llm:x", "page_llm:x", description=description)
+        return concert_reason(ev, None)
+
+    assert reason("Malacca", "Spectacle de danse, une soirée en tournée, en live") is None
+    assert reason("Malacca", "Un concert de la Compagnie Voltaïk") == (
+        "model: concert, music keywords"
+    )
+    assert reason("Soirée Malacca", "Spectacle de danse") == "model: concert, music keywords"
