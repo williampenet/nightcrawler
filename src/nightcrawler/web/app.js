@@ -702,10 +702,13 @@ const routeOf = (hash) => {
   return ROUTES.includes(h) ? h : "concerts";
 };
 
+let handledHash = null; // the hash the routes last showed (see setupControls)
+
 // Programmatic route change: synchronous (pushState fires no hashchange), so the caller's
 // focus target wins over the heading; Back still works through popstate.
 function goTo(route, focusId) {
   if (routeOf(location.hash) !== route) history.pushState(null, "", `#${route}`);
+  handledHash = location.hash; // pushState fires no event: the next hash change is a new one
   showRoute(!focusId);
   const target = focusId && document.getElementById(focusId);
   if (target) target.focus();
@@ -1350,7 +1353,10 @@ function setupControls() {
     render();
   });
 
+  handledHash = location.hash;
   const onHash = () => {
+    if (location.hash === handledHash) return; // Chromium fires hashchange and popstate for one change
+    handledHash = location.hash;
     const m = DEEP_LINK_RE.exec(location.hash);
     if (m) {
       deepLinkId = S.currentIds(DATA.concerts, [m[1]])[0] || null;
@@ -1367,7 +1373,8 @@ function setupControls() {
 function openDeepLink() {
   view = "pour_toi";
   render();
-  if (!visibleRows().some((r) => r.dataset.id === deepLinkId)) {
+  // the home's own rows: the calendar may be the screen on show when the link is followed
+  if (![...document.querySelectorAll("#concerts [data-id]")].some((r) => r.dataset.id === deepLinkId)) {
     view = "tout";
     render();
   }
