@@ -749,8 +749,9 @@ const visibleRows = () => [...document.querySelectorAll("main > section:not([hid
 function rerender() {
   const a = document.activeElement;
   const row = a && a.closest ? a.closest("main [data-id]") : null;
+  const day = a && a.dataset ? a.dataset.day : null; // a calendar day button keeps focus too
   render();
-  if (routeOf(location.hash) === "calendrier") renderDays();
+  if (routeOf(location.hash) === "calendrier") renderDays(day || undefined);
   if (row) refocus(row.dataset.id);
 }
 

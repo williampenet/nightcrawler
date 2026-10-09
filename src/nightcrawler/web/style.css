@@ -159,10 +159,11 @@ button.icon.round[aria-disabled="true"] { opacity: 0.4; cursor: default; }
 .mark { display: inline-block; height: 8px; }
 .mark.must { width: 14px; border-radius: 4px; background: var(--accent); outline: 1px solid var(--ink); }
 /* dot and ring drawn with borders, which forced-colours mode keeps */
-.mark.forYou { width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 3.5px solid var(--ink); }
+.mark.forYou { width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 4px solid var(--ink); } /* even width: no hole */
 .mark.discovery { width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--ink); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: 10px 6px 0; font-size: 13px; color: var(--ink-muted); }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend > span[hidden] { display: none; }
 h3.cal-day-title { margin: 22px 0 var(--space-1); font: 800 22px/1.2 var(--font-display); }
 .date.time-only { padding-top: 3px; }
 .date .clock { font: 800 18px/1 var(--font-display); font-variant-numeric: tabular-nums; }
