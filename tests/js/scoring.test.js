@@ -316,3 +316,23 @@ test("tiers: scoreConcert direct matches are sure, inferred ones discover", () =
   const rel = c("rel", ["earth"]);
   assert.deepEqual(ids(S.tiers([{ c: rel, m: S.scoreConcert(rel, artists, p2) }]).discover), ["rel"]); // "Proche de" = 0.8
 });
+
+// ---------------------------------------------------------------- known artists (WIP-88)
+
+test("isKnownMatch: a sure name match, unless the identity may be a homonym", () => {
+  const all = { ...artists, air: { key: "air", name: "Air", fans: 800000, related: [], tags: [], confident: false, doubt: "ambiguous" } };
+  const p = S.buildProfile({ seeds: [{ name: "Earth", tags: [] }, { name: "Air", tags: [] }] }, all);
+  const earth = S.scoreConcert(c("1", ["earth"]), all, p);
+  assert.equal(earth.doubt, null);
+  assert.equal(S.isKnownMatch(earth), true);
+  const air = S.scoreConcert(c("2", ["air"]), all, p);
+  assert.equal(air.score, 1); // matched by name…
+  assert.equal(air.doubt, "ambiguous");
+  assert.equal(S.isKnownMatch(air), false); // …but Deezer has several "Air": left to the judge
+  for (const doubt of S.HOMONYM_DOUBTS) assert.equal(S.isKnownMatch({ score: 1, doubt }), false);
+  assert.deepEqual(S.HOMONYM_DOUBTS, ["ambiguous", "short_name", "reported"]);
+  assert.equal(S.isKnownMatch({ score: 1, doubt: "low_fans" }), true);
+  assert.equal(S.isKnownMatch({ score: 0.9, inferred: true }), false); // a guess is never known
+  assert.equal(S.isKnownMatch({ score: 0.8999 }), false);
+  assert.equal(S.isKnownMatch(null), false);
+});

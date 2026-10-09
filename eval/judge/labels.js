@@ -17,6 +17,6 @@ process.stdin.on("end", () => {
     process.exit(2);
   }
   const { scored } = scoreLabels(input);
-  const labels = scored.map(({ id, label, score }) => ({ id, label, rule: score }));
+  const labels = scored.map(({ id, label, score, known }) => ({ id, label, rule: score, known }));
   process.stdout.write(JSON.stringify({ labels }) + "\n");
 });

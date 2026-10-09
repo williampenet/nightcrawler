@@ -30,7 +30,7 @@ COVERAGE = {"events": [{"row": 1, "found": True, "concert_id": WATCHED},
                        {"row": 2, "found": True, "concert_id": REFONLY}]}  # fmt: skip
 LABELS = [
     {"id": LIKED, "label": "liked", "rule": 0.0},
-    {"id": DISLIKED, "label": "disliked", "rule": 0.9},
+    {"id": DISLIKED, "label": "disliked", "rule": 0.9, "known": True},
     {"id": WATCHED, "label": "disliked", "rule": 0.0},
 ]
 PRIVATE = ["Earth", "Popstar", "Boris", "Sunn", "Old Band", "goût secret", "Sonic", "Périscope",
@@ -540,12 +540,20 @@ def test_gate_boundary_and_main_exit_code(monkeypatch, tmp_path):
 
 
 def test_shown_metrics_with_known_artists():
-    """WIP-88: a rated concert whose leave-one-out rule score is "sure" counts as shown."""
-    cs = cases()  # LIKED rule 0.0, DISLIKED rule 0.9 (sure), WATCHED rule 0.0
+    """WIP-88: a rated concert of a known artist (labels.js "known") counts as shown, in
+    "À ne pas rater"; the rule score alone does not make an artist known (homonym doubts)."""
+    cs = cases()  # DISLIKED known, LIKED and WATCHED not
+    assert [c.get("known") for c in cs if c["kind"] == "rated"] == [False, True, False]
     answers = [ans("no"), ans("no"), ans("no"), ans("no"), ans("no")]
     k = runner.shown_metrics(cs, answers)["with_known"]
     assert k["overrides"] == {"n": 1, "liked": 0, "precision": 0.0, "moved_from_tout_voir": 1}
     assert k["recall"] == 0.0 and k["share_shown"] == round(1 / 3, 3)
-    cs[0]["rule"] = 1.0  # the liked concert's artist is listened to
+    assert (k["ne_pas_rater"]["n"], k["ne_pas_rater"]["liked"]) == (1, 0)
+    cs[0]["rule"] = 1.0  # a sure score with a homonym doubt: not known, judge only
+    assert runner.shown_metrics(cs, answers)["with_known"]["recall"] == 0.0
+    cs[0]["known"] = True  # the liked concert's artist is listened to
+    answers[2] = ans("must_see", 90)  # WATCHED judged must_see: in the section too
     k = runner.shown_metrics(cs, answers)["with_known"]
     assert k["recall"] == round(1 / 3, 3) and k["overrides"]["liked"] == 1
+    assert (k["ne_pas_rater"]["n"], k["ne_pas_rater"]["liked"]) == (3, 1)
+    assert "ne_pas_rater 33% (" in runner.shown_text({"shown": runner.shown_metrics(cs, answers)})

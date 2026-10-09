@@ -819,15 +819,15 @@ function concertRow(c, match, showDate, judged) {
     if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
   }
   const judge = judgeLine(judged);
-  if (judge) body.append(judge);
   // With the judge's reason (WIP-86), the rule-based reason and badge are not shown; only the
   // "Mauvais rapprochement" action stays, named with the guess it refers to.
   const contest = match.inferred && match.artist;
-  // a known artist (WIP-88) keeps its rule reason ("Tu écoutes …"): it is why the concert is
-  // in "À ne pas rater", and it is not AI-written
+  // a known artist (WIP-88) keeps its rule reason ("Tu écoutes …"), first: it is why the concert
+  // is in "À ne pas rater", and it is not AI-written
   const known = !!(judged && judged.known);
+  let why = null;
   if (match.reason && (!judge || contest || known)) {
-    const why = el("span", null, "why");
+    why = el("span", null, "why");
     if (!judge || known) why.append(el("span", match.reason));
     if (!judge && match.discovery) why.append(el("span", "Découverte", "badge"));
     if (contest) {
@@ -850,8 +850,10 @@ function concertRow(c, match, showDate, judged) {
       }
       why.append(wrong);
     }
-    body.append(why);
   }
+  if (known && why) body.append(why);
+  if (judge) body.append(judge);
+  if (why && !known) body.append(why);
   const actions = el("span", null, "links");
   const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
   if (c.ai_extracted) {
@@ -924,8 +926,9 @@ function renderTiers(root, list) {
 }
 
 // An artist the listener listens to (seeds) or has liked: the rule-based "sure" match (WIP-53),
-// never a guess. Such a concert is always in "À ne pas rater" (WIP-88, William 2026-10-09).
-const isKnownArtist = (x) => !!(x.m && x.m.score >= S.SURE_MIN && !x.m.inferred);
+// by name, so an identity flagged as a possible homonym or reported as wrong is left to the
+// judge (S.HOMONYM_DOUBTS). Such a concert is always in "À ne pas rater" (WIP-88, William 2026-10-09).
+const isKnownArtist = (x) => S.isKnownMatch(x.m);
 
 // The judge's sections (WIP-86, PRD FR-6): "À ne pas rater", "Pour toi" (with the concerts not
 // judged yet), "Découvertes", each in the list's order (by date), then "Tout voir" as above.
