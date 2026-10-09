@@ -44,11 +44,11 @@ def _fixture(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 
-def _site(fakear=None, r=respx):
+def _site(fakear=None, r=respx, didier=None):
     for host in ("larayonne.org", "www.larayonne.org"):
         r.get(f"https://{host}/robots.txt").respond(404)
     r.get(URL).respond(200, html=_fixture("agenda.html"))
-    r.get(DIDIER).respond(200, html=_fixture("didier.html"))
+    r.get(DIDIER).respond(200, html=didier or _fixture("didier.html"))
     route = r.get(FAKEAR)
     if isinstance(fakear, Exception):
         route.mock(side_effect=fakear)
@@ -58,12 +58,12 @@ def _site(fakear=None, r=respx):
     return route
 
 
-def _read(tz, ctx=None, **reader):
+def _read(tz, ctx=None, cache_dir=None, **reader):
     entry = _priority_venue(
         {"name": "La Rayonne", "venue": "La Rayonne",
          "reader": {"type": "page_llm", "urls": [URL], **reader}}
     )  # fmt: skip
-    fetcher = Fetcher(cache_dir=None, min_interval=0)
+    fetcher = Fetcher(cache_dir=cache_dir, min_interval=0)
     now = datetime(2026, 10, 7, 9, tzinfo=tz)
     ctx = ctx or page_llm.Context(_task())
     return page_llm.read(entry["reader"], entry["venue"], fetcher, now, tz, 60, ctx)
@@ -89,7 +89,9 @@ def test_event_pages_give_descriptions(tz):
     assert not any(w in text for w in ("Accueil", "Mentions légales", "ignore me"))
     assert by["MOLOTOVS"].description is None and by["Jazz Club"].description is None
     assert pages == 1  # agenda pages, as before
-    assert status.endswith("links 2, detail pages 2, with text 2, detail errors 0")
+    assert status.endswith(
+        "links 2, detail pages 2, detail cached 0, with text 2, detail errors 0, other day 0"
+    )
 
 
 @respx.mock
@@ -99,24 +101,54 @@ def test_fetch_error_keeps_the_event(tz):
     fakear = next(e for e in events if e.title == "FAKEAR")
     assert (fakear.url, fakear.description) == (FAKEAR, None)
     assert len(events) == 4
-    assert status.endswith("links 2, detail pages 2, with text 1, detail errors 1")
+    assert "links 2, detail pages 2, detail cached 0, with text 1, detail errors 1" in status
 
 
 @respx.mock
 def test_http_error_status_counts_as_error(tz):
     _site(fakear=500)
     _, _, status = _read(tz)
-    assert status.endswith("with text 1, detail errors 1")
+    assert "with text 1, detail errors 1" in status
+
+
+@respx.mock
+def test_redirect_off_host_gives_no_text(tz):
+    _site(fakear=302)
+    respx.get(FAKEAR).respond(302, headers={"Location": "https://evil.example/fakear"})
+    respx.get("https://evil.example/robots.txt").respond(404)
+    respx.get("https://evil.example/fakear").respond(200, html=_fixture("fakear.html"))
+    events, _, status = _read(tz)
+    assert next(e for e in events if e.title == "FAKEAR").description is None
+    assert "with text 1, detail errors 1" in status
+
+
+@respx.mock
+def test_json_ld_of_other_days_only_keeps_the_agenda_url(tz):
+    _site(didier=_fixture("didier.html").replace("2026-10-08", "2026-10-09"))
+    events, _, status = _read(tz)
+    didier = next(e for e in events if e.title == "Didier Super Metal")
+    assert (didier.url, didier.description) == (URL, None)  # probably another concert's page
+    assert status.startswith("ok") and "links 1," in status and status.endswith("other day 1")
 
 
 def test_venue_cap(tz):
     with respx.mock(assert_all_called=False) as r:
         fakear = _site(r=r)
         events, _, status = _read(tz, max_details=1)
-    assert "links 2, detail pages 1, with text 1, detail errors 0" in status
+    assert "links 2, detail pages 1, detail cached 0, with text 1, detail errors 0" in status
     assert status.endswith("; detail_cap: 1")
     assert not fakear.called
     assert next(e for e in events if e.title == "FAKEAR").url == FAKEAR  # link kept anyway
+
+
+def test_cached_pages_are_read_past_the_cap(tz, tmp_path):
+    with respx.mock(assert_all_called=False) as r:
+        fakear = _site(r=r)
+        _read(tz, cache_dir=tmp_path)  # both event pages fetched and cached
+        events, _, status = _read(tz, page_llm.Context(_task()), tmp_path, max_details=1)
+    assert fakear.call_count == 1
+    assert "detail pages 2, detail cached 2, with text 2" in status and "detail_cap" not in status
+    assert next(e for e in events if e.title == "FAKEAR").description
 
 
 def test_run_wide_cap_is_shared(tz):
@@ -142,33 +174,55 @@ def test_host_reads_hostnames_not_netloc_text():
     assert event_page.host("https://[::1/x") is None  # unparsable
 
 
+def _links(html: str) -> event_page.Links:
+    return event_page.page_links(html, URL, {"larayonne.org"}, {event_page.page_key(URL)})
+
+
 def test_link_match_rules():
-    links = event_page.page_links(
+    links = _links(
         '<a href="/e/1">Live</a><a href="/e/2">Live at the club</a>'
-        '<a href="/e/3">Soirée Molotovs + guests</a><a href="/agenda?x=1">Molotovs</a>',
-        URL,
-        {"larayonne.org"},
-        {event_page.page_key(URL)},
+        '<a href="/e/3">Soirée Molotovs + guests</a><a href="/e/4">Molotovs, second date</a>'
     )
     # a short title must equal the link text; a longer one may be contained in it
     assert event_page.event_link("LIVE", links) == "https://larayonne.org/e/1"
-    assert event_page.event_link("Molotovs", links) is None  # /e/3 and /agenda?x=1
+    assert event_page.event_link("Molotovs", links) is None  # contained in /e/3 and /e/4
     assert event_page.event_link("Soirée Molotovs", links) == "https://larayonne.org/e/3"
     assert event_page.event_link("!!!", links) is None
 
 
-def test_single_event_or_same_day(tz):
+def test_exact_match_first_and_whole_words():
+    both = _links('<a href="/e/mantra/">Mantra</a><a href="/e/mantrasonic/">Mantrasonic</a>')
+    assert event_page.event_link("MANTRA", both) == "https://larayonne.org/e/mantra/"
+    only = _links('<a href="/e/mantrasonic/">Mantrasonic live</a>')
+    assert event_page.event_link("Mantra", only) is None  # not a whole word of the link
+
+
+def test_booking_and_series_links_are_never_matched():
+    links = _links(
+        '<a href="/e/fakear/" aria-label="Réserver FAKEAR">FAKEAR</a>'
+        '<a href="/billetterie/fakear-2/">FAKEAR</a>'
+        '<a href="/cycle/jazz-club/">Jazz Club</a><a href="/saison-2026/">Jazz Club</a>'
+        '<a href="/e/jazz-club-16-octobre/">Jazz Club</a><a href="/e/x?action=ticket">Jazz Club</a>'
+    )
+    assert event_page.event_link("FAKEAR", links) is None
+    assert event_page.event_link("Jazz Club", links) == (
+        "https://larayonne.org/e/jazz-club-16-octobre/"
+    )
+
+
+def test_description_of_that_day_only(tz):
     page = (
         '<script type="application/ld+json">{"@type": "Event", "name": "X",'
         ' "startDate": "2026-12-01T20:00", "description": "Only one."}</script>'
     )
     start = datetime(2026, 10, 8, 19, tzinfo=tz)
-    assert event_page.description(page, start, tz) == "Only one."  # the single Event
+    assert event_page.description(page, start, tz) is None  # another day: not this concert
+    assert event_page.description(page.replace("12-01", "10-08"), start, tz) == "Only one."
     long = "<html><body><p>" + "Mot " * 400 + "</p></body></html>"
     assert len(event_page.description(long, start, tz)) == 500  # structured.MAX_TEXT
 
 
 def test_existing_description_is_not_replaced(tz):
     ev = RawEvent("A", datetime(2026, 10, 8, tzinfo=tz), "s", "s", url=DIDIER, description="x")
-    counts, notes = event_page.read_details([ev], None, tz, 40, lambda: True)
+    counts, notes = event_page.read_details([(ev, URL)], None, tz, 40, lambda: True, set())
     assert (ev.description, counts.pages, notes) == ("x", 0, [])

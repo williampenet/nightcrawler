@@ -202,6 +202,10 @@ class Fetcher:
                 time.sleep(delay)
         self._last_hit[host] = time.monotonic()
 
+    def cached(self, url: str) -> Response | None:
+        """The cached response for `url` if one is fresh: no request, no rate limit."""
+        return self._cache_read(url)
+
     def forget(self, url: str, params: dict | None = None) -> None:
         """Drop a cached response (e.g. an API error returned with HTTP 200)."""
         if params:

@@ -45,9 +45,11 @@ model is never named here: `extract.extract_events` goes through the task router
 - Each kept event's own page (WIP-92, sources/event_page.py): its link is found in the agenda
   HTML without a model (unique match on the title, same host), becomes the event's `url`
   (concert ids do not use it: dedup.concert_id), and the page's JSON-LD description, else its
-  main text, becomes the event's description. At most `max_details` pages per venue (reader
-  key, default 40) and `DEFAULT_DETAIL_RUN_CAP` per run. Status counts: `links` (events with
-  their own page), `detail pages` read, `with text` (events described), `detail errors`.
+  main text, becomes the event's description. At most `max_details` requests per venue (reader
+  key, default 40) and `DEFAULT_DETAIL_RUN_CAP` per run; cached pages are always used. Status
+  counts: `links` (events with their own page), `detail pages` read (`detail cached` of them),
+  `with text` (events described), `detail errors`, `other day` (the page's JSON-LD Events are
+  on other days: agenda URL kept).
 """
 
 from __future__ import annotations
@@ -369,7 +371,7 @@ def read(
     capped = False
     hosts = {h for u in reader["urls"] if (h := event_page.host(u))}
     agenda = {event_page.page_key(u) for u in [*reader["urls"], *(u for u, _ in pages)]}
-    own: list[RawEvent] = []  # events whose own page was found on the agenda
+    own: list[tuple[RawEvent, str]] = []  # (event with its own page, agenda page URL)
     for url, html in pages:
         if error or capped:
             break
@@ -429,17 +431,20 @@ def read(
                     if in_window(raw, now, window_days):
                         events.append(raw)
                         if link := event_page.event_link(raw.title, links):
+                            own.append((raw, url))
                             raw.url = link
-                            own.append(raw)
             if error or capped:
                 break
     cap = int(reader.get("max_details", event_page.DEFAULT_MAX_DETAILS))
-    found, detail_notes = event_page.read_details(own, fetcher, tz, cap, ctx.detail_budget.take)
+    found, detail_notes = event_page.read_details(
+        own, fetcher, tz, cap, ctx.detail_budget.take, hosts
+    )
     notes += detail_notes
     counts = (
         f"chunks {chunk_count}, model {asked}, cached {cached}, ungrounded {ungrounded}, "
-        f"not concert {not_concert}, links {len(own)}, detail pages {found.pages}, "
-        f"with text {found.described}, detail errors {found.errors}"
+        f"not concert {not_concert}, links {len(own) - found.other_day}, "
+        f"detail pages {found.pages}, detail cached {found.cached}, "
+        f"with text {found.described}, detail errors {found.errors}, other day {found.other_day}"
     )
     if invalid:
         reasons = ", ".join(f"{r} {n}" for r, n in sorted(invalid.items()))

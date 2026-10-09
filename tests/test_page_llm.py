@@ -48,7 +48,7 @@ ENTRY = _priority_venue(
 )
 NOW = (2026, 10, 7, 9)
 # these agendas link to no event page (WIP-92)
-NO_DETAILS = ", links 0, detail pages 0, with text 0, detail errors 0"
+NO_DETAILS = ", links 0, detail pages 0, detail cached 0, with text 0, detail errors 0, other day 0"
 
 
 def _task() -> llm.Task:
