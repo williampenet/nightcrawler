@@ -37,3 +37,21 @@ test("byDay groups in order and drops bad keys", () => {
   assert.deepEqual([...m.keys()], ["2026-10-10"]);
   assert.deepEqual(m.get("2026-10-10").map((x) => x.n), [1, 3]);
 });
+
+test("flags: the ring follows the home's « Découvertes » section, not the bare verdict", () => {
+  const picks = new Set(["a"]);
+  const shown = C.flags({ c: { id: "b" }, v: { verdict: "discovery", section: "decouvertes" } }, picks);
+  const below = C.flags({ c: { id: "c" }, v: { verdict: "discovery", section: "tout_voir" } }, picks);
+  const pick = C.flags({ c: { id: "a" } }, picks);
+  assert.equal(shown.discovery, true);
+  assert.equal(below.discovery, false);
+  assert.equal(pick.pick, true);
+  assert.equal(pick.discovery, false);
+});
+
+test("frenchFirst: 1 -> 1er, other days untouched", () => {
+  assert.equal(C.frenchFirst("dimanche 1 novembre"), "dimanche 1er novembre");
+  assert.equal(C.frenchFirst("mercredi 11 novembre"), "mercredi 11 novembre");
+  assert.equal(C.frenchFirst("samedi 31 octobre"), "samedi 31 octobre");
+  assert.equal(C.frenchFirst("lundi 21 décembre"), "lundi 21 décembre");
+});

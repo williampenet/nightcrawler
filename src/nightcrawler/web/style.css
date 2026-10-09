@@ -141,32 +141,33 @@ button.see-all {
 .cal-head { display: flex; justify-content: space-between; align-items: center; }
 .cal-month { font: 600 20px/1.2 var(--font-display); }
 button.icon.round { background: var(--surface); color: var(--ink); }
-button.icon.round:disabled { color: var(--line); cursor: default; }
-.cal { padding-top: var(--space-3); }
+button.icon.round[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.cal { padding-top: var(--space-3); margin: 0 -6px; } /* 14px side gutter, as on the artboard */
 .cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }
 .cal-week { font-size: 12px; font-weight: 700; color: var(--ink-muted); padding-bottom: 6px; }
 .cal-grid { row-gap: var(--space-1); }
 .cal-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 58px; }
 .cal-day {
-  width: var(--touch-target); height: var(--touch-target); border-radius: var(--radius-pill); border: 0;
-  background: transparent; color: var(--ink); font: 500 16px/1 var(--font-body); cursor: pointer;
+  width: min(var(--touch-target), 100%); height: var(--touch-target); border-radius: var(--radius-pill);
+  border: 2px solid transparent; background: transparent; color: var(--ink); font: 500 16px/1 var(--font-body); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.cal-day.today { box-shadow: inset 0 0 0 2px var(--ink); font-weight: 700; }
-.cal-day[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); font-weight: 700; }
+.cal-day.today { border-color: var(--ink); font-weight: 700; } /* a border survives forced colours */
+.cal-day[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--on-ink); font-weight: 700; }
 .cal-day.past { color: var(--ink-muted); cursor: default; }
 /* markers: told apart by shape (WIP-97) */
 .mark { display: inline-block; height: 8px; }
 .mark.must { width: 14px; border-radius: 4px; background: var(--accent); outline: 1px solid var(--ink); }
-.mark.forYou { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
-.mark.discovery { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink); }
+/* dot and ring drawn with borders, which forced-colours mode keeps */
+.mark.forYou { width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 3.5px solid var(--ink); }
+.mark.discovery { width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--ink); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: 10px 6px 0; font-size: 13px; color: var(--ink-muted); }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
 h3.cal-day-title { margin: 22px 0 var(--space-1); font: 800 22px/1.2 var(--font-display); }
 .date.time-only { padding-top: 3px; }
 .date .clock { font: 800 18px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 button.more-day {
-  width: 100%; min-height: 52px; border: 0; background: none; padding: 0; color: var(--ink);
+  width: 100%; min-height: 52px; border: 0; background: none; padding: 0; color: var(--accent-ink);
   font: 600 15px/1.3 var(--font-body); display: flex; justify-content: space-between; align-items: center; cursor: pointer;
 }
 

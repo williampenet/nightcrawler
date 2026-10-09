@@ -127,7 +127,7 @@ Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (se
 
 Deliberate gaps, each owned by a ticket:
 - The concert title is a disclosure button, marked by a chevron, opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96). « Lu par IA » stays visible on the venue line of rows and cards (ADR-0004, WIP-66).
-- « Calendrier » lists every concert day by day until the month grid of [WIP-97](https://linear.app/wip-coding/issue/WIP-97); « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98).
+- « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98) (« Calendrier »: done in WIP-97).
 - The artboard's search button is left out: search is not in the PRD.
 - Without a send key there is no judge, so « Découvertes » stays empty: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts`.
 - Style, venue and sort filters appear in « Tout » only, and apply there only.

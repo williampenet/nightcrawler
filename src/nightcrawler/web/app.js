@@ -759,7 +759,11 @@ function rerender() {
 function refocus(...wanted) {
   const rows = visibleRows();
   const row = wanted.map((id) => rows.find((r) => r.dataset.id === id)).find(Boolean);
-  const target = (row && row.querySelector("button")) || document.querySelector("main > section:not([hidden]) button");
+  const fallback =
+    routeOf(location.hash) === "calendrier"
+      ? document.querySelector('#cal-grid [aria-pressed="true"]')
+      : document.querySelector("main > section:not([hidden]) button");
+  const target = (row && row.querySelector("button")) || fallback;
   if (target) target.focus();
 }
 
@@ -1176,7 +1180,6 @@ function setView(v, moveFocus) {
   }
 }
 
-// « Calendrier » until the month grid (WIP-97): every concert, day by day, no filter.
 // « Calendrier » (WIP-97, artboard Calendrier): month grid with one taste marker per day (shape,
 // not colour alone: bar = À ne pas rater, dot = Pour toi, ring = Découverte), then the selected
 // day's concerts. « Pour toi » shows the « Pour toi » picks (WIP-102 rule), « Tout » every concert.
@@ -1185,8 +1188,7 @@ const cal = { month: null, day: null, mode: "pour_toi" };
 const MARK_LABEL = { must: "à ne pas rater", forYou: "pour toi", discovery: "découverte" };
 const keyDate = (key) => new Date(`${key}T12:00:00Z`); // noon UTC: the same day in any zone of Europe
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
-// "dimanche 1 novembre" -> "dimanche 1er novembre" (French ordinal for the first of the month)
-const dayLabel = (key) => dayFmt.format(keyDate(key)).replace(/(^|\s)1(\s)/, "$11er$2");
+const dayLabel = (key) => CAL.frenchFirst(dayFmt.format(keyDate(key)));
 
 function renderDays(focusKey) {
   const root = document.getElementById("days");
@@ -1200,7 +1202,7 @@ function renderDays(focusKey) {
     .map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
   const { items, picks } = decorate(list, profile);
   const pickIds = new Set((picks || []).map((x) => x.c.id));
-  const flagged = items.map((x) => ({ ...x, pick: pickIds.has(x.c.id), discovery: !!(x.v && x.v.verdict === "discovery") }));
+  const flagged = items.map((x) => CAL.flags(x, pickIds));
   const days = CAL.byDay(flagged, (x) => dayKey(new Date(x.c.start)));
   const today = dayKey(now);
   const first = CAL.monthOf(today);
@@ -1209,11 +1211,15 @@ function renderDays(focusKey) {
   if (!cal.day || cal.day < today) cal.day = today;
   if (!cal.month || cal.month < first || cal.month > last) cal.month = CAL.monthOf(cal.day);
 
-  // header: month, arrows, mode
+  // header: month (written only when it changes: it is a live region), arrows, mode. The arrows
+  // use aria-disabled so a focused arrow keeps focus at the first or last month (WCAG 2.4.3).
   const [y, m] = cal.month.split("-").map(Number);
-  document.getElementById("cal-month").textContent = capital(monthFmt.format(new Date(Date.UTC(y, m - 1, 15))));
-  document.getElementById("cal-prev").disabled = cal.month <= first;
-  document.getElementById("cal-next").disabled = cal.month >= last;
+  const label = capital(monthFmt.format(new Date(Date.UTC(y, m - 1, 15))));
+  const monthEl = document.getElementById("cal-month");
+  if (monthEl.textContent !== label) monthEl.textContent = label;
+  document.getElementById("cal-prev").setAttribute("aria-disabled", String(cal.month <= first));
+  document.getElementById("cal-next").setAttribute("aria-disabled", String(cal.month >= last));
+  document.querySelector('#route-calendrier .legend .discovery').parentElement.hidden = !judgeOn(); // no judge, no discovery
   for (const b of document.querySelectorAll("[data-cal]")) {
     if (b.dataset.cal === cal.mode) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
@@ -1237,8 +1243,11 @@ function renderDays(focusKey) {
       renderDays(key);
     });
     b.dataset.day = key;
-    if (key === today) b.classList.add("today");
-    if (key === cal.day) b.setAttribute("aria-pressed", "true");
+    if (key === today) {
+      b.classList.add("today");
+      b.setAttribute("aria-current", "date");
+    }
+    b.setAttribute("aria-pressed", String(key === cal.day));
     const count = dayItems.length;
     b.setAttribute("aria-label", [
       dayLabel(key),
@@ -1260,7 +1269,14 @@ function renderDays(focusKey) {
   h.id = "cal-day-title";
   root.append(h);
   if (!all.length) root.append(el("p", "Aucun concert ce jour-là.", "muted empty"));
-  else if (!shown.length) root.append(el("p", "Rien pour toi ce jour-là.", "muted empty"));
+  else if (!shown.length && !picks && cal.mode === "pour_toi") {
+    // empty profile: nothing can be « pour toi » yet, as on the home
+    const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
+    const link = el("a", "« Mes goûts »");
+    link.href = "#gouts";
+    hint.append(link, " pour voir ici les concerts pour toi.");
+    root.append(hint);
+  } else if (!shown.length) root.append(el("p", "Rien pour toi ce jour-là.", "muted empty"));
   if (shown.length) {
     const ul = el("ul", null, "rows");
     ul.setAttribute("aria-labelledby", h.id);
@@ -1272,21 +1288,23 @@ function renderDays(focusKey) {
     const more = button(`${others} autre${others > 1 ? "s" : ""} concert${others > 1 ? "s" : ""} ce jour-là`, "more-day", () => {
       cal.mode = "tout";
       renderDays();
-      const first = root.querySelector("li button");
-      if (first) first.focus();
+      const firstRow = root.querySelector("li button");
+      if (firstRow) firstRow.focus();
     });
     more.append(icon("arrow", 18));
     root.append(more);
   }
   if (focusKey) {
-    const again = grid.querySelector(`[data-day="${focusKey}"]`);
+    // the clicked day, or the selected one if it went past meanwhile (page left open overnight)
+    const again = grid.querySelector(`[data-day="${focusKey}"]`) || grid.querySelector('[aria-pressed="true"]');
     if (again) again.focus();
   }
 }
 
 function setupCalendar() {
   if (!CAL) return;
-  const step = (n) => () => {
+  const step = (n) => (e) => {
+    if (e.currentTarget.getAttribute("aria-disabled") === "true") return;
     cal.month = CAL.addMonths(cal.month, n);
     // the selected day follows the month: its first day still to come
     const today = dayKey(new Date());

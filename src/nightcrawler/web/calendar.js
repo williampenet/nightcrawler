@@ -57,7 +57,19 @@
     return out;
   }
 
-  const api = { monthOf, addMonths, monthGrid, marker, byDay };
+  // Marker flags of an item: pick (shown by « Pour toi », WIP-102), discovery (in the home's
+  // « Découvertes » section: the judge's section, not its verdict, since a discovery under the
+  // confidence bar goes to « Tout », verdicts.js SECTIONS_OF).
+  const flags = (x, pickIds) => ({
+    ...x,
+    pick: pickIds.has(x.c.id),
+    discovery: !!(x.v && x.v.section === "decouvertes"),
+  });
+
+  // "dimanche 1 novembre" -> "dimanche 1er novembre" (French ordinal for the first of the month)
+  const frenchFirst = (text) => String(text).replace(/(^|\s)1(\s)/, "$11er$2");
+
+  const api = { monthOf, addMonths, monthGrid, marker, byDay, flags, frenchFirst };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCCalendar = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
