@@ -46,9 +46,10 @@ OTHER_SHOW_WORDS = re.compile(
     r"|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
     re.IGNORECASE,
 )
-# The other-show words a description may still drop a title-kept event for (concert_reason)
+# The other-show words a description may still drop a title-kept event for (concert_reason);
+# not the bare "humour", which a singer's presentation may use ("avec humour")
 COMEDY_WORDS = re.compile(
-    r"\b(humour|humoriste|stand[- ]?up|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
+    r"\b(humoriste|stand[- ]?up|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
     re.IGNORECASE,
 )
 OTHER_SHOW_TITLE_WORDS = re.compile(r"\bth[ée][âa]tre\b", re.IGNORECASE)  # often a venue name

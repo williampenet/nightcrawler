@@ -200,11 +200,13 @@ def test_a_description_can_keep_never_drop(tz):
 
     expo = "Après une exposition remarquée, l'artiste revient."
     assert concert_reason(ev("INO CASABLANCA", expo), hall) == "music venue"
-    assert concert_reason(ev("Live punk", "Vernissage de l'exposition puis concert."), None)
+    assert concert_reason(ev("Live punk", "Vernissage de l'exposition à 19h."), None)
+    singer = "Chanteuse et danseuse, elle aborde avec humour la vie."
+    assert concert_reason(ev("CHARLIE OZ", singer), hall) == "music venue"
     assert concert_reason(ev("Soirée DJ", "Atelier sérigraphie, puis DJ set."), None)
     # a comedy show still goes, whatever kept its title (WIP-72)
     assert concert_reason(ev("Paul Mirabel", "Un seul en scène hilarant."), hall) is None
-    assert concert_reason(ev("Paul Mirabel", "Humour et chanson."), hall) == "music venue"
+    assert concert_reason(ev("Paul Mirabel", "Humoriste et chanson."), hall) == "music venue"
     trusted = ev("Louis Sclavis Trio", "Autour de l'improvisation libre.", "page_llm:x")
     trusted.trust_model_concert = True
     assert concert_reason(trusted, None) == "model: concert, trusted programme"
