@@ -282,6 +282,20 @@ William's concerts at 5–11 × the cost; Gemma 4 26B-A4B stayed 18–31 points 
 ratings went with a higher precision at a fixed recall in run 5 (30 → 31.5 → 36 %), but inside the
 ±12-point noise and resting on one seed: **unverified**.
 
+**Known artists (William, 2026-10-09 11:31, WIP-88):** a concert of an artist William listens
+to (seeds: Spotify / ListenBrainz imports, typed names) or has liked always goes to "À ne pas
+rater", whatever the judge says, with the rule's own reason ("Tu écoutes …", "Tu as aimé …"), not
+labelled as AI. This is the rule-based "sure" match (`scoring.js` `isKnownMatch`: score ≥ 0.9,
+not a related-artist or style guess), applied on the page. It matches by **name**, so it can hit
+a homonym: a concert artist whose identity is flagged `ambiguous` (several Deezer artists of that
+name), `short_name`, or `reported` as a wrong match (`artists.py`, `store/sync.py`) is not an
+override and stays with the judge. Other homonyms can still be overridden (a liked name shared
+by an unrelated act, an artist flagged `unverified` or `low_fans`): accepted, since William prefers an extra
+concert to a missed one (07:02); how often it happens is **unverified**. The Judge eval reports
+the shown recall with this override, the precision of the overrides and of "À ne pas rater" as
+the page builds it (judge `must_see` ∪ overrides), on leave-one-out matches of rated concerts
+only; the gate stays on the judge alone.
+
 **Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
 Judge eval reports the precision of each section, and if the difference does not hold the two
 sections are merged.

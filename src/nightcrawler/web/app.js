@@ -793,8 +793,7 @@ function listenButton(c, body) {
 // The judge's reason under a concert (WIP-86): model output, set as text only, with a visible
 // "IA" label and its meaning for screen readers (EU AI Act, ADR-0007 Security).
 function judgeLine(judged) {
-  if (!judged || (!judged.v && !judged.unjudged)) return null;
-  if (judged.unjudged) return el("span", "pas encore jugé", "judge muted");
+  if (!judged || !judged.v) return judged && judged.unjudged ? el("span", "pas encore jugé", "judge muted") : null;
   const line = el("span", null, "judge");
   const ai = el("span", "IA", "badge ai");
   ai.title = "Raison écrite par un modèle d'IA d'après « Mon goût en mots ».";
@@ -820,13 +819,16 @@ function concertRow(c, match, showDate, judged) {
     if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
   }
   const judge = judgeLine(judged);
-  if (judge) body.append(judge);
   // With the judge's reason (WIP-86), the rule-based reason and badge are not shown; only the
   // "Mauvais rapprochement" action stays, named with the guess it refers to.
   const contest = match.inferred && match.artist;
-  if (match.reason && (!judge || contest)) {
-    const why = el("span", null, "why");
-    if (!judge) why.append(el("span", match.reason));
+  // a known artist (WIP-88) keeps its rule reason ("Tu écoutes …"), first: it is why the concert
+  // is in "À ne pas rater", and it is not AI-written
+  const known = !!(judged && judged.known);
+  let why = null;
+  if (match.reason && (!judge || contest || known)) {
+    why = el("span", null, "why");
+    if (!judge || known) why.append(el("span", match.reason));
     if (!judge && match.discovery) why.append(el("span", "Découverte", "badge"));
     if (contest) {
       // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
@@ -848,8 +850,10 @@ function concertRow(c, match, showDate, judged) {
       }
       why.append(wrong);
     }
-    body.append(why);
   }
+  if (known && why) body.append(why);
+  if (judge) body.append(judge);
+  if (why && !known) body.append(why);
   const actions = el("span", null, "links");
   const links = S.concertLinks(c).map((l) => safeLink(l.url, l.label)); // merged sources (WIP-42)
   if (c.ai_extracted) {
@@ -921,10 +925,15 @@ function renderTiers(root, list) {
   renderRest(root, rest, !sure.length && !discover.length);
 }
 
+// An artist the listener listens to (seeds) or has liked: the rule-based "sure" match (WIP-53),
+// by name, so an identity flagged as a possible homonym or reported as wrong is left to the
+// judge (S.HOMONYM_DOUBTS). Such a concert is always in "À ne pas rater" (WIP-88, William 2026-10-09).
+const isKnownArtist = (x) => S.isKnownMatch(x.m);
+
 // The judge's sections (WIP-86, PRD FR-6): "À ne pas rater", "Pour toi" (with the concerts not
 // judged yet), "Découvertes", each in the list's order (by date), then "Tout voir" as above.
 function renderJudged(root, list) {
-  const sec = V.sectionsFor(list, verdicts.verdicts);
+  const sec = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
   const filtering = state.when !== "all" || !!state.style || !!state.venue;
   const suffix = filtering ? " pour ces filtres." : ".";
   tierSection(root, "judge-must", "À ne pas rater", sec.ne_pas_rater, "Aucun concert à ne pas rater" + suffix);
@@ -991,7 +1000,7 @@ const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DAT
 function restIds() {
   const profile = S.buildProfile(state, DATA.artists);
   const list = scored(profile);
-  if (judgeOn()) return V.sectionsFor(list, verdicts.verdicts).tout_voir.map((x) => x.c.id);
+  if (judgeOn()) return V.sectionsFor(list, verdicts.verdicts, isKnownArtist).tout_voir.map((x) => x.c.id);
   return S.isEmpty(profile, DATA.concerts) ? [] : S.tiers(list).rest.map((x) => x.c.id);
 }
 

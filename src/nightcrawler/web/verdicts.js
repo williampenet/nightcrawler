@@ -105,7 +105,9 @@
   // Scored items ({c, m}, in the list's order) split into the four home sections. Each item
   // gets v (the verdict) or unjudged: true. A concert without a verdict goes to "Pour toi",
   // marked unjudged: recall first (ADR-0007 §5, ADR-0006).
-  function sectionsFor(items, verdicts) {
+  // isKnown(item) (WIP-88): a concert of an artist the listener listens to or has liked goes to
+  // "À ne pas rater" whatever the judge says (a deterministic rule, like a followed artist).
+  function sectionsFor(items, verdicts, isKnown) {
     const list = Array.isArray(items) ? items : [];
     const known = verdicts || {};
     const currentIds = new Set(list.map((x) => (x.c || x).id));
@@ -113,7 +115,8 @@
     for (const x of list) {
       const item = x.c ? x : { c: x };
       const v = verdictFor(item.c, known, currentIds);
-      if (v && SECTIONS.includes(v.section)) out[v.section].push({ ...item, v });
+      if (typeof isKnown === "function" && isKnown(item)) out.ne_pas_rater.push({ ...item, v, known: true });
+      else if (v && SECTIONS.includes(v.section)) out[v.section].push({ ...item, v });
       else out.pour_toi.push({ ...item, unjudged: true });
     }
     return out;

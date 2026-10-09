@@ -224,7 +224,8 @@ function scoreLabels(input) {
   const counts = producers(labelled);
   const scored = labelled.map(([c, label]) => {
     const reduced = withoutOwnLabel(state, c, label, counts);
-    return { id: c.id, label, score: S.scoreConcert(c, artists, S.buildProfile(reduced, artists)).score };
+    const m = S.scoreConcert(c, artists, S.buildProfile(reduced, artists));
+    return { id: c.id, label, score: m.score, known: S.isKnownMatch(m) };
   });
   const dislikes = dislikeReport(built, inp, new Set(S.sanitizeState(inp.state).hidden).size);
   return { concerts: concerts.length, scored, ...built, dislikes };

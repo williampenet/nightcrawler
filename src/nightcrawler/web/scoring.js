@@ -8,6 +8,12 @@
   // Tiers of the default view (WIP-53). Provisional values: they will be tuned by the
   // taste eval (WIP-52).
   const SURE_MIN = 0.9; // direct match: artist listened to (1), liked artist / concert / name (0.9)
+  // A sure match is by name. With one of these identity doubts (artists.py, store/sync.py) the
+  // concert's artist may be a homonym, or was reported as the wrong one: never a "known artist".
+  const HOMONYM_DOUBTS = ["ambiguous", "short_name", "reported"];
+  // A known artist (WIP-88): always in "À ne pas rater", whatever the judge says.
+  const isKnownMatch = (m) =>
+    !!(m && m.score >= SURE_MIN && !m.inferred && !HOMONYM_DOUBTS.includes(m.doubt));
   const DISCOVER_MAX = 10; // at most this many inferred matches ("Proche de", "Style") shown
 
   // Same normalisation as the pipeline (artists.norm): no accents, lower case, a-z0-9 only.
@@ -243,7 +249,7 @@
 
   // Best match among the concert's artists: { score, reason, discovery }
   function scoreConcert(concert, artists, profile) {
-    let best = { score: 0, reason: null, discovery: false, artist: null, inferred: false };
+    let best = { score: 0, reason: null, discovery: false, artist: null, inferred: false, doubt: null };
     const consider = (score, reason, artist, inferred = false) => {
       if (score > best.score) {
         // a discovery = a little-known artist reached through a related or style match
@@ -255,6 +261,8 @@
           discovery: known && artist.fans < DISCOVERY_FANS && score <= 0.8,
           artist: artist.key || null,
           inferred,
+          // why the artist identity is not confident (artists.py): "ambiguous", "short_name"…
+          doubt: typeof artist.doubt === "string" ? artist.doubt : null,
         };
       }
     };
@@ -376,7 +384,7 @@
     return acts.length >= 2 ? `Avec : ${acts.join(", ")}` : null;
   }
 
-  const api = { SURE_MIN, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { SURE_MIN, HOMONYM_DOUBTS, isKnownMatch, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
