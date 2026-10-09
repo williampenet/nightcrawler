@@ -183,3 +183,34 @@ def test_wip71_excluded_venues_dropped_by_location_name(tz):
     excluded = ("médiathèque de Meyzieu", "À Thou Bout d'Chant")
     concerts = build_concerts(raw, {"m": MUSIC}, now=now, window_days=60, tz=tz, excluded=excluded)
     assert [c.title for c in concerts] == ["Gig C"]
+
+
+def test_a_description_can_keep_never_drop(tz):
+    """WIP-91: descriptions are read for the judge; a word in passing ("exposition",
+    "atelier", "improvisation") must not drop an event its title or venue already keeps,
+    while a title that does not decide is still settled by its text, both ways."""
+    from nightcrawler.events import concert_reason
+    from nightcrawler.models import RawEvent, Venue
+
+    hall = Venue("v", "Le Transbordeur", 45.78, 4.86, "music_venue")
+
+    def ev(title, description=None, source="wp_json:x"):
+        return RawEvent(title=title, start=datetime(2026, 10, 20, 20, tzinfo=tz), source=source,
+                        venue_id="v", description=description)  # fmt: skip
+
+    expo = "Après une exposition remarquée, l'artiste revient."
+    assert concert_reason(ev("INO CASABLANCA", expo), hall) == "music venue"
+    assert concert_reason(ev("Live punk", "Vernissage de l'exposition à 19h."), None)
+    singer = "Chanteuse et danseuse, elle aborde avec humour la vie."
+    assert concert_reason(ev("CHARLIE OZ", singer), hall) == "music venue"
+    assert concert_reason(ev("Soirée DJ", "Atelier sérigraphie, puis DJ set."), None)
+    # a comedy show still goes, whatever kept its title (WIP-72)
+    assert concert_reason(ev("Paul Mirabel", "Un seul en scène hilarant."), hall) is None
+    assert concert_reason(ev("Paul Mirabel", "Humoriste et chanson."), hall) == "music venue"
+    trusted = ev("Louis Sclavis Trio", "Autour de l'improvisation libre.", "page_llm:x")
+    trusted.trust_model_concert = True
+    assert concert_reason(trusted, None) == "model: concert, trusted programme"
+    # a title that does not decide: the text keeps it, or drops it, as before
+    assert concert_reason(ev("Rencontre", "Concert de rock garage."), None) == "music keywords"
+    assert concert_reason(ev("Rencontre", "Atelier d'écriture."), None) is None
+    assert concert_reason(ev("Rencontre"), None) is None

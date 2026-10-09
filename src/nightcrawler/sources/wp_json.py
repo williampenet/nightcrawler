@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from ..events import in_window
 from ..http import MAX_BYTES, Fetcher
 from ..models import RawEvent
-from ..structured import _text, _url
+from ..structured import MAX_TEXT, _text, _url
 
 # Items carry SEO blocks (`yoast_head`), so 100 per page might pass the fetcher's 3 MB cap
 # (unverified: item size not measured, WebFetch truncates long bodies; see `truncated` status).
@@ -38,6 +38,30 @@ def get_path(item: Any, path: str | None) -> Any:
             return None
         value = value.get(key)
     return value
+
+
+def get_values(item: Any, path: str | None) -> list[Any]:
+    """Every value at a dotted path where a "*" step goes through each item of a list
+    ("acf.content.*.description": the description of each ACF layout block)."""
+    if not path:
+        return []
+    values = [item]
+    for key in path.split("."):
+        nxt: list[Any] = []
+        for v in values:
+            if key == "*" and isinstance(v, list):
+                nxt += v
+            elif isinstance(v, dict) and key in v:
+                nxt.append(v[key])
+        values = nxt
+    return [v for v in values if v is not None]
+
+
+def description(item: Any, path: str | None) -> str | None:
+    """The concert's presentation as plain text (HTML stripped by structured._text), blocks
+    joined, capped like every listing text (MAX_TEXT). Untrusted data, never instructions."""
+    parts = [t for v in get_values(item, path) if isinstance(v, str) and (t := _text(v))]
+    return " ".join(" ".join(parts).split())[:MAX_TEXT] or None
 
 
 def _parse_start(item: dict, reader: dict, tz: ZoneInfo) -> datetime | None:
@@ -90,6 +114,7 @@ def parse(
             url=_url(get_path(item, fields.get("link"))),
             ticket_url=_url(get_path(item, fields.get("ticket"))),
             location_name=venue_name,
+            description=description(item, fields.get("description")),
         )
         if in_window(ev, now, window_days):
             events.append(ev)
