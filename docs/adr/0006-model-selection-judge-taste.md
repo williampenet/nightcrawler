@@ -282,6 +282,14 @@ William's concerts at 5–11 × the cost; Gemma 4 26B-A4B stayed 18–31 points 
 ratings went with a higher precision at a fixed recall in run 5 (30 → 31.5 → 36 %), but inside the
 ±12-point noise and resting on one seed: **unverified**.
 
+**Known artists (William, 2026-10-09 11:31, WIP-88):** a concert of an artist William listens
+to (seeds: Spotify / ListenBrainz imports, typed names) or has liked always goes to "À ne pas
+rater", whatever the judge says, with the rule's own reason ("Tu écoutes …", "Tu as aimé …"), not
+labelled as AI. This is the rule-based "sure" match (`scoring.js`, score ≥ 0.9, never a guess),
+applied on the page. The Judge eval reports the shown recall with this override and the
+precision of the overrides (leave-one-out rule scores, rated concerts only); the gate stays on
+the judge alone.
+
 **Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
 Judge eval reports the precision of each section, and if the difference does not hold the two
 sections are merged.

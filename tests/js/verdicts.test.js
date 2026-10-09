@@ -178,3 +178,18 @@ test("blocked storage: no copy, no exception", () => {
   assert.equal(V.save(blocked, V.parse({ verdicts: {} })), false);
   assert.equal(V.save(blocked, null), false);
 });
+
+test("a known artist goes to « À ne pas rater » whatever the judge says (WIP-88)", () => {
+  const list = [
+    { c: { id: A }, m: { score: 1 } }, // listened to, judged "no"
+    { c: { id: B }, m: { score: 0.9, inferred: true } }, // a guess is never known
+    { c: { id: C }, m: { score: 0.9 } }, // liked, not judged yet
+  ];
+  const verdicts = { [A]: ok({ section: "tout_voir", verdict: "no" }), [B]: ok() };
+  const isKnown = (x) => x.m.score >= 0.9 && !x.m.inferred;
+  const s = V.sectionsFor(list, verdicts, isKnown);
+  assert.deepEqual(s.ne_pas_rater.map((x) => [x.c.id, x.known, !!x.v]), [[A, true, true], [C, true, false]]);
+  assert.deepEqual(s.pour_toi.map((x) => x.c.id), [B]);
+  assert.equal(s.tout_voir.length, 0);
+  assert.equal(V.sectionsFor(list, verdicts).tout_voir.length, 1); // without the rule: unchanged
+});

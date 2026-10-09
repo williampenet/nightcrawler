@@ -63,6 +63,7 @@ FAILED_CALL = frozenset({"transport", "timeout", "aborted"})
 # every prompt holds personal data: only EU providers (Scaleway Paris) or a local model
 EU_PROVIDERS = frozenset({"scaleway", "local"})
 TZ = ZoneInfo("Europe/Paris")  # reference rows are local dates (eval/reference/README.md)
+SURE_MIN = 0.9  # scoring.js SURE_MIN: "Tu écoutes …" (1), "Tu as aimé …" (0.9)
 RULE_BASELINE = "rule-based score (scoring.js, leave-one-out)"
 log = logging.getLogger("eval.judge")
 
@@ -394,11 +395,30 @@ def shown_metrics(cases: list[dict], answers: list[dict]) -> dict:
         liked = sum(cases[i]["label"] == "liked" for i in ids)
         per[name] = {"n": len(ids), "liked": liked, "precision": ratio(liked, len(ids)),
                      "wilson95": wilson(liked, len(ids))}  # fmt: skip
+    # WIP-88: a known artist (rule-based "sure" match, leave-one-out score >= SURE_MIN, so a
+    # case's own like never counts) goes to "À ne pas rater" whatever the judge says. Rule scores
+    # exist for William's rated concerts only, so reference-only positives are judge-only here.
+    known = [c.get("kind") == "rated" and (c.get("rule") or 0) >= SURE_MIN for c in cases]
+    hits_k = sum(known[i] or sec[i] != "tout_voir" for i in pos)
+    shown_k = [i for i in rated if known[i] or sec[i] != "tout_voir"]
+    ov = [i for i in rated if known[i]]
+    ov_liked = sum(cases[i]["label"] == "liked" for i in ov)
     return {
         "recall": ratio(hits, len(pos)),
         "recall_wilson95": wilson(hits, len(pos)),
         "share_shown": ratio(len(shown), len(rated)),
         "sections": per,
+        "with_known": {
+            "recall": ratio(hits_k, len(pos)),
+            "recall_wilson95": wilson(hits_k, len(pos)),
+            "share_shown": ratio(len(shown_k), len(rated)),
+            "overrides": {
+                "n": len(ov),
+                "liked": ov_liked,
+                "precision": ratio(ov_liked, len(ov)),
+                "moved_from_tout_voir": sum(sec[i] == "tout_voir" for i in ov),
+            },
+        },  # fmt: skip
     }
 
 
@@ -464,9 +484,18 @@ def shown_text(m: dict) -> str:
     sec = "; ".join(
         f"{k} {pct(v['precision'])} on {v['n']}" for k, v in sh["sections"].items() if v["n"]
     )
+    k = sh.get("with_known") or {}
+    ov = k.get("overrides") or {}
+    known = (
+        f"; with known artists (WIP-88): recall {pct(k.get('recall'))}"
+        f"{ci(k.get('recall_wilson95'))}, {pct(k.get('share_shown'))} shown, overrides "
+        f"{ov.get('liked')}/{ov.get('n')} liked ({ov.get('moved_from_tout_voir')} from tout_voir)"
+        if k
+        else ""
+    )
     return (
         f"; shown (ADR-0006 rule): recall {pct(sh['recall'])}{ci(sh['recall_wilson95'])}, "
-        f"{pct(sh['share_shown'])} of rated concerts shown; precision by section: {sec}"
+        f"{pct(sh['share_shown'])} of rated concerts shown; precision by section: {sec}{known}"
     )
 
 

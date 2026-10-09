@@ -537,3 +537,15 @@ def test_gate_boundary_and_main_exit_code(monkeypatch, tmp_path):
     rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--conditions", "nn",
                       "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
     assert rc == 1  # every answer "no": nothing shown, gate red
+
+
+def test_shown_metrics_with_known_artists():
+    """WIP-88: a rated concert whose leave-one-out rule score is "sure" counts as shown."""
+    cs = cases()  # LIKED rule 0.0, DISLIKED rule 0.9 (sure), WATCHED rule 0.0
+    answers = [ans("no"), ans("no"), ans("no"), ans("no"), ans("no")]
+    k = runner.shown_metrics(cs, answers)["with_known"]
+    assert k["overrides"] == {"n": 1, "liked": 0, "precision": 0.0, "moved_from_tout_voir": 1}
+    assert k["recall"] == 0.0 and k["share_shown"] == round(1 / 3, 3)
+    cs[0]["rule"] = 1.0  # the liked concert's artist is listened to
+    k = runner.shown_metrics(cs, answers)["with_known"]
+    assert k["recall"] == round(1 / 3, 3) and k["overrides"]["liked"] == 1
