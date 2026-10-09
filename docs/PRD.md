@@ -126,7 +126,7 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage â‰
 **FR-2 Event collection**
 - Daily refresh of every connected source; the same concert from several sources is merged into one event.
 - Horizon (amended 2026-10-09, [WIP-107](https://linear.app/wip-coding/issue/WIP-107)): every source is asked for, and keeps, every concert up to `window_days` (400) days ahead; per-reader caps are sized so the horizon, not a cap, decides what is kept. Per-host rate limit and robots.txt (including `Crawl-delay`) are never relaxed for it.
-- AC (horizon): the run annotation shows, per source, the concerts beyond 60 days and the farthest date, and the cap hits by kind; the collect job stays under 15 min outside the one-off judging catch-up after the change.
+- AC (horizon): the run annotation shows, per source, the concerts beyond 60 days and the farthest date, and the cap hits by kind; the collect job stays under 15 min; no robots.txt rule or per-host rate limit is relaxed.
 - AC: no duplicate concerts in the feed on a test week; â‰¤ 1 broken collector per week, detected automatically.
 
 **FR-3 Artist identification (US-11)**
