@@ -125,7 +125,11 @@
       Pour certains lieux, l'agenda est lu par un modèle d'IA hébergé dans l'Union européenne ;
       ces concerts sont signalés comme lus par IA.
       Le tri « Pour moi » et les sections « Sûrs » et « À découvrir » sont calculés dans ton navigateur
-      par des règles fixes, sans IA, à partir de données publiques et de tes choix. Vérifie la date et le lieu sur la page de l'événement.
+      par des règles fixes, sans IA, à partir de données publiques et de tes choix.
+      Avec une clé d'envoi, les sections « À ne pas rater », « Pour toi » et « Découvertes » et leurs raisons
+      (marquées « IA ») viennent d'un modèle d'IA (Mistral Small 3.2, hébergé par Scaleway à Paris) qui juge
+      chaque concert d'après « Mon goût en mots » ; les concerts pas encore jugés restent dans « Pour toi ».
+      Vérifie la date et le lieu sur la page de l'événement.
     </p>
     <p>
       Lieux : © contributeurs <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> (ODbL).
@@ -140,6 +144,7 @@
   <script src="spotify.js"></script>
   <script src="feedback.js"></script>
   <script src="profile.js"></script>
+  <script src="verdicts.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

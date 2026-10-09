@@ -10,6 +10,7 @@
 
 - Discovers concert venues in your area automatically, including small independent ones, and collects their agendas daily. A concert listed by several sources (venue site, agenda, ticketing) is shown once, with all its links. (Concert ids moved to cleaned titles in WIP-42: links shared before that change and concerts hidden before it may not be recognised once.)
 - Scores every concert against your listening history, with a human-readable reason ("sounds like X").
+- With a send key, the home page shows the judge's sections ("À ne pas rater", "Pour toi", "Découvertes", then "Tout voir"), each concert with its one-sentence reason labelled "IA"; concerts not judged yet stay in "Pour toi" (recall first). Without a key, the rule-based "Sûrs" / "À découvrir" tiers stay.
 - Weekly email digest, plus instant Telegram alerts for the concerts you can't miss.
 - Listen to an extract, open the official ticket page, or share on WhatsApp in one tap.
 - Learns from your "relevant / not for me" feedback.
@@ -35,6 +36,7 @@ This project is part of **WiP – Vibe coding**, a series of products built by A
 7. Demo + narrative ✋
 
 **Model choice:** agenda pages without structured data go through the `extract_events` task, routed to **Gemma 4 26B-A4B** (Apache 2.0) on Scaleway Generative APIs in Paris ([ADR-0004](docs/adr/0004-model-selection-extract-events.md), accepted 2026-10-07): concert F1 1.0 on the 7-page eval set (small set, gold written by Claude), 0 injection leaks, ≈ €0.53 per 1 000 pages measured, against 0.61–0.73 for the local 1.7–14 B candidates and 0.915 for Mistral Small 3.2, the EU alternative ([`docs/MODEL_EVAL.md`](docs/MODEL_EVAL.md)). Routed; called by the page_llm reader (WIP-66).
+Taste judgements go through the `judge_taste` task, routed to **Mistral Small 3.2** on Scaleway Generative APIs in Paris ([ADR-0006](docs/adr/0006-model-selection-judge-taste.md)); they are stored privately and the page reads them with the send key (`GET /verdicts`, ADR-0007), rendering each reason as plain text with an "IA" label (WIP-86).
 The build agents are Claude (Anthropic); the sovereignty / open-weights policy applies to the model running inside the product.
 
 **Human vs agent split:** see [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the dated log of every human and agent action.
