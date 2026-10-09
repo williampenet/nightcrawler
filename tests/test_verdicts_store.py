@@ -45,6 +45,8 @@ def test_store_round_trip_on_real_postgres():
             "('bbbbbbbbbbb1', NULL, 'like', now() - interval '2 min'), "
             "('bbbbbbbbbbb1', NULL, 'unlike', now() - interval '1 min'), "
             "('zzzzzzzzzzz0', NULL, 'dislike', now()), "  # an alias or a past concert
+            "('yyyyyyyyyyy0', NULL, 'like', '2026-01-01T00:00:00Z'), "
+            "('yyyyyyyyyyy0', NULL, 'dislike', '2026-01-01T00:00:00Z'), "  # same time: id wins
             "(NULL, 'x', 'like', now())"
         )
         conn.execute(
@@ -58,22 +60,33 @@ def test_store_round_trip_on_real_postgres():
         )
         assert (
             verdicts.save(
-                conn, [row("aaaaaaaaaaa1"), row("ccccccccccc1", starts_at=NOW - timedelta(days=91))]
+                conn, [row("aaaaaaaaaaa1"), row("ccccccccccc1", starts_at=NOW - timedelta(days=8))]
             )
             == 2
         )
         got = verdicts.load_inputs(conn, ["aaaaaaaaaaa1", "bbbbbbbbbbb1", "ccccccccccc1"])
         assert got.profile == {"taste_text": "Funk"}
-        assert got.ratings == {"aaaaaaaaaaa1": "liked", "zzzzzzzzzzz0": "disliked"}
+        labels = {cid: lab for cid, (lab, _) in got.ratings.items()}
+        assert labels == {"aaaaaaaaaaa1": "liked", "bbbbbbbbbbb1": None,
+                          "zzzzzzzzzzz0": "disliked", "yyyyyyyyyyy0": "disliked"}  # fmt: skip
+        assert got.ratings["zzzzzzzzzzz0"][1] > got.ratings["aaaaaaaaaaa1"][1]  # times kept
         assert got.descriptions == {"aaaaaaaaaaa1": "la plus longue"}
-        assert got.known == {"aaaaaaaaaaa1": "h-aaaaaaaaaaa1"}  # c... purged (started 91 d ago)
+        assert got.known == {"aaaaaaaaaaa1": "h-aaaaaaaaaaa1"}  # c... purged (started 8 d ago)
         verdicts.save(
             conn, [row("aaaaaaaaaaa1", input_hash="h2", verdict="no", section="tout_voir")]
         )
         v = conn.execute("SELECT input_hash, verdict, section FROM verdicts").fetchall()
         assert v == [("h2", "no", "tout_voir")]
-        with pytest.raises(psycopg.errors.CheckViolation):
-            verdicts.save(conn, [row("bbbbbbbbbbb1", reason="x" * 241)])
+        for bad in ({"reason": "x" * 241}, {"verdict": "maybe"}, {"confidence": 101},
+                    {"verdict": "no", "section": "pour_toi"}):  # fmt: skip
+            with pytest.raises(psycopg.errors.CheckViolation):
+                verdicts.save(conn, [row("bbbbbbbbbbb1", **bad)])
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):  # unknown concert: whole batch
+            verdicts.save(conn, [row("bbbbbbbbbbb1"), row("unknown00000")])
+        n = "SELECT count(*) FROM verdicts WHERE concert_id = 'bbbbbbbbbbb1'"
+        assert conn.execute(n).fetchone()[0] == 0
+        conn.execute("DELETE FROM concerts WHERE id = 'aaaaaaaaaaa1'")  # cascade
+        assert conn.execute("SELECT count(*) FROM verdicts").fetchone()[0] == 0
 
 
 def test_load_inputs_is_read_only_with_a_timeout():
@@ -117,3 +130,10 @@ def test_round_fans_and_input_hash():
     assert judge.input_hash(task, other) != h  # profile change: re-judged
     task.temperature = 0.5
     assert judge.input_hash(task, m) != h  # settings change: re-judged
+    task.temperature = 0.0
+    old = judge.SCHEMA["properties"]["reason"]["maxLength"]
+    try:
+        judge.SCHEMA["properties"]["reason"]["maxLength"] = old + 1
+        assert judge.input_hash(task, m) != h  # the schema is sent with the request
+    finally:
+        judge.SCHEMA["properties"]["reason"]["maxLength"] = old

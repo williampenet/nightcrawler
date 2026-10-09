@@ -11,6 +11,12 @@ CREATE TABLE verdicts (
                 CHECK (section IN ('ne_pas_rater', 'pour_toi', 'decouvertes', 'tout_voir')),
     model       TEXT NOT NULL,
     starts_at   TIMESTAMPTZ NOT NULL,             -- the concert's start: GET /verdicts window, purge
-    judged_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    judged_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- the section follows the verdict (judge.section); a discovery under the confidence bar
+    -- stays in "tout_voir"
+    CHECK ((verdict = 'must_see' AND section = 'ne_pas_rater')
+        OR (verdict = 'for_you' AND section = 'pour_toi')
+        OR (verdict = 'discovery' AND section IN ('decouvertes', 'tout_voir'))
+        OR (verdict = 'no' AND section = 'tout_voir'))
 );
 CREATE INDEX verdicts_starts_at ON verdicts (starts_at);

@@ -13,14 +13,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 STATEMENT_TIMEOUT = "30s"
-RETENTION_DAYS = 90  # verdicts of concerts that started longer ago are deleted on save
+# verdicts of concerts that started longer ago are deleted on save: GET /verdicts serves from
+# yesterday on, so a week only leaves room for late or re-dated listings (data minimisation)
+RETENTION_DAYS = 7
 RATING_KINDS = ("like", "unlike", "dislike")
 
 
 @dataclass
 class Inputs:
     profile: dict = field(default_factory=dict)  # profile.data of 'me' ({} without one)
-    ratings: dict[str, str] = field(default_factory=dict)  # stored concert id -> liked/disliked
+    # id the page sent (current id or alias) -> (liked | disliked | None for an unlike, time)
+    ratings: dict[str, tuple[str | None, Any]] = field(default_factory=dict)
     descriptions: dict[str, str] = field(default_factory=dict)  # concert id -> listing text
     known: dict[str, str] = field(default_factory=dict)  # concert id -> stored input_hash
 
@@ -43,17 +46,20 @@ def read_descriptions(conn, ids: list[str]) -> dict[str, str]:
     return out
 
 
-def read_ratings(conn) -> dict[str, str]:
-    """The latest like / unlike / dislike per rated concert id (a click stores one row per artist
-    key with the same kind, so any of them is the click): like -> "liked", dislike ->
-    "disliked", unlike -> no rating. Ids are the ones the page sent (current ids or aliases)."""
+def read_ratings(conn) -> dict[str, tuple[str | None, Any]]:
+    """The latest like / unlike / dislike per rated concert id, with its time (a click stores one
+    row per artist key with the same kind, so any of them is the click): like -> "liked",
+    dislike -> "disliked", unlike -> None (kept, so that an unlike under one id can undo a like
+    under an alias). Ids are the ones the page sent (current ids or aliases): the caller maps
+    them to published concerts and keeps the latest per concert (WIP-84)."""
     rows = conn.execute(
-        "SELECT DISTINCT ON (concert_id) concert_id, kind FROM feedback "
+        "SELECT DISTINCT ON (concert_id) concert_id, kind, created_at FROM feedback "
         "WHERE concert_id IS NOT NULL AND kind = ANY(%s) "
         "ORDER BY concert_id, created_at DESC, id DESC",
         (list(RATING_KINDS),),
     ).fetchall()
-    return {cid: {"like": "liked", "dislike": "disliked"}[k] for cid, k in rows if k != "unlike"}
+    label = {"like": "liked", "dislike": "disliked", "unlike": None}
+    return {cid: (label[k], at) for cid, k, at in rows}
 
 
 def load_inputs(conn, ids: list[str]) -> Inputs:
@@ -76,7 +82,9 @@ def load_inputs(conn, ids: list[str]) -> Inputs:
 def save(conn, rows: list[dict[str, Any]]) -> int:
     """Upserts one judgement per concert ({concert_id, input_hash, verdict, confidence, reason,
     section, model, starts_at}) and deletes those of concerts started more than RETENTION_DAYS
-    ago; one transaction. Returns the number of rows written."""
+    ago; one transaction. Every concert_id must be stored in `concerts` (foreign key): one
+    unknown id rolls the whole batch back, so the caller saves only concerts the sync stored.
+    Returns the number of rows written."""
     with conn.transaction():
         conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
         if rows:

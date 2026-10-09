@@ -157,8 +157,10 @@ def round_fans(n: int) -> int:
 
 
 def input_hash(task, messages: list[dict]) -> str:
-    """Cache key of a judgement (ADR-0007): the task's model and settings and the exact messages
-    (concert, description, written taste, seeds, examples). Any change re-judges the concert."""
+    """Cache key of a judgement (ADR-0007): the task's model and settings, the output schema sent
+    with the request (`response_format`, llm.chat_json) and the exact messages (concert,
+    description, written taste, seeds, examples). Any change re-judges the concert. The section
+    rule is not in it: the pipeline recomputes `section` from the stored verdict every run."""
     p = task.primary
     payload = {
         "task": task.name,
@@ -168,6 +170,7 @@ def input_hash(task, messages: list[dict]) -> str:
         "extra": p.extra,
         "temperature": task.temperature,
         "max_output_tokens": task.max_output_tokens,
+        "schema": SCHEMA,
         "messages": messages,
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
