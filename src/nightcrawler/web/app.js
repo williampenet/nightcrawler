@@ -740,7 +740,6 @@ let view = "pour_toi";
 let NEW_IDS = new Set(); // concerts added since the last visit (visits.js), set once per load
 const openIds = new Set(); // rows whose details are open, kept across re-renders
 let panelSeq = 0;
-const PERIODS = { tonight: "ce soir", weekend: "ce week-end", "7d": "cette semaine" };
 
 // rows of the screen on show (home or calendar)
 const visibleRows = () => [...document.querySelectorAll("main > section:not([hidden]) [data-id]")];
@@ -1107,7 +1106,6 @@ function decorate(list, profile) {
 }
 
 function renderPourToi(root, picks, total) {
-  const period = PERIODS[state.when];
   if (!picks) {
     const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
     const link = el("a", "« Mes goûts »");
@@ -1117,7 +1115,7 @@ function renderPourToi(root, picks, total) {
     return seeAll(root, total);
   }
   if (!picks.length) {
-    root.append(el("p", `Rien pour toi ${period || "pour l'instant"}.`, "muted empty"));
+    root.append(el("p", state.when === "all" ? "Rien pour toi pour l'instant." : `${S.withPeriod("Rien pour toi", state.when)}.`, "muted empty"));
     return seeAll(root, total);
   }
   // « À ne pas rater » cards first (all of them), then the judge's « Pour toi » rows (WIP-106)
@@ -1128,12 +1126,34 @@ function renderPourToi(root, picks, total) {
     root.append(rowList(must, "sec-must"));
   }
   if (rest.length) {
-    heading(root, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi");
+    heading(root, "sec-for-you", S.withPeriod("Pour toi", state.when));
     root.append(rowList(rest, "sec-for-you"));
   }
 }
 
+// A period chip is brought fully inside its row when the chips scroll (narrow screens), without
+// scrolling the page: the pressed one after each render, the focused one on focus. Chromium
+// leaves a partly visible focused chip where it is (measured at 375px: « Toutes les dates » at
+// 306–416px after Tab), so focus does it here; the row's padding keeps the ring visible.
+function showChip(b) {
+  const row = b && b.closest(".periods");
+  if (!row || row.scrollWidth <= row.clientWidth) return;
+  const r = row.getBoundingClientRect();
+  const c = b.getBoundingClientRect();
+  const pad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
+  if (c.left < r.left + pad) row.scrollLeft -= r.left + pad - c.left;
+  else if (c.right > r.right - pad) row.scrollLeft += c.right - (r.right - pad);
+}
+const showPressedPeriod = () => showChip(document.querySelector('.periods [aria-pressed="true"]'));
+
+// The home; the pressed period chip is scrolled into its row once the list is back, so the
+// layout read never sees an empty list (which clamped the page scroll: 150 → 79 at 375px).
 function render() {
+  renderHome();
+  showPressedPeriod();
+}
+
+function renderHome() {
   const root = document.getElementById("concerts");
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
@@ -1142,10 +1162,8 @@ function render() {
     if (b.dataset.view === view) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   }
-  for (const b of document.querySelectorAll(".periods button")) {
-    if (b.dataset.when === state.when) b.setAttribute("aria-current", "true");
-    else b.removeAttribute("aria-current");
-  }
+  // period chips (WIP-108): one pressed at a time
+  for (const b of document.querySelectorAll(".periods button")) b.setAttribute("aria-pressed", String(b.dataset.when === state.when));
   document.getElementById("tout-tools").hidden = view !== "tout";
   // « Tout » counts the concerts of the period (style and venue filters aside)
   document.getElementById("count").textContent = String(filtered("pour_toi").length);
@@ -1162,7 +1180,7 @@ function render() {
     else root.append(rowList(fresh, "sec-new"));
     return;
   }
-  heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts");
+  heading(root, "sec-all", S.withPeriod("Tous les concerts", state.when));
   // A → Z by default (WIP-102); « Par date » keeps the data's order
   const sorted =
     state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start))
@@ -1394,11 +1412,13 @@ function setupControls() {
     bind(id, key);
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
   }
-  // period filters (WIP-95): tapping the active one again shows every date
-  state.when = "7d"; // the home opens on « Cette semaine » on every load (PM, 2026-10-09)
+  // period chips (WIP-95, WIP-108): « Toutes les dates » is a chip of its own; tapping the
+  // active chip keeps it
+  state.when = S.DEFAULT_PERIOD; // « Cette semaine » on every load (PM, 2026-10-09)
   for (const b of document.querySelectorAll(".periods button")) {
+    b.addEventListener("focus", () => showChip(b));
     b.addEventListener("click", () => {
-      state.when = state.when === b.dataset.when ? "all" : b.dataset.when;
+      state.when = S.choosePeriod(state.when, b.dataset.when);
       saveState();
       render();
     });
