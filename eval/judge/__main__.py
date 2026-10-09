@@ -191,8 +191,8 @@ def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -
     except llm.ModelError as exc:
         return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": error_code(exc)}
     data = a.data
-    if data is not None and judge.check(data):
-        data, a.reason = None, "check"
+    if data is not None and (errors := judge.check_for(messages)(data)):
+        data, a.reason = None, "unfaithful" if judge.UNFAITHFUL in errors else "check"
     return {
         "data": data,
         "latency": a.latency_s,
@@ -384,7 +384,10 @@ def cv_operating_point(cases: list[dict], sc: list[float], target: float) -> dic
 def shown_metrics(cases: list[dict], answers: list[dict]) -> dict:
     """The production rule (judge.section, ADR-0006): recall of the concerts shown on the home
     page, the share of William's rated concerts shown, and the precision of each section."""
-    sec = [judge.section(a["data"]) for a in answers]
+    # a rejected unfaithful reason leaves the concert unjudged: the page shows it in « Pour
+    # toi » (« pas encore jugé », WIP-90), so it counts as shown there
+    sec = ["pour_toi" if a.get("error") == "unfaithful" else judge.section(a["data"])
+           for a in answers]  # fmt: skip
     pos = [i for i, c in enumerate(cases) if c["label"] in ("liked", "positive")]
     rated = [i for i, c in enumerate(cases) if c["kind"] == "rated"]
     shown = [i for i in rated if sec[i] != "tout_voir"]

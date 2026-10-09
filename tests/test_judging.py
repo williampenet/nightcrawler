@@ -159,3 +159,20 @@ def test_an_unexpected_error_keeps_the_other_judgements(monkeypatch, task):
     monkeypatch.setattr(judging, "WORKERS", 1)
     rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, flaky)
     assert rep["failed"] == {"error": 1} and rep["judged"] == 2 and len(saved["rows"]) == 2
+
+
+def test_unfaithful_reasons_are_left_unjudged_without_stopping(monkeypatch, task):
+    """WIP-90: a reason naming a profile artist absent from the concert is rejected; the
+    concert stays unjudged (« Pour toi » on the page) and rejections never stop the run."""
+    saved: dict = {}
+    profile = {"taste_text": "J'aime Acid Arab."}
+    connect = setup(monkeypatch, verdicts.Inputs(profile=profile), saved)
+    monkeypatch.setattr(judging, "STOP_AFTER", 2)
+    monkeypatch.setattr(judging, "WORKERS", 1)
+    d = {"verdict": "for_you", "reason": "Proche de ses goûts comme Acid Arab.", "confidence": 60}
+
+    def fake(t, messages, schema, check):
+        return llm.Answer(d, check(d), "m", 0.5, 2000, 40)
+
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, fake)
+    assert rep["failed"] == {"unfaithful": 3} and saved["rows"] == []

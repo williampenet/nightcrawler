@@ -557,3 +557,15 @@ def test_shown_metrics_with_known_artists():
     assert k["recall"] == round(1 / 3, 3) and k["overrides"]["liked"] == 1
     assert (k["ne_pas_rater"]["n"], k["ne_pas_rater"]["liked"]) == (3, 1)
     assert "ne_pas_rater 33% (" in runner.shown_text({"shown": runner.shown_metrics(cs, answers)})
+
+
+def test_unfaithful_answers_count_as_shown_in_pour_toi():
+    """WIP-90: a rejected reason leaves the concert unjudged, which the page shows in « Pour
+    toi »: the shown recall counts it, the section precision too."""
+    cs = cases()
+    answers = [ans("no")] * 5
+    answers = [dict(a) for a in answers]
+    answers[0] = {"data": None, "latency": 1.0, "tin": 2000, "tout": 50, "error": "unfaithful"}
+    sh = runner.shown_metrics(cs, answers)
+    assert sh["sections"]["pour_toi"]["n"] == 1 and sh["sections"]["pour_toi"]["liked"] == 1
+    assert sh["recall"] > 0

@@ -296,6 +296,16 @@ the shown recall with this override, the precision of the overrides and of "À n
 the page builds it (judge `must_see` ∪ overrides), on leave-one-out matches of rated concerts
 only; the gate stays on the judge alone.
 
+**Faithful reasons (William, 2026-10-09 12:04, WIP-90):** a reason tied "La Nuit du Gouyad 2"
+to Acid Arab, an artist of the written taste unrelated to the evening (the listing held its title
+only). The prompt now says to name an artist only if the CONCERT block holds it, and
+`judge.check_for` rejects a reason whose proper nouns appear in the profile part of the prompt
+(written taste, seeds, examples) but not in the CONCERT block. A rejected answer is not stored:
+the page shows the concert in « Pour toi » as not judged yet, so recall is kept, and the Judge
+eval counts it there (`unfaithful` errors). It only catches profile names; an artist named from
+nowhere is not detected. Single-word names such as a city written in the taste may be rejected
+wrongly; how often is **unverified** (the eval publishes counts only).
+
 **Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
 Judge eval reports the precision of each section, and if the difference does not hold the two
 sections are merged.

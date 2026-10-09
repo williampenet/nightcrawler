@@ -203,3 +203,44 @@ def test_section_follows_the_accepted_rule():
     assert s({"verdict": "discovery", "confidence": 29}) == "tout_voir"
     assert s({"verdict": "no", "confidence": 100}) == "tout_voir"
     assert s(None) == "tout_voir" and s({"verdict": "maybe"}) == "tout_voir"
+
+
+# ---------------------------------------------------------------- faithful reasons (WIP-90)
+
+GOUYAD = {"id": "g", "title": "La Nuit du Gouyad 2", "venue_name": "Le Transbordeur",
+          "lineup": ["LA NUIT DU GOUYAD 2"], "artists": ["earth"]}  # fmt: skip
+PROFILE = {"taste_text": "J'aime Acid Arab, Steve Reich et le jazz à Lyon.", "seeds": ["Boris"]}
+
+
+def test_reason_names_are_proper_nouns_of_the_reason():
+    names = judge.reason_names("Programmation groovy, avec des artistes proches comme Acid Arab.")
+    assert "Acid Arab" in names and "Programmation" not in names
+    assert judge.reason_names("Du Jazz et de la Soul, comme Coltrane.") == ["Coltrane"]
+    assert "Earth" in judge.reason_names("Proche de Earth, Wind & Fire.")
+    assert judge.reason_names("") == []
+
+
+def test_unfaithful_reason_names_a_profile_artist_missing_from_the_concert():
+    """The Gouyad case (William, 2026-10-09): Acid Arab is in the written taste, not in the
+    concert; a related artist or a billed act is fine; the error never names the artist."""
+    artists = {"earth": {"name": "Earth", "confident": True, "tags": ["drone"],
+                         "related": ["Boris"]}}  # fmt: skip
+    m = judge.messages_for(GOUYAD, artists, PROFILE)
+    check = judge.check_for(m)
+    bad = {
+        "verdict": "for_you",
+        "confidence": 60,
+        "reason": "Programmation pointue et groovy, avec des artistes proches comme Acid Arab.",
+    }
+    assert check(bad) == [judge.UNFAITHFUL] and "Acid" not in judge.UNFAITHFUL
+    related = bad | {"reason": "Earth est proche de Boris, que tu écoutes."}
+    assert check(related) == []  # Boris is in the concert block (related artists)
+    plain = bad | {"reason": "Soirée au Transbordeur, programme non détaillé."}
+    assert check(plain) == []
+    unknown = bad | {"reason": "Rien à voir avec Radiohead."}  # not in the profile: not checked
+    assert check(unknown) == []
+    assert check(bad | {"confidence": 101}) == ["confidence out of 0-100", judge.UNFAITHFUL]
+
+
+def test_prompt_states_the_faithfulness_rule():
+    assert "Ne nomme un artiste que s'il apparaît dans le bloc CONCERT" in judge.SYSTEM

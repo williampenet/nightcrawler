@@ -134,7 +134,7 @@ def run(
                 failures["aborted"] += 1
                 return None
         try:
-            a = run_task(ctx.task, messages, judge.SCHEMA, judge.check)
+            a = run_task(ctx.task, messages, judge.SCHEMA, judge.check_for(messages))
         except llm.ModelError:
             code = "transport"
             a = None
@@ -143,14 +143,22 @@ def run(
             code = "error"
             a = None
         else:
-            code = None if a.data is not None and not a.errors else (a.reason or "check")
+            if a.data is not None and not a.errors:
+                code = None
+            elif a.data is not None and judge.UNFAITHFUL in a.errors:
+                code = "unfaithful"  # left unjudged: the page shows it in « Pour toi » (WIP-90)
+            else:
+                code = a.reason or "check"
         with lock:
             if a is not None:
                 tokens["in"] += a.tokens_in or 0
                 tokens["out"] += a.tokens_out or 0
             if code:
                 failures[code] += 1
-                state["failed_in_a_row"] += 1
+                # an unfaithful reason is about one concert's data, not a broken model or an
+                # outage: it never stops the run (schema and transport failures still do)
+                if code != "unfaithful":
+                    state["failed_in_a_row"] += 1
                 return None
             state["failed_in_a_row"] = 0
         return {
