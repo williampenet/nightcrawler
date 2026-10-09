@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from .http import Fetcher, RobotsBlocked
 from .models import Probe, RawEvent, Venue
-from .structured import ical_events, jsonld_events, microdata_events
+from .structured import ical_events, jsonld_events, microdata_events, page_formats
 
 log = logging.getLogger(__name__)
 
@@ -225,6 +225,8 @@ def read_platform_page(
         ev.ticket_url = ev.ticket_url or resp.url
     if events:
         page |= {"status": "events", "events": len(events)}
+    else:  # why nothing was read: which formats the page carries (WIP-89)
+        page["formats"] = page_formats(resp.text)
     return page, events
 
 

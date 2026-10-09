@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -150,6 +151,36 @@ def jsonld_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
             if _is_event(node) and (ev := event_from_schema(node, venue_id, "json-ld", tz)):
                 events.append(ev)
     return events
+
+
+TYPE_RE = re.compile(r"^[A-Za-z]{1,40}$")
+MAX_FORMATS = 12
+
+
+def page_formats(html: str) -> list[str]:
+    """The structured formats a page carries, for a report (WIP-89): "jsonld" and
+    "jsonld:<schema.org type>" for each type found, "jsonld_invalid", "microdata",
+    "next_data" (Next.js pages router) and "next_flight" (app router). Type names only, never
+    page content."""
+    soup = BeautifulSoup(html, "lxml")
+    found: set[str] = set()
+    for script in soup.find_all("script", type="application/ld+json"):
+        found.add("jsonld")
+        try:
+            data = json.loads(script.string or script.get_text() or "")
+        except ValueError:
+            found.add("jsonld_invalid")
+            continue
+        for node in _walk(data):
+            found.update(f"jsonld:{t}" for t in _types(node) if TYPE_RE.match(t))
+    if soup.find(attrs={"itemscope": True, "itemtype": True}):
+        found.add("microdata")
+    if soup.find("script", id="__NEXT_DATA__"):
+        found.add("next_data")
+    if "self.__next_f" in html:
+        found.add("next_flight")
+    flags = sorted(f for f in found if ":" not in f)
+    return flags + sorted(f for f in found if ":" in f)[: MAX_FORMATS - len(flags)]
 
 
 def microdata_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
