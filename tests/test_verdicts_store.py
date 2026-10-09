@@ -93,6 +93,9 @@ def test_store_round_trip_on_real_postgres():
             verdicts.save(conn, [row("bbbbbbbbbbb1"), row("unknown00000")])
         n = "SELECT count(*) FROM verdicts WHERE concert_id = 'bbbbbbbbbbb1'"
         assert conn.execute(n).fetchone()[0] == 0
+        verdicts.save(conn, [row("bbbbbbbbbbb1")])  # a rejected new answer (WIP-90) deletes
+        verdicts.save(conn, [], delete=["bbbbbbbbbbb1", "zzzzzzzzzzz9"])  # its old judgement
+        assert conn.execute(n).fetchone()[0] == 0
         conn.execute("DELETE FROM concerts WHERE id = 'aaaaaaaaaaa1'")  # cascade
         assert conn.execute("SELECT count(*) FROM verdicts").fetchone()[0] == 0
 

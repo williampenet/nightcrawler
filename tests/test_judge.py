@@ -242,5 +242,20 @@ def test_unfaithful_reason_names_a_profile_artist_missing_from_the_concert():
     assert check(bad | {"confidence": 101}) == ["confidence out of 0-100", judge.UNFAITHFUL]
 
 
+def test_elision_one_word_names_and_no_verdicts():
+    taste = "J'aime Acid Arab, Higelin et Ibeyi, pas la variété ni les concerts à Lyon."
+    m = judge.messages_for(GOUYAD, {}, {"taste_text": taste})
+    check = judge.check_for(m)
+    shown = {"verdict": "for_you", "confidence": 60}
+    for r in ("Dans l'esprit d'Higelin.", "Proche d'Ibeyi.", "À la manière d'Acid Arab."):
+        assert check(shown | {"reason": r}) == [judge.UNFAITHFUL], r
+    # a word the taste uses in passing is not a name: "Variété" capitalised in the reason only
+    assert check(shown | {"reason": "Hors de la Variété, programme non détaillé."}) == []
+    # a "no" may name what it is far from
+    assert check({"verdict": "no", "confidence": 80, "reason": "Loin d'Acid Arab."}) == []
+    # known limit (ADR-0006): a place the taste writes as a name is taken for one
+    assert check(shown | {"reason": "Une soirée à Lyon, programme non détaillé."}) != []
+
+
 def test_prompt_states_the_faithfulness_rule():
     assert "Ne nomme un artiste que s'il apparaît dans le bloc CONCERT" in judge.SYSTEM

@@ -301,10 +301,16 @@ to Acid Arab, an artist of the written taste unrelated to the evening (the listi
 only). The prompt now says to name an artist only if the CONCERT block holds it, and
 `judge.check_for` rejects a reason whose proper nouns appear in the profile part of the prompt
 (written taste, seeds, examples) but not in the CONCERT block. A rejected answer is not stored:
-the page shows the concert in « Pour toi » as not judged yet, so recall is kept, and the Judge
-eval counts it there (`unfaithful` errors). It only catches profile names; an artist named from
-nowhere is not detected. Single-word names such as a city written in the taste may be rejected
-wrongly; how often is **unverified** (the eval publishes counts only).
+its previous stored judgement is deleted in the same write, so the page shows the concert in
+« Pour toi » as not judged yet: recall is kept, and the Judge eval counts it there
+(`unfaithful` errors). A "no" is not checked: it may name what the concert is far from. A
+one-word name counts only when the profile writes it as a name too (capitalised, not opening a
+sentence). Limits: an artist named from nowhere, or a one-word name opening the reason's
+sentence, is not caught; a place or a capitalised word the taste writes as a name ("Lyon",
+"Pop FM") may be rejected wrongly. How often both happen is **unverified** (the eval publishes
+counts only); the `unfaithful` count of each Judge eval run is recorded in MODEL_EVAL.md. A
+rejected concert is asked again every run (temperature 0: likely rejected again), within the
+`judge_calls_per_run` cap.
 
 **Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
 Judge eval reports the precision of each section, and if the difference does not hold the two

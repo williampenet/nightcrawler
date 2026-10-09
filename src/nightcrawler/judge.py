@@ -287,6 +287,7 @@ UNFAITHFUL = "reason names a profile artist absent from the concert"
 _WORD = re.compile(r"[^\W_][\w'’&.-]*", re.UNICODE)
 _SENTENCE_END = re.compile(r"[.!?:;«»\"(]\s*$")
 _CONNECTORS = {"&", "and", "et", "de", "du", "des", "of", "the", "y"}
+_ELISION = re.compile(r"^(?:qu|[cdjlmnst])['’]", re.IGNORECASE)
 MIN_NAME = 3  # normalised characters of a one-word name ("Air" is the shortest kept)
 
 
@@ -305,7 +306,7 @@ def reason_names(reason: str) -> list[str]:
     runs: list[list[tuple[str, bool]]] = []  # (word, opens a sentence)
     current: list[tuple[str, bool]] = []
     for m in _WORD.finditer(reason or ""):
-        w = m.group(0).rstrip(".")
+        w = _ELISION.sub("", m.group(0)).rstrip(".")  # "d'Higelin" -> "Higelin"
         start = m.start() == 0 or bool(_SENTENCE_END.search(reason[: m.start()]))
         if w[:1].isupper() or w[:1].isdigit() and current:
             current.append((w, start))
@@ -340,16 +341,21 @@ def reason_names(reason: str) -> list[str]:
 
 
 def unfaithful(reason: str, messages: list[dict]) -> bool:
-    """True when the reason names something found in the profile part of the prompt (written
-    taste, seeds, examples) but nowhere in the CONCERT block (acts, identified artists, their
-    styles and related artists, venue, description)."""
+    """True when the reason names something of the profile part of the prompt (written taste,
+    seeds, examples) found nowhere in the CONCERT block (acts, identified artists, their styles
+    and related artists, venue, description). A several-word name counts wherever the profile
+    holds it; a one-word name only when the profile writes it as a name too (capitalised, not
+    opening a sentence), so a word the taste uses in passing ("variété") is not one."""
     user = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
     profile, _, rest = user.partition("<<<CONCERT")
     concert = rest.partition("CONCERT>>>")[0]
     in_profile, in_concert = _plain(profile), _plain(concert)
+    profile_words = {_plain(n) for n in reason_names(profile) if " " not in n.strip()}
     for name in reason_names(reason):
         key = _plain(name)
-        if key.strip() and key in in_profile and key not in in_concert:
+        if not key.strip() or key in in_concert:
+            continue
+        if key in (profile_words if " " not in name.strip() else in_profile):
             return True
     return False
 
@@ -359,7 +365,9 @@ def check_for(messages: list[dict]):
 
     def run(data: dict) -> list[str]:
         errors = check(data)
-        if unfaithful(str(data.get("reason") or ""), messages):
+        # a "no" may name what the taste sets aside ("loin de …"): only a shown verdict ties the
+        # concert to an artist
+        if data.get("verdict") != "no" and unfaithful(str(data.get("reason") or ""), messages):
             errors.append(UNFAITHFUL)
         return errors
 

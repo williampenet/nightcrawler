@@ -243,7 +243,8 @@ def run_condition(
         r = judge_one(spec, judge.messages_for(case["concert"], artists, profile, ex), client)
         with lock:
             bad = r["error"] in FAILED_CALL or str(r["error"]).startswith("http_")
-            failed[0] = failed[0] + 1 if bad else 0
+            if r["error"] != "unfaithful":  # neither an outage nor a working call (as judging)
+                failed[0] = failed[0] + 1 if bad else 0
         return r
 
     with httpx.Client() as client, ThreadPoolExecutor(max_workers=workers) as pool:

@@ -124,6 +124,7 @@ def run(
     todo = todo[: ctx.calls]
     lock = threading.Lock()
     state = {"failed_in_a_row": 0}
+    rejected: list[str] = []  # concerts whose new reason was unfaithful (WIP-90)
     failures: Counter = Counter()
     tokens = Counter()
 
@@ -146,7 +147,10 @@ def run(
             if a.data is not None and not a.errors:
                 code = None
             elif a.data is not None and judge.UNFAITHFUL in a.errors:
-                code = "unfaithful"  # left unjudged: the page shows it in « Pour toi » (WIP-90)
+                # left unjudged, its stored verdict (older prompt or inputs) deleted below: the
+                # page shows it in « Pour toi », « pas encore jugé » (WIP-90)
+                code = "unfaithful"
+                rejected.append(c.id)
             else:
                 code = a.reason or "check"
         with lock:
@@ -176,7 +180,7 @@ def run(
         rows = [r for r in pool.map(one, todo) if r]
     try:
         with connect(database_url) as conn:
-            verdicts.save(conn, rows)
+            verdicts.save(conn, rows, delete=[cid for cid in rejected if cid in inputs.known])
             verdicts.update_sections(conn, refresh)
     except Exception as exc:
         return {"status": f"error: store write ({type(exc).__name__})", "unsaved": len(rows)}
@@ -187,6 +191,7 @@ def run(
         "cached": cached,
         "capped": capped,
         "sections_refreshed": len(refresh),
+        "unjudged_deleted": len([cid for cid in rejected if cid in inputs.known]),
         "failed": dict(failures),
         "ratings_used": dict(Counter(labels.values())),
         "tokens_in": tokens["in"],
