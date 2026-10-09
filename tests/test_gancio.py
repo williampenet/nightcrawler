@@ -75,8 +75,12 @@ def test_collect_fetches_details_only_when_needed(zone, tz, fixture_text):
         "/api/event/detail/dazzlingkillmen-us-pord-comte-zero",
         "/api/event/detail/atelier-velo",
     ]
-    assert len(paths) == len(set(paths)) == sum(1 for e in events if "/event/" in (e.url or ""))
-    assert all(e.description == "Soirée noise rock" for e in events if "/event/" in (e.url or ""))
+    # events whose tags drop them (théâtre) are never read: their text would be thrown away
+    read = [e for e in events if "/event/" in (e.url or "") and gancio.tag_reason(e.tags) != ""]
+    assert len(paths) == len(set(paths)) == len(read) == 7
+    assert all(e.description == "Soirée noise rock" for e in read)
+    theatre = next(e for e in events if gancio.tag_reason(e.tags) == "")
+    assert theatre.description is None and "/event/" in theatre.url
     dazz = next(e for e in events if e.title.startswith("DazzlingKillmen"))
     assert dazz.description == "Soirée noise rock"
 
@@ -309,10 +313,13 @@ def test_detail_order_cap_and_skips(tz, monkeypatch):
 
     later_unsure = ev("Rencontre", 20)  # title does not decide: needs the text to be kept
     soon_tagged = ev("Live", 6, tags=["concert"])
+    dropped = ev("Cie du rire", 6, tags=["théâtre"])  # its tags drop it: never read
     soon_concert = ev("Concert punk", 7)
     has_text = ev("Concert", 5, description="déjà là")
     no_link = ev("Concert", 5, url="https://g.example/place/1")
-    order = gancio.detail_order([soon_tagged, has_text, later_unsure, no_link, soon_concert])
+    order = gancio.detail_order(
+        [soon_tagged, dropped, has_text, later_unsure, no_link, soon_concert]
+    )
     assert order == [later_unsure, soon_tagged, soon_concert]
     monkeypatch.setattr(gancio, "MAX_DETAILS", 2)
     assert gancio.detail_order([soon_tagged, later_unsure, soon_concert]) == [

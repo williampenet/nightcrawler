@@ -46,17 +46,39 @@ OTHER_SHOW_WORDS = re.compile(
     r"|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
     re.IGNORECASE,
 )
+# The other-show words a description may still drop a title-kept event for (concert_reason)
+COMEDY_WORDS = re.compile(
+    r"\b(humour|humoriste|stand[- ]?up|seule? en sc[èe]ne|one[- ](wo)?man[- ]show)\b",
+    re.IGNORECASE,
+)
 OTHER_SHOW_TITLE_WORDS = re.compile(r"\bth[ée][âa]tre\b", re.IGNORECASE)  # often a venue name
 OTHER_SHOW_TYPES = {"TheaterEvent", "ComedyEvent"}
 
 
 def concert_reason(event: RawEvent, venue: Venue | None) -> str | None:
-    """Why this event counts as a concert, or None to drop it."""
+    """Why this event counts as a concert, or None to drop it.
+
+    Descriptions are read for the taste judge too (WIP-91), and a presentation often mentions
+    a workshop, an exhibition or improvisation in passing. So when the title (with the venue,
+    the source's trust, the types) already keeps the event, its description drops it only when
+    it presents a comedy show ("Paul Mirabel", "Seul en scène", WIP-72) without a strong music
+    word; when the title does not decide, the description settles it both ways, as before.
+    Recall first (William, 2026-10-09 07:02)."""
     if MUSIC_TYPES & set(event.types):
         return "schema.org type"
     if event.source == "ticketmaster":
         return "ticketing category: music"
-    text = " ".join(filter(None, (event.title, event.description)))
+    kept = _reason(event, venue, event.title)
+    if not event.description:
+        return kept
+    text = f"{event.title} {event.description}"
+    if kept:
+        comedy = COMEDY_WORDS.search(event.description)
+        return None if comedy and not STRONG_MUSIC_WORDS.search(text) else kept
+    return _reason(event, venue, text)
+
+
+def _reason(event: RawEvent, venue: Venue | None, text: str) -> str | None:
     types = set(event.types)
     activity = (
         ACTIVITY_WORDS.search(text)

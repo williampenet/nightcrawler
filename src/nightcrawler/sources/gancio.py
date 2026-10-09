@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from ..config import Zone
-from ..events import concert_reason, in_window
+from ..events import concert_reason, in_window, tag_reason
 from ..http import Fetcher, RobotsBlocked
 from ..lineup import description_acts
 from ..models import RawEvent, Venue
@@ -30,9 +30,10 @@ from ..structured import _text
 
 log = logging.getLogger(__name__)
 
-# per instance and per run (responses are cached 20 h by the fetcher); 186 Gancio events in
-# Pipeline 37918562968, so 120 per instance covers the window of each instance (unverified
-# per instance: the report counts events per source, not per instance)
+# per instance and per run. One instance is configured (config/zone.yaml), with 186 events in
+# the window of Pipeline 37918562968 and 110 published concerts: 120 covers the soonest ones,
+# not all (the WIP-89 content measure shows what stays title-only). The fetcher cache (20 h)
+# does not span two daily runs, so every run asks again.
 MAX_DETAILS = 120
 MAX_GEOCODE = 60  # places without coordinates, per run
 # French national address API (IGN Géoplateforme, BAN data): free, no key, public service
@@ -149,8 +150,13 @@ def needs_detail(ev: RawEvent) -> bool:
 
 def detail_order(events: list[RawEvent]) -> list[RawEvent]:
     """Events to read in detail, at most MAX_DETAILS: those whose kind needs the description
-    first, then every other one without a description (the judge's text), soonest first."""
-    linked = [e for e in events if e.url and "/event/" in e.url and not e.description]
+    first, then every other one without a description (the judge's text), soonest first.
+    Events whose tags already drop them (théâtre, atelier…) are never read."""
+    linked = [
+        e
+        for e in events
+        if e.url and "/event/" in e.url and not e.description and tag_reason(e.tags) != ""
+    ]
     first = sorted(filter(needs_detail, linked), key=lambda e: e.start)
     rest = sorted((e for e in linked if not needs_detail(e)), key=lambda e: e.start)
     return (first + rest)[:MAX_DETAILS]
