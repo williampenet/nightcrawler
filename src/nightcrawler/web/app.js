@@ -7,6 +7,7 @@ const S = window.NCScoring;
 const SP = window.NCSpotify;
 const FB = window.NCFeedback;
 const P = window.NCProfile;
+const V = window.NCVerdicts;
 const PKCE_KEY = "nightcrawler.pkce"; // sessionStorage: verifier + state during the redirect only
 let APP_CONFIG = {};
 const STORE_KEY = "nightcrawler.v1";
@@ -638,9 +639,44 @@ async function pushProfile() {
   syncAgain = false;
 }
 
+// ---------------------------------------------------------------- judge sections (WIP-86)
+// With a send key, the home sections and their reasons come from the judge (ADR-0007 §4–5):
+// GET /verdicts, a local copy shown at once and refreshed in the background (hides a cold
+// start). Without a key, with a refused key or with no verdicts: the rule-based tiers (WIP-53).
+let verdicts = null; // {generated_at, verdicts} as parsed by verdicts.js, or null
+let verdictsRun = 0; // id of the latest request; an older answer (key changed) is ignored
+const judgeOn = () => Boolean(V && profileOn() && V.hasVerdicts(verdicts));
+
+async function startVerdicts() {
+  if (!V || !profileOn()) return;
+  const run = ++verdictsRun;
+  const got = await V.pull(V.verdictsUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  if (run !== verdictsRun) return;
+  const next = V.afterPull(got, verdicts); // the decision is pure and tested (verdicts.js)
+  if (next.store !== "keep") fbStore(() => V.save(localStorage, next.show));
+  if (JSON.stringify(next.show) === JSON.stringify(verdicts)) return;
+  verdicts = next.show;
+  rerender();
+}
+
+// The copy is dropped (in memory and in this browser) and an answer in flight is ignored.
+function dropVerdicts() {
+  verdictsRun++;
+  verdicts = null;
+  if (V) fbStore(() => V.save(localStorage, null));
+}
+
+// A new or cleared key: the copy read with the previous key is dropped, then read again.
+function resetVerdicts() {
+  dropVerdicts();
+  rerender();
+  startVerdicts();
+}
+
 window.addEventListener("online", () => {
   flushFeedback();
   if (!profileOn()) return;
+  startVerdicts();
   if (syncedJson === null) startSync();
   else if (sync.dirty) {
     clearTimeout(syncTimer);
@@ -651,6 +687,17 @@ window.addEventListener("online", () => {
 
 // rows the listener can see: not inside a collapsed "Tout voir" (WIP-53)
 const visibleRows = () => [...document.querySelectorAll("#concerts li")].filter((r) => !r.closest("[hidden]"));
+
+// Render again after a background change. The focused row and a shared concert stay
+// reachable: if either now lands in the collapsed "Tout voir", it is opened first.
+function rerender() {
+  const a = document.activeElement;
+  const row = a && a.closest ? a.closest("#concerts li") : null;
+  const wanted = [row && row.dataset.id, deepLinkId].filter(Boolean);
+  if (wanted.length && restIds().some((id) => wanted.includes(id))) showAll = true;
+  render();
+  if (row) refocus(row.dataset.id);
+}
 
 // keep keyboard users where they were: the first wanted row still visible (in the order
 // given), else the first button of the list
@@ -743,7 +790,20 @@ function listenButton(c, body) {
   return b;
 }
 
-function concertRow(c, match, showDate) {
+// The judge's reason under a concert (WIP-86): model output, set as text only, with a visible
+// "IA" label and its meaning for screen readers (EU AI Act, ADR-0007 Security).
+function judgeLine(judged) {
+  if (!judged || (!judged.v && !judged.unjudged)) return null;
+  if (judged.unjudged) return el("span", "pas encore jugé", "judge muted");
+  const line = el("span", null, "judge");
+  const ai = el("span", "IA", "badge ai");
+  ai.title = "Raison écrite par un modèle d'IA d'après « Mon goût en mots ».";
+  ai.setAttribute("aria-hidden", "true");
+  line.append(ai, el("span", "Raison écrite par IA : ", "visually-hidden"), el("span", judged.v.reason));
+  return line;
+}
+
+function concertRow(c, match, showDate, judged) {
   const li = el("li");
   li.dataset.id = c.id;
   const start = new Date(c.start);
@@ -759,11 +819,16 @@ function concertRow(c, match, showDate) {
     const perf = names.length ? names : c.performers || [];
     if (perf.length) body.append(el("span", perf.join(" · "), "performers"));
   }
-  if (match.reason) {
+  const judge = judgeLine(judged);
+  if (judge) body.append(judge);
+  // With the judge's reason (WIP-86), the rule-based reason and badge are not shown; only the
+  // "Mauvais rapprochement" action stays, named with the guess it refers to.
+  const contest = match.inferred && match.artist;
+  if (match.reason && (!judge || contest)) {
     const why = el("span", null, "why");
-    why.append(el("span", match.reason));
-    if (match.discovery) why.append(el("span", "Découverte", "badge"));
-    if (match.inferred && match.artist) {
+    if (!judge) why.append(el("span", match.reason));
+    if (!judge && match.discovery) why.append(el("span", "Découverte", "badge"));
+    if (contest) {
       // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
       const wrong = button("Mauvais rapprochement", "linkish", () => {
         if (c.id === deepLinkId) deepLinkId = null;
@@ -776,6 +841,11 @@ function concertRow(c, match, showDate) {
         refocus(c.id, next);
         setStatus("Noté : ce rapprochement ne sera plus utilisé.");
       });
+      if (judge) {
+        // the guess is not shown: the name carries it (starts with the visible text)
+        wrong.title = `Mauvais rapprochement : ${match.reason}`;
+        wrong.setAttribute("aria-label", wrong.title);
+      }
       why.append(wrong);
     }
     body.append(why);
@@ -833,7 +903,7 @@ function tierSection(root, id, title, items, empty) {
   }
   const ul = el("ul", null, "concerts");
   ul.setAttribute("aria-labelledby", id);
-  for (const x of items) ul.append(concertRow(x.c, x.m, true));
+  for (const x of items) ul.append(concertRow(x.c, x.m, true, x));
   root.append(ul);
 }
 
@@ -848,12 +918,29 @@ function renderTiers(root, list) {
   const suffix = filtering ? " pour ces filtres." : ".";
   tierSection(root, "tier-sure", "Sûrs", sure, "Aucun concert d'un artiste que tu écoutes, ni d'un artiste ou d'un concert que tu as aimé" + suffix);
   tierSection(root, "tier-discover", "À découvrir", discover, "Aucun rapprochement" + suffix);
+  renderRest(root, rest, !sure.length && !discover.length);
+}
+
+// The judge's sections (WIP-86, PRD FR-6): "À ne pas rater", "Pour toi" (with the concerts not
+// judged yet), "Découvertes", each in the list's order (by date), then "Tout voir" as above.
+function renderJudged(root, list) {
+  const sec = V.sectionsFor(list, verdicts.verdicts);
+  const filtering = state.when !== "all" || !!state.style || !!state.venue;
+  const suffix = filtering ? " pour ces filtres." : ".";
+  tierSection(root, "judge-must", "À ne pas rater", sec.ne_pas_rater, "Aucun concert à ne pas rater" + suffix);
+  tierSection(root, "judge-for-you", "Pour toi", sec.pour_toi, "Aucun concert pour toi" + suffix);
+  tierSection(root, "judge-discover", "Découvertes", sec.decouvertes, "Aucune découverte" + suffix);
+  renderRest(root, sec.tout_voir, !sec.ne_pas_rater.length && !sec.pour_toi.length && !sec.decouvertes.length);
+}
+
+// "Tout voir" (WIP-53): collapsed unless opened, or unless nothing is shown above it.
+function renderRest(root, rest, nothingAbove) {
   if (!rest.length) return;
   if (revealDeepLink && deepLinkId && rest.some((x) => x.c.id === deepLinkId)) showAll = true;
   revealDeepLink = false;
   // nothing above: "Tout voir" opens by itself, else the page would look empty while
   // the header counts N concerts. The listener can still close it until the next render.
-  let open = showAll || (!sure.length && !discover.length);
+  let open = showAll || nothingAbove;
   const box = el("div", null, "tier-rest");
   box.id = "tier-rest";
   box.hidden = !open;
@@ -875,7 +962,7 @@ function renderTiers(root, list) {
   if (state.sort === "me") {
     const ul = el("ul", null, "concerts");
     const sorted = [...rest].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start));
-    for (const x of sorted) ul.append(concertRow(x.c, x.m, true));
+    for (const x of sorted) ul.append(concertRow(x.c, x.m, true, x));
     box.append(ul);
   } else renderByDay(box, rest, "h3");
   root.append(box);
@@ -894,20 +981,31 @@ function renderByDay(root, list, tag) {
       ul = el("ul", null, "concerts");
       root.append(ul);
     }
-    ul.append(concertRow(x.c, x.m, false));
+    ul.append(concertRow(x.c, x.m, false, x));
   }
+}
+
+const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+
+// Ids render() would put in "Tout voir" now (WIP-86: used to open it before a re-render).
+function restIds() {
+  const profile = S.buildProfile(state, DATA.artists);
+  const list = scored(profile);
+  if (judgeOn()) return V.sectionsFor(list, verdicts.verdicts).tout_voir.map((x) => x.c.id);
+  return S.isEmpty(profile, DATA.concerts) ? [] : S.tiers(list).rest.map((x) => x.c.id);
 }
 
 function render() {
   const root = document.getElementById("concerts");
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
-  const list = filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+  const list = scored(profile);
   document.getElementById("count").textContent = `${list.length} concert${list.length > 1 ? "s" : ""}`;
   if (!list.length) {
     root.append(el("p", "Aucun concert pour ces filtres.", "muted"));
     return;
   }
+  if (judgeOn()) return renderJudged(root, list);
   // an empty profile keeps the views below unchanged
   if (!S.isEmpty(profile, DATA.concerts)) return renderTiers(root, list);
   if (state.sort === "me") {
@@ -1032,6 +1130,7 @@ function setupControls() {
       flushFeedback();
       showWhere();
       startSync();
+      resetVerdicts();
       showPending(); // a cleared key brings the warning back at once
     });
     document.getElementById("pending-key").addEventListener("click", askFeedbackKey);
@@ -1068,6 +1167,7 @@ function setupControls() {
       seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
       tasteText: "", tasteTextAt: Date.now(),
     });
+    dropVerdicts(); // this browser's copy of the judgements (the stored rows: separate ticket)
     saveState();
     box.value = "";
     taste.value = "";
@@ -1108,12 +1208,14 @@ async function main() {
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
     const m = DEEP_LINK_RE.exec(location.hash);
     deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
+    if (V && profileOn()) verdicts = fbStore(() => V.load(localStorage), null); // shown at once
     setupControls();
     setupSorter();
     render();
     renderSources(venues, report);
     renderAgendaCredits(report);
     focusDeepLink();
+    startVerdicts(); // refreshes the local copy in the background
     startSync(); // before the Spotify import, so an import is merged rather than overwritten
     finishSpotify().catch((err) => notify(`Import Spotify impossible : ${shortMessage(err)}`));
     flushFeedback(); // ratings left over from a previous visit
