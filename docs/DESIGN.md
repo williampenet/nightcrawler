@@ -97,6 +97,15 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
 
+## Compact rows (WIP-105, proposal awaiting the PM)
+
+After the PM's remark that the phone layout left much empty space and that the « voir plus » chevron was hard to see and tap:
+- A row is date column | text | actions column. « Écouter » becomes a 44px round button under the date; like and share are stacked on the right. The separate action line is gone.
+- Title, venue and reason form one tap area that opens the details (the title button's hit area is stretched over them; it keeps the disclosure semantics and shows its focus ring around the whole area). No chevron.
+- The list heading repeating the active tab is for screen readers only; a count line stays visible. Header on one line (wordmark 24px and date).
+- « Tout »: the three menus on one line (« A → Z », « Styles », « Lieux »).
+- Measured at 375px on the QA data set (same 7 concerts, all dates): list height 1,433 → 1,130px; the first concert starts at 159px instead of 266px (CSS pixels, Playwright).
+
 ## Home screen (WIP-95, behaviour revised in WIP-102)
 
 After the PM's test on his phone (2026-10-09, 17:08):

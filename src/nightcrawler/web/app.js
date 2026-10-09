@@ -813,7 +813,6 @@ const ICONS = {
   share: '<path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
-  chevron: '<path d="M6 9l6 6 6-6"/>',
 };
 function icon(name, size) {
   const svg = document.createElementNS(SVG_NS, "svg");
@@ -834,13 +833,12 @@ function iconButton(name, label, size, onClick) {
 function listenButton(c, slot) {
   const a = (c.artists || []).map((k) => DATA.artists[k]).find((x) => x && x.deezer_id);
   if (!a || !/^[0-9]+$/.test(String(a.deezer_id))) return null; // no extract: no button
-  const label = el("span", "Écouter");
-  const b = button("", "listen", () => {
+  // round 44px button under the date (WIP-105): the row needs no action line of its own
+  const b = iconButton("play", `Écouter ${a.name}`, 16, () => {
     const open = slot.querySelector("iframe");
     if (open) {
       open.remove();
-      label.textContent = "Écouter";
-      b.replaceChild(icon("play", 12), b.firstChild);
+      b.replaceChild(icon("play", 16), b.firstChild);
       b.setAttribute("aria-expanded", "false");
       return;
     }
@@ -853,12 +851,13 @@ function listenButton(c, slot) {
     f.referrerPolicy = "no-referrer";
     f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
     slot.append(f);
-    label.textContent = "Fermer";
-    b.replaceChild(icon("close", 12), b.firstChild);
+    b.replaceChild(icon("close", 16), b.firstChild);
     b.setAttribute("aria-expanded", "true");
   });
-  b.append(icon("play", 12), label);
+  b.classList.add("play");
+  b.title = "Écouter un extrait (Deezer)";
   b.setAttribute("aria-expanded", "false");
+  b.setAttribute("aria-controls", slot.id);
   return b;
 }
 
@@ -927,35 +926,34 @@ function detailsPanel(x, item) {
 }
 
 // Title as a disclosure button (WAI-ARIA APG Disclosure pattern,
-// https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) opening the details panel.
+// https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) opening the details panel. Its hit area is
+// stretched over title, venue and reason (style.css .sum), so the whole text opens the details
+// (WIP-105: the chevron was too small to see and tap).
 function titleButton(c, panel, cls) {
   const h = el("h3", null, cls);
   const b = button(c.title, "title-btn", () => {
     const open = panel.hidden;
     panel.hidden = !open;
-    b.setAttribute("aria-expanded", String(open)); // the chevron turns with it (style.css)
+    b.setAttribute("aria-expanded", String(open));
     if (open) openIds.add(c.id);
     else openIds.delete(c.id);
   });
   b.setAttribute("aria-expanded", String(!panel.hidden));
   b.setAttribute("aria-controls", panel.id);
-  b.append(icon("chevron", 16));
   h.append(b);
   return h;
 }
 
-function actionBar(x, item, slot) {
+// Like and share, stacked in the row's right column (WIP-105).
+function sideActions(x, item) {
   const c = x.c;
-  const bar = el("div", null, "actions");
-  const listen = listenButton(c, slot);
-  if (listen) bar.append(listen);
-  bar.append(el("span", null, "sp"));
+  const side = el("div", null, "side");
   const liked = S.isLiked(state, c);
   const like = iconButton("heart", "J'aime", 18, () => feedback(c, "like", item));
   like.setAttribute("aria-pressed", String(liked));
   if (liked) like.classList.add("on");
-  bar.append(like, iconButton("share", "Partager", 18, () => share(c)));
-  return bar;
+  side.append(like, iconButton("share", "Partager", 18, () => share(c)));
+  return side;
 }
 
 // Venue and line-up; a listing read by a language model says so (ADR-0004, WIP-66, EU AI Act).
@@ -984,16 +982,21 @@ function concertRow(x) {
   date.append(el("span", dayFmt.format(d) + (t === "00:00" ? "" : ` à ${t}`), "visually-hidden"));
   const body = el("div", null, "body");
   const panel = detailsPanel(x, li);
+  const slot = el("div", null, "slot");
+  slot.id = `slot-${panelSeq}`; // same number as the panel's id
+  const listen = listenButton(c, slot);
+  if (listen) date.append(listen);
+  // title, venue and reason: one tap area opening the details
+  const sum = el("div", null, "sum");
+  if (x.must) sum.append(el("p", "À ne pas rater", "must-label")); // the fill alone would be colour only
   const head = el("div", null, "head");
   head.append(titleButton(c, panel, "row-title"));
   if (NEW_IDS.has(c.id)) head.append(newBadge());
-  const slot = el("div", null, "slot");
-  if (x.must) body.append(el("p", "À ne pas rater", "must-label")); // the fill alone would be colour only
-  body.append(head, venueLine(c));
+  sum.append(head, venueLine(c));
   const why = reasonLine(x);
-  if (why) body.append(why);
-  body.append(actionBar(x, li, slot), panel, slot);
-  li.append(date, body);
+  if (why) sum.append(why);
+  body.append(sum, panel, slot);
+  li.append(date, body, sideActions(x, li));
   return li;
 }
 
@@ -1050,8 +1053,10 @@ function seeAll(root, n) {
   root.append(b);
 }
 
+// The list's heading repeats the active tab, so it is for screen readers only (WIP-105: the
+// first screen was mostly header); the visible line is the count.
 function heading(root, id, text, sub) {
-  const h = el("h2", text);
+  const h = el("h2", text, "visually-hidden");
   h.id = id;
   root.append(h);
   if (sub) root.append(el("p", sub, "section-sub"));
@@ -1118,12 +1123,14 @@ function render() {
   if (view === "pour_toi") return renderPourToi(root, picks, list.length);
   if (view === "nouveaux") {
     const fresh = items.filter((x) => NEW_IDS.has(x.c.id));
-    heading(root, "sec-new", "Nouveaux depuis ta dernière visite");
+    heading(root, "sec-new", "Nouveaux depuis ta dernière visite",
+      fresh.length ? `${fresh.length} nouveau${fresh.length > 1 ? "x" : ""} depuis ta dernière visite` : null);
     if (!fresh.length) root.append(el("p", "Rien de nouveau depuis ta dernière visite.", "muted empty"));
     else root.append(rowList(fresh, "sec-new"));
     return;
   }
-  heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts");
+  heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts",
+    `${items.length} concert${items.length > 1 ? "s" : ""}`);
   // A → Z by default (WIP-102); « Par date » keeps the data's order
   const sorted =
     state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start))
@@ -1233,8 +1240,8 @@ function setupControls() {
     });
   state.sort = "az"; // « Tout » opens A → Z on every load (WIP-102)
   fillSelect("sort", [["az", "A → Z"], ["date", "Par date"], ["me", "Pour moi"]], state.sort);
-  fillSelect("style", [["", "Tous les styles"], ...styles], state.style);
-  fillSelect("venue", [["", "Tous les lieux"], ...venues], state.venue);
+  fillSelect("style", [["", "Styles"], ...styles], state.style);
+  fillSelect("venue", [["", "Lieux"], ...venues], state.venue);
   for (const [id, key] of [["sort", "sort"], ["style", "style"], ["venue", "venue"]]) {
     bind(id, key);
     state[key] = document.getElementById(id).value; // a saved value that no longer exists resets
@@ -1331,6 +1338,7 @@ function setupControls() {
     if (m) {
       deepLinkId = S.currentIds(DATA.concerts, [m[1]])[0] || null;
       if (deepLinkId) openDeepLink();
+      else showBanner("Ce concert est passé ou n'est plus annoncé.", "info");
     }
     showRoute(true);
     if (m && deepLinkId) focusDeepLink();

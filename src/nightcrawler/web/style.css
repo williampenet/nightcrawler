@@ -14,17 +14,17 @@ body {
 /* --- home screen (WIP-95): artboard PisteB of the canvas, components of the design system --- */
 body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); } /* room for the tab bar */
 html { scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); } /* focus never under the bar */
-header.top { padding: var(--space-6) 0 6px; }
-.wordmark { margin: 0; font: 800 28px/1 var(--font-display); letter-spacing: -0.02em; }
+header.top { padding: var(--space-3) 0 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-3); }
+.wordmark { margin: 0; font: 800 24px/1.1 var(--font-display); letter-spacing: -0.02em; }
 .wordmark .dot { color: var(--accent); } /* decoration: the name is read as text */
-.meta { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--ink-muted); }
+.meta { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-muted); }
 .muted { color: var(--ink-muted); }
-h2 { margin: var(--space-7) 0 var(--space-1); font: 800 26px/1.15 var(--font-display); letter-spacing: -0.01em; }
+h2 { margin: 20px 0 var(--space-1); font: 800 26px/1.15 var(--font-display); letter-spacing: -0.01em; }
 h2:focus { outline: none; }
 h2:focus-visible { outline: 3px solid var(--ink); }
 
 /* ViewTabs */
-.views { display: flex; flex-wrap: wrap; gap: 6px; padding-top: var(--space-3); }
+.views { display: flex; flex-wrap: wrap; gap: 6px; padding-top: var(--space-2); }
 .views button {
   font: 400 15px/1.3 var(--font-body); min-height: 40px; padding: 0 16px; border: 0; border-radius: 20px;
   background: var(--surface); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
@@ -32,7 +32,7 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .views button[aria-current] { background: var(--ink); color: var(--on-ink); font-weight: 600; }
 .views .count { font-size: 13px; color: var(--ink-muted); }
 .views button[aria-current] .count { color: var(--on-ink); }
-.periods { display: flex; flex-wrap: wrap; column-gap: 18px; padding: var(--space-2) 0 var(--space-1); }
+.periods { display: flex; flex-wrap: wrap; column-gap: 18px; padding: 2px 0 0; }
 .periods button {
   font: 400 15px/1.3 var(--font-body); min-height: var(--touch-target); padding: 0; border: 0; background: none;
   color: var(--ink-muted); cursor: pointer; border-bottom: 3px solid transparent;
@@ -40,80 +40,77 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .periods button[aria-current] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
 
 /* sections */
-.section-sub { margin: 2px 0 var(--space-1); font-size: 14px; color: var(--ink-muted); }
+.section-sub { margin: var(--space-2) 0 0; font-size: 13px; color: var(--ink-muted); }
 .empty { margin: var(--space-6) 0; }
 ul.rows { list-style: none; margin: 0; padding: 0; }
 
-/* ConcertRow */
+/* ConcertRow, compact (WIP-105): date column (with « Écouter » under it) | text | like and share
+   stacked; no action line, so a row is as tall as its text */
 li.crow {
-  display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: var(--space-4);
-  padding: var(--space-4) 0 6px; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) var(--touch-target); column-gap: var(--space-3);
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--line); align-items: start;
 }
 .date { display: flex; flex-direction: column; align-items: center; padding-top: 2px; }
 .date .wd { font-size: 11px; font-weight: 700; line-height: 1.3; letter-spacing: 0.04em; color: var(--accent-ink); }
 .date .num { font: 800 26px/1 var(--font-display); }
 .date .hour { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.date button.play { margin-top: 6px; background: var(--ink); color: var(--on-ink); }
+.body { display: flex; flex-direction: column; min-width: 0; }
+.side { display: flex; flex-direction: column; margin-top: -10px; } /* icons optically level with the title */
+/* title, venue and reason: one tap area; the title button's ::after covers it */
+.sum { position: relative; display: flex; flex-direction: column; gap: 2px; border-radius: 8px; }
+.sum:active { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.title-btn::after { content: ""; position: absolute; inset: -4px; border-radius: 8px; }
+.title-btn:focus-visible { outline: none; }
+.title-btn:focus-visible::after { outline: 3px solid var(--ink); }
 .head { display: flex; gap: var(--space-2); align-items: flex-start; justify-content: space-between; }
-h3.row-title { margin: 0; font: 600 19px/1.15 var(--font-display); min-width: 0; }
-.crow .venue { margin: 0; font-size: 14px; color: var(--ink-muted); overflow-wrap: anywhere; }
+h3.row-title { margin: 0; font: 600 18px/1.2 var(--font-display); min-width: 0; }
+.crow .venue { margin: 0; font-size: 14px; line-height: 1.35; color: var(--ink-muted); overflow-wrap: anywhere; }
 .new {
   flex: none; font-size: 12px; font-weight: 700; line-height: 1.45; border-radius: var(--radius-md);
   padding: 2px 8px; background: var(--accent); color: var(--ink);
 }
-/* title = disclosure button (details until the concert page, WIP-96): looks like the title */
+/* the title is a disclosure button (details until the concert page, WIP-96): looks like the title */
 .title-btn {
   font: inherit; letter-spacing: inherit; color: inherit; text-align: left; background: none; border: 0;
-  padding: 0; margin: 0; cursor: pointer; overflow-wrap: anywhere; min-height: 24px;
+  padding: 0; margin: 0; cursor: pointer; overflow-wrap: anywhere;
 }
-.title-btn:hover { text-decoration: underline; text-decoration-thickness: 2px; }
-.title-btn svg { display: inline-block; margin-left: 4px; vertical-align: middle; color: var(--ink-muted); transition: transform 0.15s; }
-.title-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
-@media (prefers-reduced-motion: reduce) { .title-btn svg { transition: none; } }
+.sum:hover .title-btn { text-decoration: underline; text-decoration-thickness: 2px; }
 .ai-read { white-space: nowrap; }
 
-/* « À ne pas rater » row (WIP-102): the accent fill of the MustSeeCard, on a row; every text in
-   ink (9.9:1 on accent), the fill is doubled by the « À ne pas rater » label */
+/* « À ne pas rater » row (WIP-102): the accent fill, every text in ink (9.9:1 on accent), the
+   fill doubled by the « À ne pas rater » label */
 li.crow.must {
   background: var(--accent); border-radius: var(--radius-lg); border-bottom-color: transparent;
-  padding: var(--space-4) var(--space-3) 6px; margin: var(--space-2) 0;
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-2); margin: var(--space-2) 0;
 }
 .must-label { margin: 0; font-size: 11px; font-weight: 700; line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase; }
 .crow.must .date .wd, .crow.must .date .hour, .crow.must .venue, .crow.must .reason,
-.crow.must .reason.muted, .crow.must button.listen, .crow.must button.icon, .crow.must .title-btn svg,
-.crow.must .more, .crow.must .more a, .crow.must .muted { color: var(--ink); }
+.crow.must button.icon, .crow.must .more, .crow.must .more a, .crow.must .muted { color: var(--ink); }
+.crow.must .date button.play { color: var(--on-ink); }
 .crow.must .new { background: var(--ink); color: var(--on-ink); }
-.crow.must :focus-visible { outline-color: var(--ink); }
-
+.crow.must :focus-visible, .crow.must .title-btn:focus-visible::after { outline-color: var(--ink); }
 
 /* ReasonTag + sentence: never truncated */
 .reason {
-  margin: var(--space-1) 0 0; display: flex; gap: var(--space-2); align-items: baseline;
-  font-size: 14px; line-height: 1.45; color: var(--ink-soft); overflow-wrap: anywhere;
+  margin: 2px 0 0; display: flex; gap: var(--space-2); align-items: baseline;
+  font-size: 14px; line-height: 1.4; color: var(--ink-soft); overflow-wrap: anywhere;
 }
 .reason > span:last-child { min-width: 0; }
-.reason.muted { color: var(--ink-muted); }
 .tag {
   flex: none; font-size: 11px; font-weight: 700; line-height: 1.3; letter-spacing: 0.04em;
   padding: 1px 6px; border-radius: var(--radius-sm); background: var(--ink); color: var(--on-ink);
 }
 
-/* actions: ListenButton, like, share */
-.actions { display: flex; align-items: center; }
-.crow .actions { margin-left: -10px; }
-.actions .sp { flex: 1; }
+/* icon buttons: like, share, listen */
 button.icon {
   width: var(--touch-target); height: var(--touch-target); border: 0; padding: 0; background: transparent;
   color: var(--ink-muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-pill); position: relative; /* above the stretched text area */
 }
 button.icon.on svg { fill: currentColor; }
 .crow button.icon.on { color: var(--ink); }
-button.listen {
-  height: var(--touch-target); padding: 0 10px; border: 0; background: transparent; color: var(--accent-ink);
-  font: 700 14px/1 var(--font-body); display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-}
-.more { padding: var(--space-1) 0; font-size: 14px; }
+.more { padding: var(--space-2) 0 0; font-size: 14px; }
 .more[hidden] { display: none; }
 .links { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); margin: 0; }
 .more .links a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
@@ -155,8 +152,9 @@ textarea, input, select {
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
 .row input { flex: 1 1 140px; min-width: 0; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 var(--space-1); }
-.toolbar select { max-width: 100%; }
+/* « Tout » menus on one line (WIP-105) */
+.toolbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin: var(--space-3) 0 var(--space-1); }
+.toolbar select { width: 100%; min-width: 0; font-size: 14px; padding: 6px 4px; }
 .toolbar[hidden] { display: none; }
 button.primary, button.ghost {
   font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; border-radius: var(--radius-pill);
@@ -174,12 +172,12 @@ iframe.player { width: 100%; height: 300px; border: 0; margin-top: var(--space-2
 
 /* --- shared link to a concert (WIP-29) --- */
 li.crow.target {
-  margin: 0 -10px; padding: var(--space-4) 10px 6px; border-radius: 10px;
+  margin: 0 -8px; padding: var(--space-3) 8px; border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 30%, var(--ground)); outline: none;
 }
 /* a shared must-see row keeps its fill and layout (same specificity, so declared after) */
 li.crow.must.target {
-  background: var(--accent); margin: var(--space-2) 0; padding: var(--space-4) var(--space-3) 6px;
+  background: var(--accent); margin: var(--space-2) 0; padding: var(--space-3) var(--space-2);
   border-radius: var(--radius-lg); outline: 3px solid var(--ink); outline-offset: 2px;
 }
 
