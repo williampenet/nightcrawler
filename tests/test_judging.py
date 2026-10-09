@@ -143,3 +143,19 @@ def test_section_matches_the_stored_check():
     for v, ok in allowed.items():
         for conf in (0, 29, 30, 100):
             assert judge.section({"verdict": v, "confidence": conf}) in ok
+
+
+def test_an_unexpected_error_keeps_the_other_judgements(monkeypatch, task):
+    saved: dict = {}
+    connect = setup(monkeypatch, verdicts.Inputs(profile={"taste_text": "Funk"}), saved)
+    n = {"i": 0}
+
+    def flaky(*a):
+        n["i"] += 1
+        if n["i"] == 1:
+            raise KeyError("boom")
+        return answer()
+
+    monkeypatch.setattr(judging, "WORKERS", 1)
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, flaky)
+    assert rep["failed"] == {"error": 1} and rep["judged"] == 2 and len(saved["rows"]) == 2

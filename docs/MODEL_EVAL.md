@@ -424,4 +424,6 @@ run-to-run variation.
   as accepted (recall first).
 - Shown recall along the learning curve: 1/3 of the ratings 78–79 %, 2/3 79–86 %, all 85 %; one
   run, inside the noise.
+- Valid 98–100 % (HTTP 429 rate limits: 1 to 5 per condition, retried by `llm.chat_json` then
+  counted as unusable); p95 ≤ 1.3 s; €0.278–0.28 per 1,000 judgements.
 

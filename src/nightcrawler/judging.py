@@ -76,7 +76,6 @@ def run(
     run_task: Callable = llm.run_task,
 ) -> dict:
     """Judges the concerts and saves the judgements; returns counts only (published report)."""
-    report: dict[str, Any] = {"status": "off"}
     if ctx is None or ctx.task is None:
         return {"status": "skipped: judge_taste not routed"}
     ok, why = ctx.task.primary.available()
@@ -139,6 +138,10 @@ def run(
         except llm.ModelError:
             code = "transport"
             a = None
+        except Exception as exc:  # one call never loses the run's other judgements
+            log.warning("judging: call failed (%s)", type(exc).__name__)
+            code = "error"
+            a = None
         else:
             code = None if a.data is not None and not a.errors else (a.reason or "check")
         with lock:
@@ -168,7 +171,7 @@ def run(
             verdicts.save(conn, rows)
             verdicts.update_sections(conn, refresh)
     except Exception as exc:
-        return {"status": f"error: store write ({type(exc).__name__})", "judged": len(rows)}
+        return {"status": f"error: store write ({type(exc).__name__})", "unsaved": len(rows)}
     report = {
         "status": "ok",
         "concerts": len(concerts),
