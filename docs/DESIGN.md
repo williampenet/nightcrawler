@@ -97,6 +97,13 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
 
+## Calendrier (WIP-97)
+
+Built from artboard Calendrier:
+- Title, month switcher (44px round arrows, disabled before the current month and after the last month with concerts), « Pour toi » / « Tout » toggle.
+- Monday-first grid (`web/calendar.js`, pure, tested): 44px day buttons, today outlined (2px ink), selected day filled ink; past days are plain text. One marker per day, the strongest of its concerts, told apart by shape: apricot bar outlined in ink = « À ne pas rater », filled dot = « Pour toi », ring = « Découverte »; legend under the grid. Each day button's name gives the date, « aujourd'hui », the marker and the number of concerts.
+- Under the grid, the selected day: heading (« Mardi 13 octobre », « 1er » for the first of the month), then its concerts: rows with the time in the date column, « À ne pas rater » as MustSeeCards. « Pour toi » shows the WIP-102 picks; « N autres concerts ce jour-là » switches to « Tout ». Changing month selects its first day still to come.
+
 ## MustSeeCard back (WIP-106)
 
 The PM rejected the compact-row proposal (WIP-105, PR #95 closed) and chose the design system's MustSeeCard from his screenshot (2026-10-09 22:19):
@@ -120,7 +127,7 @@ Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (se
 
 Deliberate gaps, each owned by a ticket:
 - The concert title is a disclosure button, marked by a chevron, opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96). « Lu par IA » stays visible on the venue line of rows and cards (ADR-0004, WIP-66).
-- « Calendrier » lists every concert day by day until the month grid of [WIP-97](https://linear.app/wip-coding/issue/WIP-97); « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98).
+- « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98) (« Calendrier »: done in WIP-97).
 - The artboard's search button is left out: search is not in the PRD.
 - Without a send key there is no judge, so « Découvertes » stays empty: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts`.
 - Style, venue and sort filters appear in « Tout » only, and apply there only.
