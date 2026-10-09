@@ -427,3 +427,18 @@ run-to-run variation.
 - Valid 98–100 % (HTTP 429 rate limits: 1 to 5 per condition, retried by `llm.chat_json` then
   counted as unusable); p95 ≤ 1.3 s; €0.278–0.28 per 1,000 judgements.
 
+
+### Runs after WIP-88 and WIP-90 (2026-10-09, routed `nn` only shown)
+
+| Run | Change | Shown recall (95 %) | Shown | À ne pas rater | Pour toi | Valid | €/1,000 |
+|---|---|---|---|---|---|---|---|
+| [37913091813](https://github.com/williampenet/nightcrawler/actions/runs/37913091813) | known artists (WIP-88) | 87 % (79–93 %) | 54 % | 54 % on 13 | 43 % on 42 | 100 % | 0.28 |
+| [37934651876](https://github.com/williampenet/nightcrawler/actions/runs/37934651876) | venue texts (WIP-91/92) + faithful reasons (WIP-90) | 86 % (77–92 %) | 55 % | 67 % on 3 | 42 % on 50 | 90 % | 0.295 |
+
+- **Gate passed** on both runs (≥ 85 %).
+- Run 37934651876 carries two changes at once: 124 of 196 cases now have the listing's description (88 before), and the prompt has the WIP-90 rule. The effects below cannot be split between them (**unverified**).
+- **Rejected reasons:** 19 of 196 `nn` answers were `unfaithful` (10 %). They count as shown in « Pour toi », as on the page. Whether they were true or false rejections is **unverified**: the eval publishes counts only.
+- **« À ne pas rater » shrank from 13 to 3 rated concerts.** The model gives fewer `must_see` since the change; the cause is not established (**unverified**). The sections check (ADR-0006) cannot conclude on 3 concerts.
+- In production the same day ([Pipeline 37934651881](https://github.com/williampenet/nightcrawler/actions/runs/37934651881)), 377 concerts were re-judged with the new prompt and texts:
+  - 31 reasons rejected (8 %); their old judgements were deleted;
+  - 9 transport failures.
