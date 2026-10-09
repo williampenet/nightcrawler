@@ -147,7 +147,9 @@ def test_gancio_a_and_b(zone, tz):
         200, json={"description": description}
     )
     z = replace(zone, gancio_instances=({"name": "Ville Morte", "url": base},))
-    venues, events, status = gancio.collect(z, fetcher(), NOW.replace(tzinfo=tz), tz)
+    f = fetcher()
+    venues, events, status = gancio.collect(z, f, NOW.replace(tzinfo=tz), tz)
+    assert gancio.fetch_details(z, f, events) == []
     assert status == "ok" and events[0].performers == []
     assert events[0].billed == ["Tomoyuki Aoki & Harutaka Mochizuki"]
     (c,) = build(events, tz, venues)

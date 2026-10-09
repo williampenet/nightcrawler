@@ -71,6 +71,7 @@ class Fetcher:
         self._robots: dict[str, RobotFileParser | None] = {}
         self._last_hit: dict[str, float] = {}
         self._host_locks: dict[str, threading.Lock] = {}
+        self._robots_locks: dict[str, threading.Lock] = {}  # one robots.txt fetch per base
         self._lock = threading.Lock()
         self._prune_cache()
 
@@ -152,25 +153,37 @@ class Fetcher:
         base = f"{parts.scheme}://{parts.netloc}"
         with self._lock:
             known = base in self._robots
+            base_lock = self._robots_locks.setdefault(base, threading.Lock())
         if not known:
-            parser: RobotFileParser | None = None
-            try:
-                r = self.get(base + "/robots.txt", check_robots=False)
-                if r.status == 200 and "html" not in r.content_type:
-                    parser = RobotFileParser()
-                    parser.parse(r.text.splitlines())
-                    self._honour_crawl_delay(parts.netloc.lower(), parser)
-                elif r.status >= 500:  # RFC 9309: server error means disallow all
-                    parser = RobotFileParser()
-                    parser.disallow_all = True
-            except httpx.HTTPError:
-                parser = None  # unreachable robots.txt: the page fetch will fail on its own
-            with self._lock:
-                self._robots[base] = parser
+            # threads reaching a cold host together wait here for the first one's fetch and
+            # Crawl-delay, rather than each fetching robots.txt at the default interval
+            with base_lock:
+                with self._lock:
+                    known = base in self._robots
+                if not known:
+                    parser = self._fetch_robots(base, parts.netloc.lower())
+                    with self._lock:
+                        self._robots[base] = parser
         parser = self._robots[base]
         return True if parser is None else parser.can_fetch(USER_AGENT, url)
 
     # -- internals ----------------------------------------------------------
+
+    def _fetch_robots(self, base: str, host: str) -> RobotFileParser | None:
+        try:
+            r = self.get(base + "/robots.txt", check_robots=False)
+        except httpx.HTTPError:
+            return None  # unreachable robots.txt: the page fetch will fail on its own
+        if r.status == 200 and "html" not in r.content_type:
+            parser = RobotFileParser()
+            parser.parse(r.text.splitlines())
+            self._honour_crawl_delay(host, parser)
+            return parser
+        if r.status >= 500:  # RFC 9309: server error means disallow all
+            parser = RobotFileParser()
+            parser.disallow_all = True
+            return parser
+        return None
 
     def _honour_crawl_delay(self, host: str, parser: RobotFileParser) -> None:
         """`Crawl-delay` for our agent (or `*`) widens this host's interval (La Rayonne asks

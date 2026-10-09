@@ -59,7 +59,7 @@ def test_horizon_bound_is_the_extract_bound(tz):
     # the run ends at now + 400 days (22:00): a 20:00 concert that day is in, the next day out
     assert in_window(_ev(tz, last), now, ZONE.window_days)
     assert not in_window(_ev(tz, after), now, ZONE.window_days)
-    text = f"{last.day} {['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'][last.month]}\nDuo Esperanza"  # noqa: E501
+    text = f"{last.day} {['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'][last.month]} {last.year}\nDuo Esperanza"  # noqa: E501 (the year is written: a date that far needs it)
     ev = {"title": "Duo Esperanza", "date": last.isoformat(), "time": None, "performers": [],
           "is_concert": True}  # fmt: skip
     assert grounded(ev, text, today)[0] is not None
@@ -87,6 +87,39 @@ def test_ticketmaster_and_gancio_ask_for_the_horizon(tz):
     assert p["endDateTime"] == "2027-11-13T21:00:00Z"  # now + 400 days, in UTC
     g = gancio.window_params(ZONE, _now(tz))
     assert int(g["end"]) == int(datetime(2027, 11, 14, tzinfo=tz).timestamp())
+
+
+def _rayonne(today, day_month, title="Didier Super Metal"):
+    return f"Agenda\n{day_month} - à partir de 19h - {title}\nMusique / Programmation"
+
+
+def test_yearless_date_rolled_to_next_year_is_rejected():
+    """WIP-107 review: La Rayonne prints « jeu. 08 octobre » with no year; read on 10 Oct 2026,
+    the prompt's "next occurrence" rule gives 2027-10-08, which the 400-day bound would keep."""
+    today = date(2026, 10, 10)
+    text = _rayonne(today, "jeu. 08 octobre")
+    ev = {"title": "Didier Super Metal", "date": "2027-10-08", "time": "19:00",
+          "performers": [], "is_concert": True}  # fmt: skip
+    assert grounded(ev, text, today) == (None, "year-less date rolled over")
+    # the same page's next event, a few weeks ahead, is kept
+    soon = _rayonne(today, "jeu. 12 novembre")
+    assert grounded(ev | {"date": "2026-11-12"}, soon, today)[1] == "ok"
+    # ~10 months ahead without a year: still kept (seasons are announced that far)
+    later = _rayonne(today, "sam. 31 juillet")
+    assert grounded(ev | {"date": "2027-07-31"}, later, today)[1] == "ok"
+
+
+def test_far_date_with_its_year_written_is_kept():
+    """A date far ahead is fine when the page writes its year (Trinité / Mapado: « Jeu. 12 nov.
+    2026 à 20:00 »): a big announcement a year out must not be lost."""
+    today = date(2026, 10, 10)
+    text = "Billetterie\nVen. 8 oct. 2027 à 20:00\nDidier Super Metal\nRéserver"
+    ev = {"title": "Didier Super Metal", "date": "2027-10-08", "time": "20:00",
+          "performers": [], "is_concert": True}  # fmt: skip
+    assert grounded(ev, text, today)[1] == "ok"
+    # a year written for another date does not count: 2028 is not 2027
+    other = text.replace("2027", "2028")
+    assert grounded(ev, other, today) == (None, "year-less date rolled over")
 
 
 # -- caps -----------------------------------------------------------------------------------
@@ -131,15 +164,12 @@ def test_gancio_detail_cap_is_in_the_status(zone, tz, fixture_text, monkeypatch)
     z = replace(zone, gancio_instances=({"name": "Test", "url": base},))
     fetcher = Fetcher(cache_dir=None, min_interval=0)
     _, events, status = gancio.collect(z, fetcher, _now(tz).replace(month=10, day=5), tz)
+    assert status == "ok" and detail.call_count == 0  # one path: fetch_details
     wanted = len(gancio.detail_order(events, cap=len(events)))
+    notes = gancio.fetch_details(z, fetcher, events)
     assert wanted > 2 and detail.call_count == 2
-    assert status == f"ok; Test: detail_cap: 2 of {wanted}"
-    assert completeness.cap_notes(status) == ["detail_cap"]
-    # details=False reads none; fetch_details reads them later with the same cap and note
-    _, events, status = gancio.collect(z, fetcher, _now(tz).replace(month=10, day=5), tz, False)
-    assert status == "ok" and detail.call_count == 2
-    assert gancio.fetch_details(z, fetcher, events) == [f"Test: detail_cap: 2 of {wanted}"]
-    assert detail.call_count == 4
+    assert notes == [f"Test: detail_cap: 2 of {wanted}"]
+    assert completeness.cap_notes("ok; " + notes[0]) == ["detail_cap"]
 
 
 @respx.mock
@@ -170,6 +200,7 @@ def test_cap_notes_by_kind():
         "page_cap", "detail_cap", "detail_run_cap", "llm_cap", "chunk_cap"]  # fmt: skip
     assert completeness.cap_notes("detail_cap: 400 of 512 links") == ["detail_cap"]
     assert completeness.cap_notes("ok; geocode_cap: 60 of 61") == ["geocode_cap"]
+    assert completeness.cap_notes("truncated") == ["truncated"]  # wp_json page over MAX_BYTES
     assert completeness.cap_notes("ok") == completeness.cap_notes(None) == []
 
 
@@ -242,3 +273,9 @@ def test_report_carries_completeness(tmp_path, zone, tz, fixture_text, monkeypat
     assert sum(r["concerts"] for r in m["by_source"].values()) >= report["concerts"]
     assert "| Cap hits | none |" in summary_markdown(report)
     assert "beyond" not in one_line(report)
+    d = report["durations"]
+    assert set(d) == {"collect", "enrich", "judge", "total"} and d["total"] >= d["collect"] >= 0
+    assert (
+        completeness.durations_text({"collect": 263.4, "total": 330}) == "collect=263s total=330s"
+    )
+    assert completeness.durations_text(None) == "-"

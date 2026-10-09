@@ -134,6 +134,13 @@ MONTHS = {
     12: "decembre|dec|december",
 }
 BEFORE, AFTER = 8, 4  # lines around the title where its date must be written
+# A date this far ahead must have its year written next to the title (WIP-107 review). The
+# prompt says "when the year is missing, pick the next occurrence on or after today", so an
+# event still listed the day after it took place on a year-less agenda (La Rayonne « jeu. 08
+# octobre », Le Périscope « Mercredi 07 oct ») comes back as the same day next year, ~360 days
+# ahead; the 60-day window used to hide that, the 400-day horizon does not. A real date that
+# far ahead on a year-less page is unlikely: seasons are announced up to about 10 months ahead.
+YEARLESS_MAX_DAYS = 300
 
 
 def plain(s: str) -> str:
@@ -179,6 +186,9 @@ def grounded(ev: dict, text: str, today: date) -> tuple[dict | None, str]:
     near = [w for w in windows if date_near(d, w)]
     if not near:
         return None, "date not next to title"
+    far = d > today + timedelta(days=YEARLESS_MAX_DAYS)
+    if far and not any(re.search(rf"(?<!\d){d.year}(?!\d)", w) for w in near):
+        return None, "year-less date rolled over"
     time = clean_time(ev.get("time"))
     flat = norm(" ".join(near))
     performers = []

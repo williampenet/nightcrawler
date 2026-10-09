@@ -64,6 +64,8 @@ def test_collect_fetches_details_only_when_needed(zone, tz, fixture_text):
     fetcher = Fetcher(cache_dir=None, min_interval=0)
     venues, events, status = gancio.collect(_zone(zone), fetcher, _now(tz), tz)
     assert status == "ok" and len(venues) == 5 and len(events) == 8
+    assert detail.call_count == 0  # details are read by fetch_details (WIP-107)
+    assert gancio.fetch_details(_zone(zone), fetcher, events) == []
     # window filters: from the start of today to the end of the window, in unix seconds
     params = listing.calls[0].request.url.params
     assert params["start"] == str(int(datetime(2026, 10, 5, tzinfo=tz).timestamp()))
@@ -197,7 +199,9 @@ def test_geocoder_is_capped():
 
     geocode = gancio.Geocoder(NoFetch(), limit=0)
     assert geocode("1 rue X") is None
-    assert geocode.refused == 1  # reported as geocode_cap in the Gancio status (WIP-107)
+    assert geocode("1  rue X") is None and geocode("2 rue Y") is None
+    # reported as geocode_cap in the Gancio status (WIP-107): places, not lookups
+    assert geocode.refused == {"1 rue X", "2 rue Y"}
 
 
 @respx.mock

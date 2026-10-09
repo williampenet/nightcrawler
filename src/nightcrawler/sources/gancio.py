@@ -186,8 +186,8 @@ def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> tuple[i
 
 
 def fetch_details(zone: Zone, fetcher: Fetcher, events: list[RawEvent]) -> list[str]:
-    """Detail texts of the events of each configured instance (collect(details=False) leaves
-    them out so the pipeline can read them alongside the venue probe). Returns the cap notes,
+    """Detail texts of the events of each configured instance (collect() lists them; the
+    pipeline reads these alongside the venue probe). Returns the cap notes,
     "<instance>: detail_cap: ..." (names from config/zone.yaml)."""
     notes: list[str] = []
     for inst in zone.gancio_instances:
@@ -218,14 +218,15 @@ class Geocoder:
     ):
         self.fetcher, self.limit, self.near = fetcher, limit, near
         self.memo: dict[str, tuple[float, float] | None] = {}
-        self.calls = self.found = self.refused = 0
+        self.calls = self.found = 0
+        self.refused: set[str] = set()  # addresses left without coordinates by the cap
 
     def __call__(self, address: str) -> tuple[float, float] | None:
         key = re.sub(r"\s+", " ", address).strip()
         if key in self.memo:
             return self.memo[key]
         if self.calls >= self.limit:
-            self.refused += 1
+            self.refused.add(key)  # a set: an address asked twice is one place
             return None
         self.calls += 1
         result = None
@@ -248,11 +249,10 @@ class Geocoder:
 
 
 def collect(
-    zone: Zone, fetcher: Fetcher, now: datetime, tz: ZoneInfo, details: bool = True
+    zone: Zone, fetcher: Fetcher, now: datetime, tz: ZoneInfo
 ) -> tuple[list[Venue], list[RawEvent], str]:
-    """Returns venues, events and a status: "skipped", "ok", or "error: <reasons>"; a detail
-    cap hit is appended ("ok; Ville Morte: detail_cap: 400 of 512"). details=False: no detail
-    is read (fetch_details does it later)."""
+    """Returns venues, events and a status: "skipped", "ok", or "error: <reasons>"; a geocoder
+    cap hit is appended ("ok; geocode_cap: 60 of 64"). Detail texts are read by fetch_details."""
     if not zone.gancio_instances:
         return [], [], "skipped"
     venues: list[Venue] = []
@@ -274,13 +274,11 @@ def collect(
             log.warning("Gancio %s: %s", name, reason[:200])
             errors.append(f"{name}: {reason[:200]}")
             continue
-        fetched, note = _add_details(base, e, fetcher) if details else (0, "")
-        notes += [f"{name}: {note}"] if note else []
-        log.info("Gancio %s: %d places, %d events, %d details", name, len(v), len(e), fetched)
+        log.info("Gancio %s: %d places, %d events", name, len(v), len(e))
         venues.extend(v)
         events.extend(e)
     log.info("Gancio geocoding: %d/%d addresses found", geocode.found, geocode.calls)
-    if geocode.refused:  # places left without coordinates by the cap (WIP-107)
-        notes.append(f"geocode_cap: {geocode.limit} of {geocode.limit + geocode.refused}")
+    if geocode.refused:  # addresses left without coordinates by the cap (WIP-107)
+        notes.append(f"geocode_cap: {geocode.limit} of {geocode.limit + len(geocode.refused)}")
     status = ("error: " + "; ".join(errors)) if errors else "ok"
     return venues, events, "; ".join([status, *notes])

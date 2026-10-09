@@ -8,8 +8,8 @@ rather than the horizon decided what was kept:
   starting more than BEYOND_DAYS days after today, and the farthest concert date;
 - cap hits by kind, read from the status notes the readers already write (`detail_cap`,
   `page_cap`, `chunk_cap`, `llm_cap`, `detail_run_cap`; Gancio and Ticketmaster append theirs
-  to their status, Gancio also `geocode_cap`) plus the artist lookup cap (artists.MAX_LOOKUPS,
-  `lookup_cap`);
+  to their status, Gancio also `geocode_cap`; wp_json `truncated`) plus the artist lookup cap
+  (artists.MAX_LOOKUPS, `lookup_cap`);
 - per "Mes salles" venue (its configured name, public in config/zone.yaml): the farthest event
   date its reader read (`last` of the priority row) and its cap notes.
 
@@ -26,7 +26,10 @@ from .content import family
 from .models import Concert
 
 BEYOND_DAYS = 60  # the former horizon: what the 400-day horizon adds is counted beyond it
-CAP_KINDS = ("detail_cap", "detail_run_cap", "page_cap", "chunk_cap", "llm_cap", "geocode_cap")
+# `truncated`: a wp_json page reached the fetcher's size cap (http.MAX_BYTES) and was dropped
+CAP_KINDS = (
+    "detail_cap", "detail_run_cap", "page_cap", "chunk_cap", "llm_cap", "geocode_cap", "truncated"
+)  # fmt: skip
 
 
 def cap_notes(status: str | None) -> list[str]:
@@ -116,6 +119,14 @@ def text(m: dict | None) -> str:
         f"beyond {m['beyond_days']}d/concerts@last: {sources or '-'} | "
         f"caps: {_caps_text(m['caps'])} | Mes salles last read: {venues or '-'}"
     )
+
+
+def durations_text(d: dict | None) -> str:
+    """Phase durations of the run in seconds (pipeline.run `durations`): "collect=263s
+    enrich=41s judge=12s total=330s"."""
+    if not d:
+        return "-"
+    return " ".join(f"{k}={round(v)}s" for k, v in d.items())
 
 
 def summary_rows(m: dict | None) -> list[str]:

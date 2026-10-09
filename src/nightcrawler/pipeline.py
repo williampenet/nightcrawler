@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -45,13 +46,21 @@ def run(
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
+    # phase durations for the run annotation (WIP-107: the collect job must stay < 15 min)
+    clock = time.monotonic()
+    durations: dict[str, float] = {}
+
+    def lap(phase: str) -> None:
+        nonlocal clock
+        durations[phase] = time.monotonic() - clock
+        clock = time.monotonic()
 
     # 1. venues: maps first, then ticketing (its events keep pointing to merged ids)
     osm_venues = osm.discover(zone, fetcher, extract=osm_extract)
     tm_venues, tm_events, tm_status = ticketmaster.collect(zone, fetcher, now, tz)
     try:
         # detail texts are read below, alongside the venue probe (WIP-107)
-        ga_venues, ga_events, ga_status = gancio.collect(zone, fetcher, now, tz, details=False)
+        ga_venues, ga_events, ga_status = gancio.collect(zone, fetcher, now, tz)
     except Exception as exc:  # optional source: never stop the run
         log.warning("Gancio failed: %s", type(exc).__name__)
         ga_venues, ga_events, ga_status = [], [], f"error: {type(exc).__name__}"
@@ -159,7 +168,9 @@ def run(
         except Exception as exc:  # a measure must never fail the run
             log.warning("reference coverage failed: %s", type(exc).__name__)
             cover = {"status": f"error: {type(exc).__name__}"}
+    lap("collect")  # sources, venue probe, "Mes salles", concerts, store sync, coverage
     artists, artist_stats = enrich(concerts, fetcher)
+    lap("enrich")
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
     # what the judge can read per concert (WIP-89): counts only, texts stay in the store
@@ -182,6 +193,8 @@ def run(
         except Exception as exc:  # judging must never fail the run
             log.warning("judging failed: %s", type(exc).__name__)
             judged = {"status": f"error: {type(exc).__name__}"}
+    lap("judge")  # also the descriptions read and the content measure
+    durations["total"] = sum(durations.values())
 
     # how far ahead each source reads and which caps were hit (WIP-107): counts and dates only
     try:
@@ -246,6 +259,7 @@ def run(
         # {beyond_days, by_source: {family: {concerts, beyond, last}}, caps: {kind: hits},
         #  venues: [{name, last, caps}]} (WIP-107)
         "completeness": complete,
+        "durations": {k: round(v, 1) for k, v in durations.items()},  # seconds per phase
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):

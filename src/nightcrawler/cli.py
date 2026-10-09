@@ -93,7 +93,13 @@ def main(argv: list[str] | None = None) -> int:
     annotate("notice", "Content: " + content.text(report.get("content")))
     # how far ahead each source reads and the cap hits (WIP-107): dates, counts and the
     # configured "Mes salles" names (public in config/zone.yaml), never an event
-    annotate("notice", "Horizon: " + completeness.text(report.get("completeness")))
+    annotate(
+        "notice",
+        "Horizon: "
+        + completeness.text(report.get("completeness"))
+        + " | durations: "
+        + completeness.durations_text(report.get("durations")),
+    )
     summary = summary_markdown(report)
     print(summary)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
