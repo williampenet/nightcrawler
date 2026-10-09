@@ -43,6 +43,32 @@ test("parse keeps valid entries and drops anything that breaks the contract", ()
   assert.equal(Object.getPrototypeOf(got.verdicts), null);
 });
 
+test("parse drops a section that does not follow the verdict (the store's CHECK)", () => {
+  const pairs = [
+    ["must_see", "ne_pas_rater", true], ["must_see", "pour_toi", false], ["must_see", "tout_voir", false],
+    ["for_you", "pour_toi", true], ["for_you", "ne_pas_rater", false], ["for_you", "decouvertes", false],
+    ["discovery", "decouvertes", true], ["discovery", "tout_voir", true], ["discovery", "pour_toi", false],
+    ["no", "tout_voir", true], ["no", "pour_toi", false], ["no", "decouvertes", false],
+  ];
+  for (const [verdict, section, kept] of pairs) {
+    const got = V.parse({ verdicts: { [A]: ok({ verdict, section }) } }).verdicts[A];
+    assert.equal(Boolean(got), kept, `${verdict} -> ${section}`);
+  }
+});
+
+test("afterPull: which verdicts to show and what to do with the local copy", () => {
+  const saved = V.parse({ verdicts: { [A]: ok() } });
+  const fresh = V.parse({ verdicts: { [B]: ok() } });
+  assert.deepEqual(V.afterPull({ status: "ok", data: fresh }, saved), { show: fresh, store: "save" });
+  assert.deepEqual(V.afterPull({ status: "ok", data: fresh }, null), { show: fresh, store: "save" });
+  // a refused key: back to the rule-based tiers, the copy is removed
+  assert.deepEqual(V.afterPull({ status: "unauthorized" }, saved), { show: null, store: "clear" });
+  // offline, cold start, store down: the copy stays on screen and in storage
+  assert.deepEqual(V.afterPull({ status: "error" }, saved), { show: saved, store: "keep" });
+  assert.deepEqual(V.afterPull({ status: "error" }, null), { show: null, store: "keep" });
+  assert.deepEqual(V.afterPull(undefined, saved), { show: saved, store: "keep" });
+});
+
 test("parse counts the reason in characters, as the server schema", () => {
   const emoji = "🎸".repeat(240); // 480 UTF-16 units, 240 characters
   assert.ok(V.parse({ verdicts: { [A]: ok({ reason: emoji }) } }).verdicts[A]);

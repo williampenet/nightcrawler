@@ -652,19 +652,23 @@ async function startVerdicts() {
   const run = ++verdictsRun;
   const got = await V.pull(V.verdictsUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
   if (run !== verdictsRun) return;
-  if (got.status === "error") return; // offline, cold start, store down: the local copy stays
-  const next = got.status === "ok" ? got.data : null; // refused key: back to the rule-based tiers
-  fbStore(() => V.save(localStorage, next));
-  if (JSON.stringify(next) === JSON.stringify(verdicts)) return;
-  verdicts = next;
+  const next = V.afterPull(got, verdicts); // the decision is pure and tested (verdicts.js)
+  if (next.store !== "keep") fbStore(() => V.save(localStorage, next.show));
+  if (JSON.stringify(next.show) === JSON.stringify(verdicts)) return;
+  verdicts = next.show;
   rerender();
+}
+
+// The copy is dropped (in memory and in this browser) and an answer in flight is ignored.
+function dropVerdicts() {
+  verdictsRun++;
+  verdicts = null;
+  if (V) fbStore(() => V.save(localStorage, null));
 }
 
 // A new or cleared key: the copy read with the previous key is dropped, then read again.
 function resetVerdicts() {
-  verdictsRun++;
-  verdicts = null;
-  if (V) fbStore(() => V.save(localStorage, null));
+  dropVerdicts();
   rerender();
   startVerdicts();
 }
@@ -684,10 +688,13 @@ window.addEventListener("online", () => {
 // rows the listener can see: not inside a collapsed "Tout voir" (WIP-53)
 const visibleRows = () => [...document.querySelectorAll("#concerts li")].filter((r) => !r.closest("[hidden]"));
 
-// render again after a background change, keeping the focused row if it is still visible
+// Render again after a background change. The focused row and a shared concert stay
+// reachable: if either now lands in the collapsed "Tout voir", it is opened first.
 function rerender() {
   const a = document.activeElement;
   const row = a && a.closest ? a.closest("#concerts li") : null;
+  const wanted = [row && row.dataset.id, deepLinkId].filter(Boolean);
+  if (wanted.length && restIds().some((id) => wanted.includes(id))) showAll = true;
   render();
   if (row) refocus(row.dataset.id);
 }
@@ -814,11 +821,14 @@ function concertRow(c, match, showDate, judged) {
   }
   const judge = judgeLine(judged);
   if (judge) body.append(judge);
-  if (match.reason) {
+  // With the judge's reason (WIP-86), the rule-based reason and badge are not shown; only the
+  // "Mauvais rapprochement" action stays, named with the guess it refers to.
+  const contest = match.inferred && match.artist;
+  if (match.reason && (!judge || contest)) {
     const why = el("span", null, "why");
-    why.append(el("span", match.reason));
-    if (match.discovery) why.append(el("span", "Découverte", "badge"));
-    if (match.inferred && match.artist) {
+    if (!judge) why.append(el("span", match.reason));
+    if (!judge && match.discovery) why.append(el("span", "Découverte", "badge"));
+    if (contest) {
       // "Proche de…" / "Style…" is a guess: let the listener say it is wrong (WIP-41)
       const wrong = button("Mauvais rapprochement", "linkish", () => {
         if (c.id === deepLinkId) deepLinkId = null;
@@ -831,6 +841,11 @@ function concertRow(c, match, showDate, judged) {
         refocus(c.id, next);
         setStatus("Noté : ce rapprochement ne sera plus utilisé.");
       });
+      if (judge) {
+        // the guess is not shown: the name carries it (starts with the visible text)
+        wrong.title = `Mauvais rapprochement : ${match.reason}`;
+        wrong.setAttribute("aria-label", wrong.title);
+      }
       why.append(wrong);
     }
     body.append(why);
@@ -970,11 +985,21 @@ function renderByDay(root, list, tag) {
   }
 }
 
+const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+
+// Ids render() would put in "Tout voir" now (WIP-86: used to open it before a re-render).
+function restIds() {
+  const profile = S.buildProfile(state, DATA.artists);
+  const list = scored(profile);
+  if (judgeOn()) return V.sectionsFor(list, verdicts.verdicts).tout_voir.map((x) => x.c.id);
+  return S.isEmpty(profile, DATA.concerts) ? [] : S.tiers(list).rest.map((x) => x.c.id);
+}
+
 function render() {
   const root = document.getElementById("concerts");
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
-  const list = filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+  const list = scored(profile);
   document.getElementById("count").textContent = `${list.length} concert${list.length > 1 ? "s" : ""}`;
   if (!list.length) {
     root.append(el("p", "Aucun concert pour ces filtres.", "muted"));
@@ -1142,6 +1167,7 @@ function setupControls() {
       seeds: [], liked: [], disliked: [], hidden: [], wrong: [], likedConcerts: [], likedNames: [], dislikedNames: [],
       tasteText: "", tasteTextAt: Date.now(),
     });
+    dropVerdicts(); // this browser's copy of the judgements (the stored rows: separate ticket)
     saveState();
     box.value = "";
     taste.value = "";

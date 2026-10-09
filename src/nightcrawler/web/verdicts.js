@@ -10,6 +10,14 @@
   const ID_RE = /^[0-9a-f]{12}$/;
   const SECTIONS = ["ne_pas_rater", "pour_toi", "decouvertes", "tout_voir"];
   const VERDICTS = ["must_see", "for_you", "discovery", "no"];
+  // the section follows the verdict, as the store's CHECK (migration 003, judge.section): a
+  // discovery under the confidence bar stays in "tout_voir"
+  const SECTIONS_OF = {
+    must_see: ["ne_pas_rater"],
+    for_you: ["pour_toi"],
+    discovery: ["decouvertes", "tout_voir"],
+    no: ["tout_voir"],
+  };
   const MAX_REASON = 240; // characters, as judge.SCHEMA (Python len counts code points)
 
   // The verdicts URL next to the feedback URL ("https://x/" -> "https://x/verdicts").
@@ -29,7 +37,7 @@
     for (const id of Object.keys(raw)) {
       const v = raw[id];
       if (!ID_RE.test(id) || !v || typeof v !== "object") continue;
-      if (!SECTIONS.includes(v.section) || !VERDICTS.includes(v.verdict)) continue;
+      if (!VERDICTS.includes(v.verdict) || !SECTIONS_OF[v.verdict].includes(v.section)) continue;
       if (!Number.isInteger(v.confidence) || v.confidence < 0 || v.confidence > 100) continue;
       if (typeof v.reason !== "string" || !v.reason.trim() || [...v.reason].length > MAX_REASON) continue;
       verdicts[id] = { section: v.section, verdict: v.verdict, confidence: v.confidence, reason: v.reason.trim() };
@@ -51,6 +59,17 @@
     } catch {
       return { status: "error" }; // offline, cold start timeout, invalid JSON
     }
+  }
+
+  // After a read (pure, as profile.afterPull). got: pull's answer; shown: the verdicts on
+  // screen (the local copy, or null). show: the verdicts to render (null: rule-based tiers);
+  // store: "save" (write show as the local copy), "clear" (remove it) or "keep" (leave it).
+  // An error (offline, cold start, store down) keeps the copy: it is there to hide a cold
+  // start (ADR-0007 §4). A refused key drops it: back to the rule-based tiers.
+  function afterPull(got, shown) {
+    if (got && got.status === "ok") return { show: got.data, store: "save" };
+    if (got && got.status === "unauthorized") return { show: null, store: "clear" };
+    return { show: shown || null, store: "keep" };
   }
 
   // The local copy: re-checked on read (storage is untrusted too); blocked storage = no copy.
@@ -100,7 +119,7 @@
     return out;
   }
 
-  const api = { KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, load, save, sectionsFor };
+  const api = { KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCVerdicts = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
