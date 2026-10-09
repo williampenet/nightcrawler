@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -153,23 +152,28 @@ def jsonld_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
     return events
 
 
-# schema.org types reported by name (WIP-89); any other type is "jsonld:other": a publisher
-# writes @type freely, and the report is public
-REPORTED_TYPES = frozenset({"Organization", "Place", "WebSite", "WebPage", "ItemList",
-                            "BreadcrumbList", "Offer", "Product"})  # fmt: skip
-EVENT_TYPE_RE = re.compile(r"[A-Za-z]{1,40}")
+# schema.org types reported by name (WIP-89): Event and its subtypes
+# (https://schema.org/Event, "More specific Types") and a few common page types; any other
+# type is "jsonld:other": a publisher writes @type freely, and the report is public
+REPORTED_TYPES = frozenset({
+    "Event", "BusinessEvent", "ChildrensEvent", "ComedyEvent", "CourseInstance", "DanceEvent",
+    "DeliveryEvent", "EducationEvent", "EventSeries", "ExhibitionEvent", "Festival",
+    "FoodEvent", "Hackathon", "LiteraryEvent", "MusicEvent", "PublicationEvent", "SaleEvent",
+    "ScreeningEvent", "SocialEvent", "SportsEvent", "TheaterEvent", "VisualArtsEvent",
+    "Organization", "Place", "WebSite", "WebPage", "ItemList", "BreadcrumbList", "Offer",
+    "Product",
+})  # fmt: skip
 
 
 def _reported_type(t: str) -> str:
-    event = (t.endswith("Event") or t == "Festival") and EVENT_TYPE_RE.fullmatch(t)
-    return f"jsonld:{t}" if event or t in REPORTED_TYPES else "jsonld:other"
+    return f"jsonld:{t}" if t in REPORTED_TYPES else "jsonld:other"
 
 
 def page_formats(html: str) -> list[str]:
     """The structured formats a page carries, for a public report (WIP-89): "jsonld",
     "jsonld_invalid", "microdata", "next_data" (Next.js pages router), "next_flight" (app
-    router), then "jsonld:<type>" for event types and a fixed list of common schema.org types,
-    "jsonld:other" for any other type. Never page content."""
+    router), then "jsonld:<type>" for the types of REPORTED_TYPES, "jsonld:other" for any
+    other type. Never page content."""
     soup = BeautifulSoup(html, "lxml")
     flags: set[str] = set()
     types: set[str] = set()

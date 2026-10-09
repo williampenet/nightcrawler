@@ -35,7 +35,7 @@ def _same(a: str, b: str) -> bool:
 def has_lineup(concert: Concert) -> bool:
     """An act in the judge's "À l'affiche" line other than the title itself (a listing often
     repeats its title as the only performer: "LA NUIT DU GOUYAD 2")."""
-    title = judge._clean(concert.title)
+    title = judge._clean(concert.title, 100)  # cut as judge.acts cuts each act
     return any(not _same(a, title) for a in judge.acts(concert.to_dict()))
 
 

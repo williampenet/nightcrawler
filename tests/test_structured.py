@@ -74,5 +74,6 @@ def test_page_formats_reports_type_names_only():
     assert page_formats("<p>rien</p>") == []
     # @type is free text: only event types and a fixed list are named (the report is public)
     free = ('<script type="application/ld+json">{"@type": ["Lyon", "SecretGuestList", '
-            '"MusicEvent\\n", "A b", "WebPage", "Festival"]}</script>')  # fmt: skip
+            '"MusicEvent\\n", "A b", "WebPage", "Festival", '
+            '"JeanDupontEvent"]}</script>')  # fmt: skip
     assert page_formats(free) == ["jsonld", "jsonld:Festival", "jsonld:WebPage", "jsonld:other"]

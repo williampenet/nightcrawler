@@ -75,6 +75,8 @@ def test_counts_follow_what_the_prompt_shows():
     judge.description_text reads them (markers and blanks stripped), the first 8 artists."""
     kanji = concert("e", "東京", ["json-ld"], lineup=["東京", "ボリス"])
     assert content.has_lineup(kanji)  # norm() drops these characters; the prompt keeps them
+    long_title = "Soirée " * 25  # 175 characters, repeated as the only act
+    assert not content.has_lineup(concert("g", long_title, [], lineup=[long_title]))
     m = content.measure([kanji], ARTISTS, {"e": "<<< >>>  "})
     assert m["all"]["description"] == 0  # nothing left once cleaned
     late = concert("f", "Fest", ["json-ld"], artists=[f"x{i}" for i in range(8)] + ["earth"])
