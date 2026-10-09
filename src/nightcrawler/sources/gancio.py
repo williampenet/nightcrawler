@@ -31,10 +31,12 @@ from ..structured import _text
 log = logging.getLogger(__name__)
 
 # per instance and per run. One instance is configured (config/zone.yaml), with 186 events in
-# the window of Pipeline 37918562968 and 110 published concerts: 120 covers the soonest ones,
-# not all (the WIP-89 content measure shows what stays title-only). The fetcher cache (20 h)
-# does not span two daily runs, so every run asks again.
-MAX_DETAILS = 120
+# the 60-day window of Pipeline 37918562968 and 110 published concerts: 120 covered the soonest
+# ones, not all. With the 400-day horizon (WIP-107) a detail can decide whether an untagged event
+# is a concert (needs_detail, read first), so the cap is one per day of the horizon: 400 s at
+# most at 1 request / s, read alongside the venue probe (pipeline.run). The fetcher cache (20 h)
+# does not span two daily runs, so every run asks again. A hit is `detail_cap` in the status.
+MAX_DETAILS = 400
 MAX_GEOCODE = 60  # places without coordinates, per run
 # French national address API (IGN Géoplateforme, BAN data): free, no key, public service
 GEOCODER_URL = "https://data.geopf.fr/geocodage/search"
@@ -148,10 +150,10 @@ def needs_detail(ev: RawEvent) -> bool:
     return not ev.tags and concert_reason(ev, None) is None
 
 
-def detail_order(events: list[RawEvent]) -> list[RawEvent]:
-    """Events to read in detail, at most MAX_DETAILS: those whose kind needs the description
-    first, then every other one without a description (the judge's text), soonest first.
-    Events whose tags already drop them (théâtre, atelier…) are never read."""
+def detail_order(events: list[RawEvent], cap: int | None = None) -> list[RawEvent]:
+    """Events to read in detail, at most `cap` (MAX_DETAILS): those whose kind needs the
+    description first, then every other one without a description (the judge's text), soonest
+    first. Events whose tags already drop them (théâtre, atelier…) are never read."""
     linked = [
         e
         for e in events
@@ -159,11 +161,14 @@ def detail_order(events: list[RawEvent]) -> list[RawEvent]:
     ]
     first = sorted(filter(needs_detail, linked), key=lambda e: e.start)
     rest = sorted((e for e in linked if not needs_detail(e)), key=lambda e: e.start)
-    return (first + rest)[:MAX_DETAILS]
+    return (first + rest)[: MAX_DETAILS if cap is None else cap]
 
 
-def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> int:
+def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> tuple[int, str]:
+    """(details fetched, "" or the cap note "detail_cap: <cap> of <wanted>")."""
     fetched = 0
+    wanted = len(detail_order(events, cap=len(events)))
+    note = f"detail_cap: {MAX_DETAILS} of {wanted}" if wanted > MAX_DETAILS else ""
     for ev in detail_order(events):
         slug = ev.url.rsplit("/event/", 1)[1]
         try:
@@ -177,7 +182,22 @@ def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> int:
             ev.description = _text(detail.get("description"))
             # "Name (genre, country)" lines of the first paragraph join the line-up (WIP-72)
             ev.billed = description_acts(detail.get("description"))
-    return fetched
+    return fetched, note
+
+
+def fetch_details(zone: Zone, fetcher: Fetcher, events: list[RawEvent]) -> list[str]:
+    """Detail texts of the events of each configured instance (collect() lists them; the
+    pipeline reads these alongside the venue probe). Returns the cap notes,
+    "<instance>: detail_cap: ..." (names from config/zone.yaml)."""
+    notes: list[str] = []
+    for inst in zone.gancio_instances:
+        base = str(inst["url"]).rstrip("/")
+        mine = [ev for ev in events if (ev.url or "").startswith(base + "/event/")]
+        fetched, note = _add_details(base, mine, fetcher)
+        log.info("Gancio %s: %d details", inst.get("name") or _host(base), fetched)
+        if note:
+            notes.append(f"{inst.get('name') or _host(base)}: {note}")
+    return notes
 
 
 def window_params(zone: Zone, now: datetime) -> dict[str, str]:
@@ -199,12 +219,14 @@ class Geocoder:
         self.fetcher, self.limit, self.near = fetcher, limit, near
         self.memo: dict[str, tuple[float, float] | None] = {}
         self.calls = self.found = 0
+        self.refused: set[str] = set()  # addresses left without coordinates by the cap
 
     def __call__(self, address: str) -> tuple[float, float] | None:
         key = re.sub(r"\s+", " ", address).strip()
         if key in self.memo:
             return self.memo[key]
         if self.calls >= self.limit:
+            self.refused.add(key)  # a set: an address asked twice is one place
             return None
         self.calls += 1
         result = None
@@ -229,12 +251,14 @@ class Geocoder:
 def collect(
     zone: Zone, fetcher: Fetcher, now: datetime, tz: ZoneInfo
 ) -> tuple[list[Venue], list[RawEvent], str]:
-    """Returns venues, events and a status: "skipped", "ok", or "error: <reasons>"."""
+    """Returns venues, events and a status: "skipped", "ok", or "error: <reasons>"; a geocoder
+    cap hit is appended ("ok; geocode_cap: 60 of 64"). Detail texts are read by fetch_details."""
     if not zone.gancio_instances:
         return [], [], "skipped"
     venues: list[Venue] = []
     events: list[RawEvent] = []
     errors: list[str] = []
+    notes: list[str] = []
     geocode = Geocoder(fetcher, near=(zone.latitude, zone.longitude))
     for inst in zone.gancio_instances:
         base = str(inst["url"]).rstrip("/")
@@ -250,9 +274,11 @@ def collect(
             log.warning("Gancio %s: %s", name, reason[:200])
             errors.append(f"{name}: {reason[:200]}")
             continue
-        details = _add_details(base, e, fetcher)
-        log.info("Gancio %s: %d places, %d events, %d details", name, len(v), len(e), details)
+        log.info("Gancio %s: %d places, %d events", name, len(v), len(e))
         venues.extend(v)
         events.extend(e)
     log.info("Gancio geocoding: %d/%d addresses found", geocode.found, geocode.calls)
-    return venues, events, ("error: " + "; ".join(errors)) if errors else "ok"
+    if geocode.refused:  # addresses left without coordinates by the cap (WIP-107)
+        notes.append(f"geocode_cap: {geocode.limit} of {geocode.limit + len(geocode.refused)}")
+    status = ("error: " + "; ".join(errors)) if errors else "ok"
+    return venues, events, "; ".join([status, *notes])

@@ -34,6 +34,10 @@ Option B becomes the target once the POC shows the coverage is good enough and p
 - **Supply chain:** dependencies pinned by major version in `pyproject.toml`; GitHub Actions from official `actions/*` publishers.
 - **AI transparency:** N/A (no AI-generated content in the POC). The page states the list is collected automatically.
 
+**Amendment (2026-10-09, WIP-107):** "next 60 days" in step 3 became the configurable horizon
+`window_days` of `config/zone.yaml`, set to 400 days (the PM asked for every published date;
+PRD FR-1 / FR-2). The politeness rules below are unchanged.
+
 ## Consequences
 - Easier: zero infrastructure, everything reviewable in the repo, runs visible in the Actions tab.
 - Harder: no history between runs (each run rebuilds the list); the page is public, so it must never show personal data — fine until per-user features arrive.

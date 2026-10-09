@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from .events import MAX_HORIZON_DAYS
 from .models import MIXED_CATEGORIES, MUSIC_CATEGORIES
 
 
@@ -19,7 +20,7 @@ class Zone:
     longitude: float
     radius_km: float
     timezone: str = "Europe/Paris"
-    window_days: int = 60
+    window_days: int = 60  # collection horizon in days, at most MAX_HORIZON_DAYS (WIP-107)
     osm_extract_url: str | None = None
     # Gancio community agendas: ({"name": ..., "url": ...}, ...)
     gancio_instances: tuple[dict, ...] = field(default=())
@@ -61,7 +62,7 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         longitude=float(data["longitude"]),
         radius_km=float(data["radius_km"]),
         timezone=str(data.get("timezone", "Europe/Paris")),
-        window_days=int(data.get("window_days", 60)),
+        window_days=_window_days(data.get("window_days", 60)),
         osm_extract_url=data.get("osm_extract_url"),
         gancio_instances=tuple(
             {"name": str(i.get("name") or i["url"]), "url": str(i["url"])}
@@ -174,6 +175,13 @@ def _check_page_llm(name: str, reader: dict) -> None:
         raise ValueError(f"priority venue {name}: trust_is_concert must be true or false")
     _check_ints(name, reader, {"max_details": None})
     _check_paginate(name, reader)
+
+
+def _window_days(value) -> int:
+    """The horizon: an int in 1..MAX_HORIZON_DAYS (a later date is a parse error, WIP-107)."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_HORIZON_DAYS:
+        raise ValueError(f"window_days must be an int in 1..{MAX_HORIZON_DAYS}")
+    return value
 
 
 def _int_at_least(value, key: str, low: int) -> int:

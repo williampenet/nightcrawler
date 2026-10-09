@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import content, coverage, judging
+from . import completeness, content, coverage, judging
 from .artists import enrich
 from .config import Zone
 from .events import build_concerts
@@ -45,11 +46,20 @@ def run(
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
+    # phase durations for the run annotation (WIP-107: the collect job must stay < 15 min)
+    clock = time.monotonic()
+    durations: dict[str, float] = {}
+
+    def lap(phase: str) -> None:
+        nonlocal clock
+        durations[phase] = time.monotonic() - clock
+        clock = time.monotonic()
 
     # 1. venues: maps first, then ticketing (its events keep pointing to merged ids)
     osm_venues = osm.discover(zone, fetcher, extract=osm_extract)
     tm_venues, tm_events, tm_status = ticketmaster.collect(zone, fetcher, now, tz)
     try:
+        # detail texts are read below, alongside the venue probe (WIP-107)
         ga_venues, ga_events, ga_status = gancio.collect(zone, fetcher, now, tz)
     except Exception as exc:  # optional source: never stop the run
         log.warning("Gancio failed: %s", type(exc).__name__)
@@ -83,24 +93,36 @@ def run(
             log.warning("probe failed for %s: %s", v.id, type(exc).__name__)
             return Probe(v.id, "fetch_error", detail=type(exc).__name__), []
 
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        for probe, events in pool.map(task, venues):
-            probes[probe.venue_id] = probe
-            raw.extend(events)
-    # "Mes salles" readers (WIP-60, WIP-62, WIP-66): the venue's own data, attached by venue
-    # name later; page_llm readers also need the extract_events task (llm_ctx)
-    try:
-        pv_events, pv_rows = priority.collect(
-            zone.priority_venues, fetcher, now, tz, zone.window_days, llm_ctx
+    # "Mes salles" readers (WIP-60, WIP-62, WIP-66; page_llm also needs llm_ctx) and Gancio
+    # detail texts run alongside the probe (WIP-107): with the 400-day horizon each is up to
+    # ~400 requests on one host, and the fetcher keeps every host at its own rate whatever
+    # the number of threads, so overlapping them shortens the run without a faster request rate
+    with ThreadPoolExecutor(max_workers=2) as side:
+        pv_job = side.submit(
+            priority.collect, zone.priority_venues, fetcher, now, tz, zone.window_days, llm_ctx
         )
-    except Exception as exc:  # optional source: never stop the run
-        log.warning("priority venue readers failed: %s", type(exc).__name__)
-        pv_events = []
-        pv_rows = [
-            {"name": e["name"], "venue": e["venue"], "reader": e["reader"]["type"]}
-            | {"status": f"error: {type(exc).__name__}", "events": 0, "pages": 0}
-            for e in zone.priority_venues
-        ]
+        ga_job = side.submit(gancio.fetch_details, zone, fetcher, ga_events)
+        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+            for probe, events in pool.map(task, venues):
+                probes[probe.venue_id] = probe
+                raw.extend(events)
+        try:
+            ga_notes = ga_job.result()
+        except Exception as exc:  # detail texts are optional: the events stay
+            log.warning("Gancio details failed: %s", type(exc).__name__)
+            ga_notes = [f"details: error: {type(exc).__name__}"]
+        try:
+            pv_events, pv_rows = pv_job.result()
+        except Exception as exc:  # optional source: never stop the run
+            log.warning("priority venue readers failed: %s", type(exc).__name__)
+            pv_events = []
+            pv_rows = [
+                {"name": e["name"], "venue": e["venue"], "reader": e["reader"]["type"]}
+                | {"status": f"error: {type(exc).__name__}", "events": 0, "pages": 0}
+                | {"last": None}
+                for e in zone.priority_venues
+            ]
+    ga_status = "; ".join([ga_status, *ga_notes])
     attach_to_configured(pv_events, configured_ids)  # to its venue_id or resolved name
     for row in pv_rows:
         if note := configured_notes.get(row["name"]):
@@ -146,7 +168,9 @@ def run(
         except Exception as exc:  # a measure must never fail the run
             log.warning("reference coverage failed: %s", type(exc).__name__)
             cover = {"status": f"error: {type(exc).__name__}"}
+    lap("collect")  # sources, venue probe, "Mes salles", concerts, store sync, coverage
     artists, artist_stats = enrich(concerts, fetcher)
+    lap("enrich")
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
     # what the judge can read per concert (WIP-89): counts only, texts stay in the store
@@ -169,6 +193,22 @@ def run(
         except Exception as exc:  # judging must never fail the run
             log.warning("judging failed: %s", type(exc).__name__)
             judged = {"status": f"error: {type(exc).__name__}"}
+    lap("judge")  # also the descriptions read and the content measure
+    durations["total"] = sum(durations.values())
+
+    # how far ahead each source reads and which caps were hit (WIP-107): counts and dates only
+    try:
+        complete = completeness.measure(
+            concerts,
+            pv_rows,
+            {"ticketmaster": tm_status, "gancio": ga_status},
+            artist_stats,
+            now,
+            tz,
+        )
+    except Exception as exc:  # a measure must never fail the run
+        log.warning("completeness measure failed: %s", type(exc).__name__)
+        complete = {"status": f"error: {type(exc).__name__}"}
 
     # 4. outputs
     report = {
@@ -216,6 +256,10 @@ def run(
         "coverage": cover,
         # {all, by_source: {family: counts}, descriptions} (WIP-89)
         "content": content_cover,
+        # {beyond_days, by_source: {family: {concerts, beyond, last}}, caps: {kind: hits},
+        #  venues: [{name, last, caps}]} (WIP-107)
+        "completeness": complete,
+        "durations": {k: round(v, 1) for k, v in durations.items()},  # seconds per phase
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):
@@ -291,4 +335,5 @@ def summary_markdown(report: dict) -> str:
             f"| … same date and venue, no artist match | {cov['date_venue_only']} |",
         ]
     lines += content.summary_rows(report.get("content"))
+    lines += completeness.summary_rows(report.get("completeness"))
     return "\n".join(lines) + "\n"

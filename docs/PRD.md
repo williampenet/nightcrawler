@@ -116,6 +116,8 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 **FR-1 Venue discovery (US-01, US-10)** — v3: two circles
 - **"Mes salles"** (config `config/zone.yaml`, PM's list): Le Périscope, Le Sonic, Le Marché Gare, L'Épicerie Moderne, Le Transbordeur, Grrrnd Zero, La Rayonne (CCO), Auditorium de Lyon, Chapelle de la Trinité, Opéra Underground, Les Subsistances; agendas Ville Morte and Petit Bulletin. Each is read completely: structured data first, else the page text through the `extract_events` task (ADR-0004, to be re-run with stronger candidates).
 - AC (v3, gate): ≥ 80 % of the reference events (FR-11) in the window are present, measured in CI on each run; each venue of "Mes salles" reports its status (read / broken) in the app.
+- **Horizon (amended 2026-10-09, PM request, [WIP-107](https://linear.app/wip-coding/issue/WIP-107)):** "Each is read completely" means every date the venue publishes, not the next 60 days: up to 400 days ahead (`config/zone.yaml` `window_days`; the same 400-day bound as a model-read date, `events.MAX_HORIZON_DAYS`). PM's words: « je dois pouvoir voir la programmation au-delà de la semaine à venir […] ne pas rater les gros artistes dont les places se vendent généralement très vite ».
+- AC (horizon): the run reports, per "Mes salles" venue, the farthest date read and any cap note (`detail_cap`, `page_cap`, `chunk_cap`, `llm_cap`); a cap hit on a venue whose concerts it drops is a defect, a cap that only bounds description texts (page_llm event pages, Crawl-delay) is reported, not a defect.
 - **"Ailleurs"**: the existing automatic discovery below stays, for openness; its concerts reach the home sections only through the taste judgement.
 - Venues are found automatically from three layers: event aggregators (Ticketmaster Discovery API, OpenAgenda, DATAtourisme), map data (OpenStreetMap venue categories), and a probe of each venue website that detects structured data (schema.org Event, iCal, RSS, ticketing widgets), with an LLM extraction fallback.
 - AC (v2, superseded by the v3 gate above for "Mes salles"; still applies to "Ailleurs"): on the PM's reference list of venues (including small independent ones), ≥ 80 % are found and connected with no manual step.
@@ -123,6 +125,8 @@ Feasibility gates (week 1 spikes, must pass before the build): venue coverage �
 
 **FR-2 Event collection**
 - Daily refresh of every connected source; the same concert from several sources is merged into one event.
+- Horizon (amended 2026-10-09, [WIP-107](https://linear.app/wip-coding/issue/WIP-107)): every source is asked for, and keeps, every concert up to `window_days` (400) days ahead; per-reader caps are sized so the horizon, not a cap, decides what is kept. Per-host rate limit and robots.txt (including `Crawl-delay`) are never relaxed for it.
+- AC (horizon): the run annotation shows, per source, the concerts beyond 60 days and the farthest date, and the cap hits by kind; the collect job stays under 15 min; no robots.txt rule or per-host rate limit is relaxed.
 - AC: no duplicate concerts in the feed on a test week; ≤ 1 broken collector per week, detected automatically.
 
 **FR-3 Artist identification (US-11)**

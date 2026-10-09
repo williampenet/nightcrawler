@@ -19,7 +19,9 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 PAGE_SIZE = 200
-MAX_PAGES = 5  # the API caps deep paging at 1,000 results
+# the API caps deep paging at 1,000 results (size × page < 1,000): 5 pages of 200 is all it
+# serves for one query; more pages than that is reported as `page_cap` in the status (WIP-107)
+MAX_PAGES = 5
 
 
 def params_for(zone: Zone, api_key: str, now: datetime, page: int) -> dict[str, str]:
@@ -123,5 +125,7 @@ def collect(
         total_pages = (payload.get("page") or {}).get("totalPages", 0)
         if page + 1 >= total_pages:
             break
+        if page + 1 == MAX_PAGES:
+            status = f"ok; page_cap: {MAX_PAGES} of {total_pages} pages"
     log.info("Ticketmaster: %d venues, %d events", len(all_venues), len(all_events))
     return list(all_venues.values()), all_events, status

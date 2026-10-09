@@ -215,7 +215,10 @@ def test_errors_go_to_the_status_row(page, tz):
         ("L'Épicerie Moderne", "listing_jsonld", "error: no listing page read (HTTP 500)", 0),
         ("Opéra Underground", "listing_jsonld", "ok", 2),
     ]
-    assert set(rows[2]) == {"name", "venue", "reader", "status", "events", "pages"}
+    assert set(rows[2]) == {"name", "venue", "reader", "status", "events", "pages", "last"}
+    # the farthest date read (WIP-107); None when the venue gave nothing
+    assert rows[2]["last"] == max(e.start.date() for e in events).isoformat()
+    assert rows[0]["last"] is None and rows[1]["last"] is None
     assert len(events) == 2
 
 

@@ -251,6 +251,11 @@ def attribute_venue(
     return f"place:{key}", loc
 
 
+# How far ahead a date can be (WIP-107): the collection horizon (config/zone.yaml `window_days`)
+# is at most this, and extract.py rejects a later model-read date as a parse error.
+MAX_HORIZON_DAYS = 400
+
+
 def in_window(event: RawEvent, now: datetime, days: int) -> bool:
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     return start_of_today <= event.start <= now + timedelta(days=days)

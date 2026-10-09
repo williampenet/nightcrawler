@@ -3,7 +3,8 @@
 Each reader is `read(reader, venue, fetcher, now, tz, window_days) -> (events, pages, status)`;
 `page_llm` also takes the run's model context (task, cache, page budget).
 Venues are read in parallel (the fetcher rate-limits per host); one report row per venue:
-{name, venue, reader, status, events, pages}. A broken venue never stops the run.
+{name, venue, reader, status, events, pages, last}, `last` the farthest event date read (local
+ISO date, None without events; WIP-107). A broken venue never stops the run.
 """
 
 from __future__ import annotations
@@ -26,7 +27,10 @@ READERS = {
     "listing_jsonld": listing_jsonld.read,
     "page_llm": page_llm.read,
 }
-WORKERS = 4
+# one thread per venue up to this: each venue is its own host, rate-limited by the fetcher, so
+# reading them all at once changes no host's request rate; it keeps a slow host (La Rayonne,
+# Crawl-delay 10 s) from delaying the others (WIP-107)
+WORKERS = 16
 
 
 def _read_one(
@@ -41,7 +45,7 @@ def _read_one(
     row = {"name": entry["name"], "venue": entry["venue"], "reader": reader["type"]}
     read = READERS.get(reader["type"])
     if read is None:
-        return [], row | {"status": "unsupported reader", "events": 0, "pages": 0}
+        return [], row | {"status": "unsupported reader", "events": 0, "pages": 0, "last": None}
     extra = (llm_ctx,) if reader["type"] == page_llm.SOURCE else ()
     try:
         found, pages, status = read(reader, entry["venue"], fetcher, now, tz, window_days, *extra)
@@ -55,7 +59,9 @@ def _read_one(
     log.info(
         "%s %s: %s, %d pages, %d events", reader["type"], entry["name"], status, pages, len(found)
     )
-    return found, row | {"status": status, "events": len(found), "pages": pages}
+    last = max((ev.start.astimezone(tz).date() for ev in found), default=None)
+    row |= {"status": status, "events": len(found), "pages": pages}
+    return found, row | {"last": last.isoformat() if last else None}
 
 
 def collect(
@@ -71,7 +77,7 @@ def collect(
     def one(entry: dict) -> tuple[list[RawEvent], dict]:
         return _read_one(entry, fetcher, now, tz, window_days, llm_ctx)
 
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, len(entries)))) as pool:
         results = list(pool.map(one, entries))
     events = [ev for found, _ in results for ev in found]
     return events, [row for _, row in results]
