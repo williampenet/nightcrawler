@@ -702,13 +702,11 @@ const routeOf = (hash) => {
   return ROUTES.includes(h) ? h : "concerts";
 };
 
-let handledHash = null; // the hash the routes last showed (see setupControls)
-
 // Programmatic route change: synchronous (pushState fires no hashchange), so the caller's
-// focus target wins over the heading; Back still works through popstate.
+// focus target wins over the heading; Back fires hashchange (HTML spec: a history step that
+// changes the fragment, https://html.spec.whatwg.org/multipage/browsing-the-web.html#updating-the-document).
 function goTo(route, focusId) {
   if (routeOf(location.hash) !== route) history.pushState(null, "", `#${route}`);
-  handledHash = location.hash; // pushState fires no event: the next hash change is a new one
   showRoute(!focusId);
   const target = focusId && document.getElementById(focusId);
   if (target) target.focus();
@@ -1353,10 +1351,7 @@ function setupControls() {
     render();
   });
 
-  handledHash = location.hash;
   const onHash = () => {
-    if (location.hash === handledHash) return; // Chromium fires hashchange and popstate for one change
-    handledHash = location.hash;
     const m = DEEP_LINK_RE.exec(location.hash);
     if (m) {
       deepLinkId = S.currentIds(DATA.concerts, [m[1]])[0] || null;
@@ -1366,7 +1361,6 @@ function setupControls() {
     if (m && deepLinkId) focusDeepLink();
   };
   window.addEventListener("hashchange", onHash);
-  window.addEventListener("popstate", onHash); // Back after goTo()'s pushState
 }
 
 // A shared concert: on the home, in the view that shows it (« Tout » when the sections do not).
