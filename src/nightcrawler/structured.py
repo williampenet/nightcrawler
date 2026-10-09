@@ -152,6 +152,49 @@ def jsonld_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
     return events
 
 
+# schema.org types reported by name (WIP-89): Event and its subtypes
+# (https://schema.org/Event, "More specific Types") and a few common page types; any other
+# type is "jsonld:other": a publisher writes @type freely, and the report is public
+REPORTED_TYPES = frozenset({
+    "Event", "BusinessEvent", "ChildrensEvent", "ComedyEvent", "CourseInstance", "DanceEvent",
+    "DeliveryEvent", "EducationEvent", "EventSeries", "ExhibitionEvent", "Festival",
+    "FoodEvent", "Hackathon", "LiteraryEvent", "MusicEvent", "PublicationEvent", "SaleEvent",
+    "ScreeningEvent", "SocialEvent", "SportsEvent", "TheaterEvent", "VisualArtsEvent",
+    "Organization", "Place", "WebSite", "WebPage", "ItemList", "BreadcrumbList", "Offer",
+    "Product",
+})  # fmt: skip
+
+
+def _reported_type(t: str) -> str:
+    return f"jsonld:{t}" if t in REPORTED_TYPES else "jsonld:other"
+
+
+def page_formats(html: str) -> list[str]:
+    """The structured formats a page carries, for a public report (WIP-89): "jsonld",
+    "jsonld_invalid", "microdata", "next_data" (Next.js pages router), "next_flight" (app
+    router), then "jsonld:<type>" for the types of REPORTED_TYPES, "jsonld:other" for any
+    other type. Never page content."""
+    soup = BeautifulSoup(html, "lxml")
+    flags: set[str] = set()
+    types: set[str] = set()
+    for script in soup.find_all("script", type="application/ld+json"):
+        flags.add("jsonld")
+        try:
+            data = json.loads(script.string or script.get_text() or "")
+        except ValueError:
+            flags.add("jsonld_invalid")
+            continue
+        for node in _walk(data):
+            types.update(_reported_type(t) for t in _types(node))
+    if soup.find(attrs={"itemscope": True, "itemtype": True}):
+        flags.add("microdata")
+    if soup.find("script", id="__NEXT_DATA__"):
+        flags.add("next_data")
+    if "self.__next_f" in html:
+        flags.add("next_flight")
+    return sorted(flags) + sorted(types)
+
+
 def microdata_events(html: str, venue_id: str, tz: ZoneInfo) -> list[RawEvent]:
     soup = BeautifulSoup(html, "lxml")
     events: list[RawEvent] = []

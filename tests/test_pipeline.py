@@ -179,7 +179,10 @@ def test_end_to_end_platform_pages(tmp_path, zone, tz, fixture_text, monkeypatch
     )
     # dice is blocked, so the third link gets the venue's second slot
     respx.get("https://www.helloasso.com/robots.txt").respond(404)
-    respx.get(host="www.helloasso.com").respond(200, html="<p>Saison</p>")
+    # a JS app page: no event read, its format is reported (WIP-89)
+    respx.get(host="www.helloasso.com").respond(
+        200, html='<script id="__NEXT_DATA__" type="application/json">{}</script><p>Saison</p>'
+    )
     respx.get(host="api.deezer.com").respond(json={"data": []})
     respx.get(host="musicbrainz.org").respond(json={"artists": []})
 
@@ -189,35 +192,79 @@ def test_end_to_end_platform_pages(tmp_path, zone, tz, fixture_text, monkeypatch
     assert report["probe_status"] == {"structured": 2, "no_website": 1}
     assert report["probe_method"] == {"json-ld": 1, "platform:shotgun": 1}
     assert report["sources"]["platforms"] == {
-        "dice": {
-            "pages": 0,
-            "with_events": 0,
-            "events": 0,
-            "robots_blocked": 1,
-            "budget_skipped": 0,
-        },
-        "helloasso": {
-            "pages": 1,
-            "with_events": 0,
-            "events": 0,
-            "robots_blocked": 0,
-            "budget_skipped": 0,
-        },
-        "shotgun": {
-            "pages": 1,
-            "with_events": 1,
-            "events": 2,
-            "robots_blocked": 0,
-            "budget_skipped": 0,
-        },
-    }
-    assert (
-        "platforms=dice(pages=0 with_events=0 events=0 robots_blocked=1 budget_skipped=0),"
-        "helloasso("
-    ) in one_line(report)
+        "dice": {"pages": 0, "with_events": 0, "events": 0, "robots_blocked": 1,
+                 "budget_skipped": 0, "formats": {}},
+        "helloasso": {"pages": 1, "with_events": 0, "events": 0, "robots_blocked": 0,
+                      "budget_skipped": 0, "formats": {"next_data": 1}},
+        "shotgun": {"pages": 1, "with_events": 1, "events": 2, "robots_blocked": 0,
+                    "budget_skipped": 0, "formats": {}},
+    }  # fmt: skip
+    line = one_line(report)
+    assert "platforms=dice(pages=0 with_events=0 events=0 robots_blocked=1 budget_skipped=0 " \
+        "formats=-),helloasso(" in line  # fmt: skip
+    assert "budget_skipped=0 formats=next_data*1)" in line
+    # what the judge can read (WIP-89): no store in this run, so no description counts
+    assert report["content"]["descriptions"] == "off"
+    assert set(report["content"]["all"]) == {"concerts", "lineup", "identified"}
+    assert report["content"]["all"]["concerts"] == report["concerts"]
+    assert "platform:shotgun" in report["content"]["by_source"]
     concerts = json.loads((tmp_path / "data/concerts.json").read_text())
     by_title = {c["title"]: c for c in concerts}
     assert by_title["Kraut Tuesday"]["venue_name"] == "Théâtre des Ombres"
     assert by_title["Kraut Tuesday"]["sources"] == ["platform:shotgun"]
     # the event's location names another known venue: attribution (WIP-35) moves it
     assert by_title["Bulbe Session"]["venue_name"] == "Le Petit Bulbe"
+
+
+@respx.mock
+def test_content_measure_never_fails_the_run(tmp_path, zone, tz, fixture_text, monkeypatch):
+    """WIP-89: with a store, descriptions are read for the measure; a failed read or measure
+    is reported as an error status, and the run goes on."""
+    from nightcrawler import content, judging, pipeline
+
+    monkeypatch.delenv("TICKETMASTER_API_KEY", raising=False)
+    respx.post(OVERPASS_URL).respond(200, text=fixture_text("overpass.json"))
+    respx.get("https://bulbe.example/robots.txt").respond(404)
+    respx.get(host="bulbe.example", path="/").respond(200, html=fixture_text("home.html"))
+    respx.get("https://bulbe.example/programmation/").respond(200, html=fixture_text("agenda.html"))
+    respx.get("https://ombres.example/robots.txt").respond(404)
+    respx.get(host="ombres.example", path="/").respond(200, html=fixture_text("microdata.html"))
+    respx.get(host="api.deezer.com").respond(json={"data": []})
+    respx.get(host="musicbrainz.org").respond(json={"artists": []})
+    monkeypatch.setattr(
+        pipeline.sync, "sync", lambda url, raw, cs, *a: (cs, {"status": "ok"}, set())
+    )
+    monkeypatch.setattr(pipeline.sync, "mark_reported", lambda artists, keys: 0)
+    monkeypatch.setattr(judging, "run", lambda *a, **k: {"status": "off"})
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+
+    def go():
+        return run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now,
+                   database_url="postgresql://db.example/x")  # fmt: skip
+
+    seen = {}
+
+    def read(url, ids):
+        seen["ids"] = ids
+        return {ids[0]: "x" * 400}
+
+    monkeypatch.setattr(content, "read_descriptions", read)
+    report = go()
+    assert report["content"]["descriptions"] == "store" and seen["ids"]
+    assert report["content"]["all"]["long_description"] == 1
+
+    def down(url, ids):
+        raise OSError("host db.example password=x")
+
+    monkeypatch.setattr(content, "read_descriptions", down)
+    report = go()
+    assert report["content"]["descriptions"] == "error: OSError"
+    assert "password" not in json.dumps(report["content"])
+
+    def broken(*a):
+        raise KeyError("boom")
+
+    monkeypatch.setattr(content, "measure", broken)
+    report = go()
+    assert report["content"] == {"status": "error: KeyError"} and report["concerts"] >= 1
+    assert "| What the judge reads (WIP-89) | error: KeyError |" in summary_markdown(report)

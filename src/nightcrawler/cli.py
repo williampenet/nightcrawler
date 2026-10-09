@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import judging
+from . import content, judging
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
@@ -89,6 +89,8 @@ def main(argv: list[str] | None = None) -> int:
     if report["store"]["status"].startswith("error"):
         annotate("warning", f"Event store: {report['store']['status']}; published without it")
     annotate("notice", one_line(report))
+    # what the taste judge can read per concert (WIP-89): counts only
+    annotate("notice", "Content: " + content.text(report.get("content")))
     summary = summary_markdown(report)
     print(summary)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -251,7 +253,14 @@ def one_line(report: dict) -> str:
     if store == "ok":
         store += "(" + " ".join(f"{k}={v}" for k, v in st.items() if k != "status") + ")"
     platforms = ",".join(
-        f"{name}(" + " ".join(f"{k}={v}" for k, v in p.items()) + ")"
+        f"{name}("
+        + " ".join(
+            f"{k}=" + ("/".join(f"{f}*{n}" for f, n in v.items()) or "-")
+            if isinstance(v, dict)
+            else f"{k}={v}"
+            for k, v in p.items()
+        )
+        + ")"
         for name, p in src.get("platforms", {}).items()
     )
     return (

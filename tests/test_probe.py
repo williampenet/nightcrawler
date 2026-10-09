@@ -207,6 +207,7 @@ def test_probe_platform_robots_blocked(fixture_text, tz):
         "events": 0,
         "robots_blocked": 1,
         "budget_skipped": 0,
+        "formats": {},
     }
 
 

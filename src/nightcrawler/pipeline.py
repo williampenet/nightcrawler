@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import coverage, judging
+from . import content, coverage, judging
 from .artists import enrich
 from .config import Zone
 from .events import build_concerts
@@ -149,6 +149,19 @@ def run(
     artists, artist_stats = enrich(concerts, fetcher)
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
+    # what the judge can read per concert (WIP-89): counts only, texts stay in the store
+    descriptions, desc_status = None, None
+    if store["status"] == "ok" and database_url:
+        try:
+            descriptions = content.read_descriptions(database_url, [c.id for c in concerts])
+        except Exception as exc:  # a measure must never fail the run
+            log.warning("descriptions read failed: %s", type(exc).__name__)
+            desc_status = f"error: {type(exc).__name__}"
+    try:
+        content_cover = content.measure(concerts, artists, descriptions, desc_status)
+    except Exception as exc:
+        log.warning("content measure failed: %s", type(exc).__name__)
+        content_cover = {"status": f"error: {type(exc).__name__}"}
     judged: dict = {"status": "off"}  # taste judgements (ADR-0007): store only, counts here
     if store["status"] == "ok" and database_url:
         try:
@@ -201,6 +214,8 @@ def run(
         "judge": judged,
         # {in_window, found, rate, per_venue: {venue: [in_window, found]}, events}
         "coverage": cover,
+        # {all, by_source: {family: counts}, descriptions} (WIP-89)
+        "content": content_cover,
     }
     venue_rows = []
     for v in sorted(venues, key=lambda v: v.name.lower()):
@@ -219,12 +234,15 @@ def run(
 
 def platform_stats(probes) -> dict[str, dict[str, int]]:
     """Per platform: pages requested, pages with events, events (before attribution),
-    pages blocked by robots.txt, pages skipped because the run-wide budget was spent."""
-    stats: dict[str, dict[str, int]] = {}
+    pages blocked by robots.txt, pages skipped because the run-wide budget was spent, and the
+    structured formats found on the pages that gave no event ({format: pages})."""
+    stats: dict[str, dict] = {}
     keys = ("pages", "with_events", "events", "robots_blocked", "budget_skipped")
     for probe in probes:
         for page in probe.platform_pages:
-            s = stats.setdefault(page["platform"], dict.fromkeys(keys, 0))
+            s = stats.setdefault(page["platform"], dict.fromkeys(keys, 0) | {"formats": {}})
+            for f in page.get("formats") or []:  # pages read without events (WIP-89)
+                s["formats"][f] = s["formats"].get(f, 0) + 1
             if page["status"] == "robots_blocked":
                 s["robots_blocked"] += 1
             elif page["status"] == "skipped_budget":
@@ -272,4 +290,5 @@ def summary_markdown(report: dict) -> str:
             f"| Reference events found (FR-11) | {cov['found']} / {cov['in_window']} ({rate}) |",
             f"| … same date and venue, no artist match | {cov['date_venue_only']} |",
         ]
+    lines += content.summary_rows(report.get("content"))
     return "\n".join(lines) + "\n"

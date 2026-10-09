@@ -55,3 +55,25 @@ def test_unsafe_urls_dropped(tz):
         '"startDate":"2026-10-10","url":"javascript:alert(1)"}</script>'
     )
     assert jsonld_events(html, "v", tz)[0].url is None
+
+
+def test_page_formats_reports_type_names_only():
+    """WIP-89: why a platform page gave no event, without any page content."""
+    from nightcrawler.structured import page_formats
+
+    html = (
+        '<script type="application/ld+json">{"@type": "Organization", "name": "Secret Club",'
+        ' "event": {"@type": "MusicEvent"}}</script>'
+        '<script type="application/ld+json">{broken</script>'
+        '<script id="__NEXT_DATA__" type="application/json">{"props": {}}</script>'
+        "<script>self.__next_f.push([1, 'x'])</script>"
+        '<div itemscope itemtype="https://schema.org/Place"></div>'
+    )
+    flags = ["jsonld", "jsonld_invalid", "microdata", "next_data", "next_flight"]
+    assert page_formats(html) == flags + ["jsonld:MusicEvent", "jsonld:Organization"]
+    assert page_formats("<p>rien</p>") == []
+    # @type is free text: only event types and a fixed list are named (the report is public)
+    free = ('<script type="application/ld+json">{"@type": ["Lyon", "SecretGuestList", '
+            '"MusicEvent\\n", "A b", "WebPage", "Festival", '
+            '"JeanDupontEvent"]}</script>')  # fmt: skip
+    assert page_formats(free) == ["jsonld", "jsonld:Festival", "jsonld:WebPage", "jsonld:other"]
