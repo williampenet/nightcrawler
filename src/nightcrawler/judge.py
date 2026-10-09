@@ -248,7 +248,7 @@ def messages_for(
     taste = taste.strip()[:MAX_TASTE_CHARS]
     parts = ["Son goût, dans ses mots :", taste or "(pas encore écrit)"]
     if seeds := seed_names(profile):
-        parts += ["", "Artistes qu'elle écoute : " + ", ".join(seeds)]
+        parts += ["", SEEDS_LABEL + ", ".join(seeds)]
     ex = list(examples)
     liked = [_short(e.concert) for e in ex if e.label == "liked"]
     disliked = [_short(e.concert) for e in ex if e.label == "disliked"]
@@ -284,6 +284,7 @@ def check(data: dict) -> list[str]:
 # so nothing is parsed out of the free written taste; the error never names the artist (the
 # profile is personal data and errors reach counts and logs).
 UNFAITHFUL = "reason names a profile artist absent from the concert"
+SEEDS_LABEL = "Artistes qu'elle écoute : "  # prompt line of the seed artists (messages_for)
 _WORD = re.compile(r"[^\W_][\w'’&.-]*", re.UNICODE)
 _SENTENCE_END = re.compile(r"[.!?:;«»\"(]\s*$")
 _CONNECTORS = {"&", "and", "et", "de", "du", "des", "of", "the", "y"}
@@ -351,6 +352,9 @@ def unfaithful(reason: str, messages: list[dict]) -> bool:
     concert = rest.partition("CONCERT>>>")[0]
     in_profile, in_concert = _plain(profile), _plain(concert)
     profile_words = {_plain(n) for n in reason_names(profile) if " " not in n.strip()}
+    for line in profile.splitlines():  # the seeds line: its first name follows a colon
+        if line.startswith(SEEDS_LABEL):
+            profile_words |= {_plain(n) for n in line[len(SEEDS_LABEL) :].split(", ")}
     for name in reason_names(reason):
         key = _plain(name)
         if not key.strip() or key in in_concert:

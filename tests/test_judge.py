@@ -257,5 +257,12 @@ def test_elision_one_word_names_and_no_verdicts():
     assert check(shown | {"reason": "Une soirée à Lyon, programme non détaillé."}) != []
 
 
+def test_first_seed_counts_as_a_name():
+    m = judge.messages_for(GOUYAD, {}, {"taste_text": "", "seeds": ["Boris", "Moderat"]})
+    check = judge.check_for(m)
+    for r in ("Proche de Boris, drone lourd.", "Proche de Moderat."):
+        assert check({"verdict": "for_you", "confidence": 60, "reason": r}) == [judge.UNFAITHFUL]
+
+
 def test_prompt_states_the_faithfulness_rule():
     assert "Ne nomme un artiste que s'il apparaît dans le bloc CONCERT" in judge.SYSTEM
