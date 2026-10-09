@@ -63,7 +63,7 @@
       // ratings of concerts without an identified artist (WIP-47): concert ids and
       // normalised performer names
       likedConcerts: [], likedNames: [], dislikedNames: [],
-      sort: "date", when: "all", style: "", venue: "",
+      sort: "date", when: DEFAULT_PERIOD, style: "", venue: "",
       // "Mon goût en mots" (WIP-73): the written taste profile and its edit time (ms, for the
       // last-writer-wins sync merge in profile.js)
       tasteText: "", tasteTextAt: 0,

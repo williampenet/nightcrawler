@@ -1131,20 +1131,29 @@ function renderPourToi(root, picks, total) {
   }
 }
 
-// The pressed chip is kept inside its row when the chips scroll (narrow screens), without
-// scrolling the page (a re-render can happen while the row is off screen).
-function showPressedPeriod() {
-  const row = document.querySelector(".periods");
-  const b = row && row.querySelector('[aria-pressed="true"]');
-  if (!b || row.scrollWidth <= row.clientWidth) return;
+// A period chip is brought fully inside its row when the chips scroll (narrow screens), without
+// scrolling the page: the pressed one after each render, the focused one on focus. Chromium
+// leaves a partly visible focused chip where it is (measured at 375px: « Toutes les dates » at
+// 306–416px after Tab), so focus does it here; the row's padding keeps the ring visible.
+function showChip(b) {
+  const row = b && b.closest(".periods");
+  if (!row || row.scrollWidth <= row.clientWidth) return;
   const r = row.getBoundingClientRect();
   const c = b.getBoundingClientRect();
   const pad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
   if (c.left < r.left + pad) row.scrollLeft -= r.left + pad - c.left;
   else if (c.right > r.right - pad) row.scrollLeft += c.right - (r.right - pad);
 }
+const showPressedPeriod = () => showChip(document.querySelector('.periods [aria-pressed="true"]'));
 
+// The home; the pressed period chip is scrolled into its row once the list is back, so the
+// layout read never sees an empty list (which clamped the page scroll: 150 → 79 at 375px).
 function render() {
+  renderHome();
+  showPressedPeriod();
+}
+
+function renderHome() {
   const root = document.getElementById("concerts");
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
@@ -1153,9 +1162,8 @@ function render() {
     if (b.dataset.view === view) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   }
-  // period chips (WIP-108): one pressed at a time, scrolled into their row when it overflows
+  // period chips (WIP-108): one pressed at a time
   for (const b of document.querySelectorAll(".periods button")) b.setAttribute("aria-pressed", String(b.dataset.when === state.when));
-  showPressedPeriod();
   document.getElementById("tout-tools").hidden = view !== "tout";
   // « Tout » counts the concerts of the period (style and venue filters aside)
   document.getElementById("count").textContent = String(filtered("pour_toi").length);
@@ -1408,6 +1416,7 @@ function setupControls() {
   // active chip keeps it
   state.when = S.DEFAULT_PERIOD; // « Cette semaine » on every load (PM, 2026-10-09)
   for (const b of document.querySelectorAll(".periods button")) {
+    b.addEventListener("focus", () => showChip(b));
     b.addEventListener("click", () => {
       state.when = S.choosePeriod(state.when, b.dataset.when);
       saveState();

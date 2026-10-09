@@ -38,6 +38,7 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .periods {
   display: flex; flex-wrap: nowrap; column-gap: 18px; overflow-x: auto; scrollbar-width: none;
   margin: 0 calc(-1 * var(--space-6)); padding: var(--space-2) var(--space-6);
+  scroll-padding-inline: var(--space-6); /* a chip reached by Tab is scrolled fully into view */
 }
 .periods::-webkit-scrollbar { display: none; }
 .periods button {

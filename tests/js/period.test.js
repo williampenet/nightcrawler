@@ -50,3 +50,8 @@ test("« Toutes les dates » keeps a concert 3 months ahead; « Cette semaine »
   assert.equal(S.inWhen("7d", far, now, key), false);
   assert.equal(S.inWhen("7d", "2026-10-15T20:00:00Z", now, key), true);
 });
+
+test("the saved-state default is the period the home opens on", () => {
+  assert.equal(S.defaultState().when, S.DEFAULT_PERIOD);
+  assert.equal(S.sanitizeState({}).when, S.DEFAULT_PERIOD);
+});
