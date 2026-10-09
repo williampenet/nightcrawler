@@ -196,13 +196,13 @@ def deploy_feedback_command() -> int:
         annotate("error", f"Feedback function: {type(exc).__name__}")
         return 1
     public = f"https://{fn.get('domain_name', '')}"
-    preflight, refused, profile, root = smoke_test(public, origin)
-    ok = (preflight, refused, profile, root) == (204, 401, 401, 405)
+    preflight, refused, profile, verdicts, root = smoke_test(public, origin)
+    ok = (preflight, refused, profile, verdicts, root) == (204, 401, 401, 401, 405)
     annotate(
         "notice" if ok else "error",
         f"Feedback function: {fn.get('status')} at {public} (runtime {fn.get('runtime')}, "
         f"preflight HTTP {preflight}, wrong token HTTP {refused}, "
-        f"GET /profile HTTP {profile}, GET / HTTP {root}); "
+        f"GET /profile HTTP {profile}, GET /verdicts HTTP {verdicts}, GET / HTTP {root}); "
         "paste this URL into config/app.yaml feedback_url",
     )
     return 0 if ok else 1

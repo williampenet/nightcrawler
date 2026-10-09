@@ -1,9 +1,11 @@
-"""Scaleway Serverless Function: POST / (feedback) and GET/PUT /profile (ADR-0005, WIP-46).
+"""Scaleway Serverless Function: POST / (feedback), GET/PUT /profile (ADR-0005, WIP-46) and
+GET /verdicts (ADR-0007, WIP-85).
 
 POST receives the listener's ratings and stores them in the `feedback` table. /profile keeps
 the taste profile (seed artists, ratings, hidden concerts, written taste) so it follows the
 listener across devices; PUT uses optimistic concurrency (base_version, 409 with the current
-profile).
+profile). /verdicts serves the taste judgements of concerts starting from yesterday on
+(personal data: no-store, never logged beyond a count).
 Security: CORS limited to the Pages origin, bearer token compared by SHA-256 hash, strict
 schema and size limits, parameterised SQL. Never logs the token or the body.
 
@@ -21,6 +23,7 @@ import logging
 import os
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "package"))  # no-op when already on the path
@@ -57,6 +60,8 @@ MAX_IDS = 500
 MAX_TASTE_TEXT = 4000
 MAX_TIMESTAMP = 2**53 - 1  # JavaScript's Number.MAX_SAFE_INTEGER
 PROFILE_FIELDS = ("seeds", *KEY_LISTS, *ID_LISTS, "taste_text", "taste_text_at")
+# verdicts (ADR-0007 Decision 4): one indexed read of at most a few hundred rows
+VERDICTS_STATEMENT_TIMEOUT = "10s"
 
 
 class Invalid(ValueError):
@@ -214,8 +219,37 @@ def _profile(method: str, body: bytes, profile, allowed: str) -> dict:
     )
 
 
-def process(method: str, headers: dict, body: bytes, store, path: str = "/", profile=None) -> dict:
-    """Pure request handling; `store(rows) -> int` writes the rows; `profile`: see _profile."""
+def _verdicts(method: str, read, allowed: str) -> dict:
+    """GET /verdicts; `read() -> {concert id: {section, verdict, confidence, reason}}`.
+
+    Always `Cache-Control: no-store` (personal data, ADR-0007); logs a count at most."""
+    if method != "GET":
+        r = _response(405, allowed, {"error": "method not allowed"})
+    else:
+        try:
+            verdicts = read()
+        except Exception as exc:  # the DB may be waking up or down: the page keeps its copy
+            log.warning("verdicts read failed: %s", type(exc).__name__)
+            r = _response(503, allowed, {"error": "storage unavailable"})
+        else:
+            log.info("verdicts served: %d", len(verdicts))
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            r = _response(200, allowed, {"generated_at": now, "verdicts": verdicts})
+    r["headers"]["Cache-Control"] = "no-store"
+    return r
+
+
+def process(
+    method: str,
+    headers: dict,
+    body: bytes,
+    store,
+    path: str = "/",
+    profile=None,
+    verdicts=None,
+) -> dict:
+    """Pure request handling; `store(rows) -> int` writes the rows; `profile`: see _profile;
+    `verdicts`: see _verdicts."""
     h = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
     allowed = os.environ.get("ALLOWED_ORIGIN", DEFAULT_ORIGIN)
     if h.get("origin") != allowed:
@@ -231,8 +265,9 @@ def process(method: str, headers: dict, body: bytes, store, path: str = "/", pro
             }
         )
         return r
-    is_profile = path.strip("/").split("/")[-1] == "profile"
-    if method != "POST" and not is_profile:
+    route = path.strip("/").split("/")[-1]
+    is_profile = route == "profile"
+    if method != "POST" and route not in ("profile", "verdicts"):
         return _response(405, allowed, {"error": "method not allowed"})
     expected = os.environ.get("FEEDBACK_TOKEN_SHA256", "")
     auth = h.get("authorization", "")
@@ -242,6 +277,8 @@ def process(method: str, headers: dict, body: bytes, store, path: str = "/", pro
         return _response(401, allowed, {"error": "unauthorized"})
     if is_profile:
         return _profile(method, body, profile or PgProfile(), allowed)
+    if route == "verdicts":
+        return _verdicts(method, verdicts or pg_verdicts, allowed)
     try:
         rows = validate(body)
     except Invalid as exc:
@@ -269,6 +306,23 @@ def pg_store(rows: list[tuple[str | None, str | None, str]]) -> int:
                 "INSERT INTO feedback (concert_id, artist_key, kind) VALUES (%s, %s, %s)", rows
             )
     return len(rows)
+
+
+def pg_verdicts() -> dict[str, dict]:
+    """The stored judgements of concerts starting from yesterday on, in a read-only transaction
+    with a statement timeout (ADR-0007 Decision 4)."""
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=15, autocommit=True) as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute(f"SET LOCAL statement_timeout = '{VERDICTS_STATEMENT_TIMEOUT}'")
+            rows = conn.execute(
+                "SELECT concert_id, section, verdict, confidence, reason FROM verdicts "
+                "WHERE starts_at >= now() - interval '1 day' ORDER BY concert_id"
+            ).fetchall()
+    return {
+        cid: {"section": section, "verdict": verdict, "confidence": int(conf), "reason": reason}
+        for cid, section, verdict, conf, reason in rows
+    }
 
 
 class PgProfile:
@@ -328,8 +382,9 @@ def handle(event, context):
     commit 066fe2e: preflight HTTP 204, wrong-token POST HTTP 401; without `httpMethod` both
     would be 405). Unverified: Scaleway's docs list `path` and `method`
     (https://www.scaleway.com/en/docs/serverless-functions/reference-content/code-examples/),
-    so `method`, `path` and `rawPath` are read too, and "/profile" and "profile" are both
-    routed; the deploy smoke test (GET /profile -> 401, GET / -> 405) checks the routing."""
+    so `method`, `path` and `rawPath` are read too, and "/profile" and "profile" (likewise
+    "/verdicts") are routed; the deploy smoke test (GET /profile and GET /verdicts -> 401,
+    GET / -> 405) checks the routing."""
     body = event.get("body") or ""
     try:  # a truncated oversize body still decodes to more than the size limits
         cut = body[: MAX_PROFILE_BODY * 2]
