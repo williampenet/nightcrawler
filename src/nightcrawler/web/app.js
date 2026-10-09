@@ -1074,14 +1074,13 @@ function seeAll(root, n) {
   root.append(b);
 }
 
-function heading(root, id, text, sub) {
+function heading(root, id, text) {
   const h = el("h2", text);
   h.id = id;
   root.append(h);
-  if (sub) root.append(el("p", sub, "section-sub"));
 }
 
-// Every item with its verdict (judge) and a must flag (« À ne pas rater », highlighted on every
+// Every item with its verdict (judge) and a must flag (« À ne pas rater », a MustSeeCard on every
 // view), plus the picks of « Pour toi »: the concerts that very probably match, i.e. must-see and
 // the judge's « Pour toi », by date. Not judged yet, Découvertes and the rest stay in « Tout »
 // (PM, 2026-10-09 17:08, WIP-102; amends ADR-0007 §5).

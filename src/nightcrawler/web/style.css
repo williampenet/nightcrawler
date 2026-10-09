@@ -40,7 +40,6 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .periods button[aria-current] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
 
 /* sections */
-.section-sub { margin: 2px 0 var(--space-1); font-size: 14px; color: var(--ink-muted); }
 .empty { margin: var(--space-6) 0; }
 ul.rows { list-style: none; margin: 0; padding: 0; }
 
@@ -89,12 +88,12 @@ h3.card-title { margin: 0; font: 800 30px/1.02 var(--font-display); letter-spaci
 .card .venue { margin: 0; font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .card .reason, .card .muted { color: var(--ink); }
 .card .actions { margin-top: 6px; gap: var(--space-1); }
-.card button.icon { border-radius: var(--radius-pill); background: var(--veil); color: var(--ink); position: relative; }
+.card button.icon { border-radius: var(--radius-pill); background: var(--veil); color: var(--ink); }
+.card .more button.ghost { background: var(--veil); } /* light buttons on the card all sit on the veil */
 .card .links a, .card .more { color: var(--ink); }
 .card :focus-visible { outline-color: var(--ink); }
 button.listen.filled {
   padding: 0 18px 0 14px; border-radius: var(--radius-pill); background: var(--ink); color: var(--on-ink); gap: var(--space-2);
-  position: relative;
 }
 .card button.listen.filled:focus-visible { outline-offset: 3px; }
 li.card.target { outline: 3px solid var(--ink); outline-offset: 2px; }
