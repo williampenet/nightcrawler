@@ -2,8 +2,9 @@
 
 Gancio is an open-source federated agenda. `GET <instance>/api/events` lists the upcoming
 events with their place (name, address, coordinates) and tags. Descriptions are only on
-`/api/event/detail/<slug>`, fetched for a capped number of untagged events whose title
-alone cannot decide whether they are concerts.
+`/api/event/detail/<slug>`, fetched for a capped number of events: first the untagged ones
+whose title alone cannot decide whether they are concerts, then the others, whose text is
+what the taste judge reads (WIP-91: 38 of 110 Gancio concerts had their title only).
 """
 
 from __future__ import annotations
@@ -29,7 +30,10 @@ from ..structured import _text
 
 log = logging.getLogger(__name__)
 
-MAX_DETAILS = 60  # per instance and per run (responses are cached 20 h by the fetcher)
+# per instance and per run (responses are cached 20 h by the fetcher); 186 Gancio events in
+# Pipeline 37918562968, so 120 per instance covers the window of each instance (unverified
+# per instance: the report counts events per source, not per instance)
+MAX_DETAILS = 120
 MAX_GEOCODE = 60  # places without coordinates, per run
 # French national address API (IGN Géoplateforme, BAN data): free, no key, public service
 GEOCODER_URL = "https://data.geopf.fr/geocodage/search"
@@ -143,9 +147,18 @@ def needs_detail(ev: RawEvent) -> bool:
     return not ev.tags and concert_reason(ev, None) is None
 
 
+def detail_order(events: list[RawEvent]) -> list[RawEvent]:
+    """Events to read in detail, at most MAX_DETAILS: those whose kind needs the description
+    first, then every other one without a description (the judge's text), soonest first."""
+    linked = [e for e in events if e.url and "/event/" in e.url and not e.description]
+    first = sorted(filter(needs_detail, linked), key=lambda e: e.start)
+    rest = sorted((e for e in linked if not needs_detail(e)), key=lambda e: e.start)
+    return (first + rest)[:MAX_DETAILS]
+
+
 def _add_details(base: str, events: list[RawEvent], fetcher: Fetcher) -> int:
     fetched = 0
-    for ev in sorted(filter(needs_detail, events), key=lambda e: e.start)[:MAX_DETAILS]:
+    for ev in detail_order(events):
         slug = ev.url.rsplit("/event/", 1)[1]
         try:
             resp = fetcher.get(f"{base}/api/event/detail/{slug}")

@@ -232,3 +232,42 @@ def test_truncated_page_keeps_earlier_pages(items, tz, monkeypatch):
     events, rows = priority.collect((entry,), _fetcher(), _now(tz), tz, 365)
     assert (rows[0]["status"], rows[0]["pages"]) == ("truncated", 1)
     assert {e.title for e in events} == {"ORIA", "ALOISE SAUVAGE", "SAM QUEALY", "GROUNDATION"}
+
+
+def test_description_from_acf_blocks(tz):
+    """WIP-91: the venue's own presentation, one HTML text per ACF layout block, as plain
+    text; the judge reads it (it was not mapped before)."""
+    reader = READER | {"fields": READER["fields"] | {"description": "acf.content.*.description"}}
+    item = _item()
+    item["acf"]["content"] = [
+        {"acf_fc_layout": "descr", "description": "<p>D'origine marocaine,<br> il mêle rap</p>"},
+        {"acf_fc_layout": "media"},  # no description in this block
+        {"acf_fc_layout": "descr", "description": "<p>et <b>sonorités caribéennes</b>.</p>"},
+        {"acf_fc_layout": "descr", "description": 42},  # not a text: ignored
+    ]
+    (ev,) = wp_json.parse([item], reader, "Le Transbordeur", _now(tz), tz, 60)
+    assert ev.description == "D'origine marocaine, il mêle rap et sonorités caribéennes ."
+    item["acf"]["content"] = [{"description": "x" * 300}, {"description": "y" * 300}]
+    (ev,) = wp_json.parse([item], reader, "Le Transbordeur", _now(tz), tz, 60)
+    assert len(ev.description) == 500  # capped like every listing text (structured.MAX_TEXT)
+    for content in (None, "texte", [], [{"description": ""}]):
+        item["acf"]["content"] = content
+        (ev,) = wp_json.parse([item], reader, "Le Transbordeur", _now(tz), tz, 60)
+        assert ev.description is None
+    (ev,) = wp_json.parse([_item()], READER, "Le Transbordeur", _now(tz), tz, 60)
+    assert ev.description is None  # no description path configured
+
+
+def test_get_values_walks_lists_only_on_star():
+    item = {"a": [{"b": 1}, {"b": 2}, {"c": 3}], "d": {"b": 4}}
+    assert wp_json.get_values(item, "a.*.b") == [1, 2]
+    assert wp_json.get_values(item, "d.b") == [4]
+    assert wp_json.get_values(item, "a.b") == [] and wp_json.get_values(item, "d.*") == []
+    assert wp_json.get_values(item, None) == []
+
+
+def test_transbordeur_config_maps_text_and_music_category():
+    zone = load_zone(Path("config/zone.yaml"))
+    entry = next(e for e in zone.priority_venues if e["name"] == "Le Transbordeur")
+    assert entry["reader"]["fields"]["description"] == "acf.content.*.description"
+    assert entry["category"] == "music_venue"

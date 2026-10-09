@@ -53,6 +53,10 @@ llm_chunks_per_page: 6
 priority_venues:
   - name: Le Transbordeur
     venue: Le Transbordeur
+    # a concert hall (https://fr.wikipedia.org/wiki/Le_Transbordeur): its own listings carry no
+    # schema.org type, so without a music category only those with music words in the title
+    # were kept (2 wp_json concerts of 47 events in Pipeline 37918562968; cause unverified)
+    category: music_venue
     reader:
       type: wp_json
       # checked 2026-10-06: acf.date "20270520", acf.hour "18:30:00"; 97 items, page 21
@@ -64,6 +68,9 @@ priority_venues:
         time: acf.hour
         ticket: acf.bouton_booking.url
         link: link
+        # the venue's own presentation, one HTML text per ACF layout block (WIP-91, checked
+        # 2026-10-09 on ?per_page=2: acf.content[0].description; acf.description was empty)
+        description: acf.content.*.description
       date_format: "%Y%m%d"
       time_format: "%H:%M:%S"
       per_page: 50

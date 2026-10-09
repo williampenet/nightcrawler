@@ -68,11 +68,15 @@ def test_collect_fetches_details_only_when_needed(zone, tz, fixture_text):
     params = listing.calls[0].request.url.params
     assert params["start"] == str(int(datetime(2026, 10, 5, tzinfo=tz).timestamp()))
     assert params["end"] == str(int(datetime(2026, 12, 5, tzinfo=tz).timestamp()))
-    # only untagged events whose title does not decide (tagged ones never), nearest first
-    assert [c.request.url.path for c in detail.calls] == [
+    # first the untagged events whose title does not decide, nearest first; then every
+    # other event, whose text is what the taste judge reads (WIP-91), each once
+    paths = [c.request.url.path for c in detail.calls]
+    assert paths[:2] == [
         "/api/event/detail/dazzlingkillmen-us-pord-comte-zero",
         "/api/event/detail/atelier-velo",
     ]
+    assert len(paths) == len(set(paths)) == sum(1 for e in events if "/event/" in (e.url or ""))
+    assert all(e.description == "Soirée noise rock" for e in events if "/event/" in (e.url or ""))
     dazz = next(e for e in events if e.title.startswith("DazzlingKillmen"))
     assert dazz.description == "Soirée noise rock"
 
@@ -292,3 +296,24 @@ def test_null_island_without_geocoder_keeps_event_without_venue(zone, tz):
 
 def test_bool_is_not_a_coordinate():
     assert [gancio._coord(v) for v in (True, False, 1, "45.7")] == [None, None, 1.0, 45.7]
+
+
+def test_detail_order_cap_and_skips(tz, monkeypatch):
+    """WIP-91: the cap keeps the events whose kind needs the text first; events with a
+    description or without a Gancio event link are never fetched."""
+
+    def ev(title, day, tags=(), url="https://g.example/event/x", description=None):
+        start = datetime(2026, 10, day, 20, tzinfo=tz)
+        return RawEvent(title=title, start=start, source="gancio:g", venue_id="v", url=url,
+                        tags=list(tags), description=description)  # fmt: skip
+
+    later_unsure = ev("Rencontre", 20)  # title does not decide: needs the text to be kept
+    soon_tagged = ev("Live", 6, tags=["concert"])
+    soon_concert = ev("Concert punk", 7)
+    has_text = ev("Concert", 5, description="déjà là")
+    no_link = ev("Concert", 5, url="https://g.example/place/1")
+    order = gancio.detail_order([soon_tagged, has_text, later_unsure, no_link, soon_concert])
+    assert order == [later_unsure, soon_tagged, soon_concert]
+    monkeypatch.setattr(gancio, "MAX_DETAILS", 2)
+    assert gancio.detail_order([soon_tagged, later_unsure, soon_concert]) == [
+        later_unsure, soon_tagged]  # fmt: skip
