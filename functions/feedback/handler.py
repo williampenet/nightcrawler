@@ -4,8 +4,9 @@ GET /verdicts (ADR-0007, WIP-85).
 POST receives the listener's ratings and stores them in the `feedback` table. /profile keeps
 the taste profile (seed artists, ratings, hidden concerts, written taste) so it follows the
 listener across devices; PUT uses optimistic concurrency (base_version, 409 with the current
-profile). /verdicts serves the taste judgements of concerts starting from yesterday on
-(personal data: no-store, never logged beyond a count).
+profile). /verdicts serves the taste judgements of concerts that started less than 24 h ago
+or later (personal data, never logged beyond a count). Every answer is `Cache-Control:
+no-store`: /profile carries the written taste and /verdicts the judgements.
 Security: CORS limited to the Pages origin, bearer token compared by SHA-256 hash, strict
 schema and size limits, parameterised SQL. Never logs the token or the body.
 
@@ -73,7 +74,14 @@ class RateLimited(Exception):
 
 
 def _response(status: int, origin: str | None, body: dict | None = None) -> dict:
-    headers = {"Content-Type": "application/json", "Vary": "Origin"}
+    # no-store on every answer (WIP-85 review): /profile and /verdicts carry personal data, and
+    # an error must not be cached either. The preflight cache is set by Access-Control-Max-Age
+    # (https://fetch.spec.whatwg.org/#cors-preflight-cache), not by Cache-Control.
+    headers = {
+        "Content-Type": "application/json",
+        "Vary": "Origin",
+        "Cache-Control": "no-store",
+    }
     if origin:
         headers["Access-Control-Allow-Origin"] = origin
     return {"statusCode": status, "headers": headers, "body": json.dumps(body or {})}
@@ -222,21 +230,18 @@ def _profile(method: str, body: bytes, profile, allowed: str) -> dict:
 def _verdicts(method: str, read, allowed: str) -> dict:
     """GET /verdicts; `read() -> {concert id: {section, verdict, confidence, reason}}`.
 
-    Always `Cache-Control: no-store` (personal data, ADR-0007); logs a count at most."""
+    `Cache-Control: no-store` comes from _response (personal data, ADR-0007); logs a count
+    at most."""
     if method != "GET":
-        r = _response(405, allowed, {"error": "method not allowed"})
-    else:
-        try:
-            verdicts = read()
-        except Exception as exc:  # the DB may be waking up or down: the page keeps its copy
-            log.warning("verdicts read failed: %s", type(exc).__name__)
-            r = _response(503, allowed, {"error": "storage unavailable"})
-        else:
-            log.info("verdicts served: %d", len(verdicts))
-            now = datetime.now(UTC).isoformat(timespec="seconds")
-            r = _response(200, allowed, {"generated_at": now, "verdicts": verdicts})
-    r["headers"]["Cache-Control"] = "no-store"
-    return r
+        return _response(405, allowed, {"error": "method not allowed"})
+    try:
+        verdicts = read()
+    except Exception as exc:  # the DB may be waking up or down: the page keeps its copy
+        log.warning("verdicts read failed: %s", type(exc).__name__)
+        return _response(503, allowed, {"error": "storage unavailable"})
+    log.info("verdicts served: %d", len(verdicts))
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    return _response(200, allowed, {"generated_at": now, "verdicts": verdicts})
 
 
 def process(
@@ -309,8 +314,8 @@ def pg_store(rows: list[tuple[str | None, str | None, str]]) -> int:
 
 
 def pg_verdicts() -> dict[str, dict]:
-    """The stored judgements of concerts starting from yesterday on, in a read-only transaction
-    with a statement timeout (ADR-0007 Decision 4)."""
+    """The stored judgements of concerts that started less than 24 h ago or later (rolling
+    window), in a read-only transaction with a statement timeout (ADR-0007 Decision 4)."""
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=15, autocommit=True) as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION READ ONLY")

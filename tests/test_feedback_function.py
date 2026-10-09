@@ -47,6 +47,43 @@ def call(method="POST", body=None, token="s3cret", origin=ORIGIN, store=None):
     return resp, rows
 
 
+def test_every_answer_is_no_store():
+    # WIP-85 review: /profile carries the written taste, /verdicts the judgements; errors and
+    # the preflight are not cached either (preflight caching is Access-Control-Max-Age)
+    def down(*a):
+        raise RuntimeError("down")
+
+    def busy(*a):
+        raise handler.RateLimited
+
+    good = {"Origin": ORIGIN, "Authorization": "Bearer s3cret"}
+    rating = json.dumps({"items": [{"kind": "like", "artist_keys": ["a"]}]}).encode()
+    profile_put = json.dumps({"data": {}, "base_version": 3}).encode()
+
+    class DownProfile:
+        get = put = down
+
+    answers = [
+        handler.process("GET", {"Origin": "https://evil.example"}, b"", None, "/verdicts"),  # 403
+        handler.process("OPTIONS", {"Origin": ORIGIN}, b"", None, "/profile"),  # 204
+        handler.process("GET", good, b"", None, "/"),  # 405
+        handler.process("POST", {"Origin": ORIGIN}, rating, None),  # 401
+        handler.process("POST", good, b"{}", None),  # 400
+        handler.process("POST", good, rating, lambda rows: len(rows)),  # 202
+        handler.process("POST", good, rating, busy),  # 429
+        handler.process("POST", good, rating, down),  # 503
+        handler.process("GET", good, b"", None, "/profile", FakeProfile()),  # 200
+        handler.process("PUT", good, profile_put, None, "/profile", FakeProfile()),  # 409
+        handler.process("GET", good, b"", None, "/profile", DownProfile()),  # 503
+        handler.process("GET", good, b"", None, "/verdicts", None, dict),  # 200
+        handler.process("PUT", good, b"", None, "/verdicts", None, dict),  # 405
+        handler.process("GET", good, b"", None, "/verdicts", None, down),  # 503
+    ]
+    statuses = [r["statusCode"] for r in answers]
+    assert statuses == [403, 204, 405, 401, 400, 202, 429, 503, 200, 409, 503, 200, 405, 503]
+    assert all(r["headers"]["Cache-Control"] == "no-store" for r in answers)
+
+
 def test_preflight_and_cors():
     resp, _ = call("OPTIONS", token=None)
     assert resp["statusCode"] == 204
@@ -519,8 +556,8 @@ def test_pg_verdicts_on_real_postgres(monkeypatch):
     from nightcrawler.store.migrate import migrate
 
     url = os.environ["TEST_DATABASE_URL"]
-    ids = {"today": "aaaaaaaaaaa1", "yesterday": "aaaaaaaaaaa2", "old": "aaaaaaaaaaa3"}
-    starts = {"today": "2 hours", "yesterday": "-23 hours", "old": "-25 hours"}
+    ids = {"later": "aaaaaaaaaaa1", "23h_ago": "aaaaaaaaaaa2", "25h_ago": "aaaaaaaaaaa3"}
+    starts = {"later": "2 hours", "23h_ago": "-23 hours", "25h_ago": "-25 hours"}
     with psycopg.connect(url, autocommit=True) as conn:
         migrate(conn)
         conn.execute("DELETE FROM verdicts")
@@ -536,20 +573,20 @@ def test_pg_verdicts_on_real_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", url)
     got = handler.pg_verdicts()
     assert got == {
-        ids["today"]: {
+        ids["later"]: {
             "section": "ne_pas_rater",
             "verdict": "must_see",
             "confidence": 91,
-            "reason": "reason today",
+            "reason": "reason later",
         },
-        ids["yesterday"]: {
+        ids["23h_ago"]: {
             "section": "ne_pas_rater",
             "verdict": "must_see",
             "confidence": 91,
-            "reason": "reason yesterday",
+            "reason": "reason 23h_ago",
         },
     }
-    assert isinstance(got[ids["today"]]["confidence"], int)
+    assert isinstance(got[ids["later"]]["confidence"], int)
     resp = handler.process(
         "GET",
         {"Origin": ORIGIN, "Authorization": "Bearer s3cret"},
@@ -558,9 +595,44 @@ def test_pg_verdicts_on_real_postgres(monkeypatch):
         "/verdicts",
     )  # the default reader is pg_verdicts
     assert resp["statusCode"] == 200 and set(json.loads(resp["body"])["verdicts"]) == {
-        ids["today"],
-        ids["yesterday"],
+        ids["later"],
+        ids["23h_ago"],
     }
+    # read-only for real: inside pg_verdicts' transaction, just before its SELECT, the session
+    # reports transaction_read_only = on and the 10 s timeout, and a write is refused
+    real_connect, checks = psycopg.connect, {}
+
+    class Spy:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            self.conn.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self.conn.__exit__(*exc)
+
+        def transaction(self):
+            return self.conn.transaction()
+
+        def execute(self, sql, *args):
+            if "FROM verdicts" in sql:
+                checks["read_only"] = self.conn.execute("SHOW transaction_read_only").fetchone()[0]
+                checks["timeout"] = self.conn.execute("SHOW statement_timeout").fetchone()[0]
+                try:
+                    with self.conn.transaction():  # a savepoint: the SELECT still runs after
+                        self.conn.execute("DELETE FROM verdicts")
+                except psycopg.errors.ReadOnlySqlTransaction:
+                    checks["write"] = "refused"
+            return self.conn.execute(sql, *args)
+
+    with monkeypatch.context() as m:
+        m.setattr(handler.psycopg, "connect", lambda u, **kw: Spy(real_connect(u, **kw)))
+        assert set(handler.pg_verdicts()) == {ids["later"], ids["23h_ago"]}
+    assert checks == {"read_only": "on", "timeout": "10s", "write": "refused"}
+    with psycopg.connect(url) as conn:
+        assert conn.execute("SELECT count(*) FROM verdicts").fetchone()[0] == 3
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute("DELETE FROM concerts WHERE id = ANY(%s)", (list(ids.values()),))
     assert handler.pg_verdicts() == {}  # ON DELETE CASCADE; empty is {}
