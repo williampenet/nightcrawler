@@ -321,6 +321,16 @@
   const titleCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true, ignorePunctuation: true });
   const byTitle = (a, b) => titleCollator.compare(String(a.title || "").trim(), String(b.title || "").trim()) || String(a.start).localeCompare(String(b.start));
 
+  // Home period chips (WIP-108), in their order on the page: state.when -> the words added to
+  // the headings (« Pour toi ce soir »); « Toutes les dates » ("all") adds none.
+  const PERIODS = { tonight: "ce soir", weekend: "ce week-end", "7d": "cette semaine", all: "" };
+  const DEFAULT_PERIOD = "7d"; // the home opens on « Cette semaine » on every load (PM, 2026-10-09)
+  // The period after a tap on a chip: that chip's, even when it is already the active one
+  // (before WIP-108 a second tap switched to every date, which nothing on screen signalled).
+  const choosePeriod = (current, tapped) => (Object.hasOwn(PERIODS, tapped) ? tapped : current);
+  // A section heading with the period's words: « Pour toi cette semaine », « Pour toi » for "all".
+  const withPeriod = (base, when) => (PERIODS[when] ? `${base} ${PERIODS[when]}` : base);
+
   // "when" filter on an ISO start, given now (Date) and day keys in the zone's time zone
   function inWhen(mode, start, now, dayKey) {
     if (mode === "all") return true;
@@ -397,7 +407,7 @@
     return acts.length >= 2 ? `Avec : ${acts.join(", ")}` : null;
   }
 
-  const api = { isPastDay, byTitle, SURE_MIN, HOMONYM_DOUBTS, isKnownMatch, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen };
+  const api = { isPastDay, byTitle, SURE_MIN, HOMONYM_DOUBTS, isKnownMatch, DISCOVER_MAX, MAX_IDS, MAX_TASTE_TEXT, cleanTasteText, blurTasteText, sortCandidates, pickRandom, tiers, defaultState, sanitizeState, performerKeys, isLiked, rate, concertLinks, lineupText, currentIds, keepIds, norm, parseSeeds, mergeNames, buildProfile, isEmpty, scoreConcert, styleSimilarity, inWhen, PERIODS, DEFAULT_PERIOD, choosePeriod, withPeriod };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCScoring = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -111,10 +111,19 @@ The PM rejected the compact-row proposal (WIP-105, PR #95 closed) and chose the 
 - « Pour toi »: section « À ne pas rater » (cards), then « Pour toi {période} » (rows), each by date; the selection is still the WIP-102 one, the order is not (a must-see on the 30th now comes before a for-you on the 10th) and the count line is gone.
 - As on the screenshot, cards have no chevron: title, venue and reason form one tap area opening the details (the title button's hit area is stretched over them; it keeps the disclosure semantics and draws its focus ring around the area). Screen readers hear « À ne pas rater » before the date. Rows keep their chevron.
 
+## Period chips (WIP-108)
+
+The pipeline now collects every published date up to 400 days ahead (WIP-107), and every date was reachable only by tapping the active period again, which nothing on screen said. The row now has four chips: « Ce soir », « Ce week-end », « Cette semaine », « Toutes les dates » (`state.when` = `all`).
+- Each chip is a toggle button with `aria-pressed`, exactly one pressed; tapping the active chip keeps it (`S.choosePeriod`, tested in `tests/js/period.test.js`). The home still opens on « Cette semaine » (`S.DEFAULT_PERIOD`).
+- Headings carry the period except for « Toutes les dates »: « Pour toi », « Tous les concerts » (`S.withPeriod`).
+- Width (measured with Playwright, Chromium, home on « Cette semaine »): the four chips and their 18px gaps need 396px (chips 48 / 88 / 98 / 109px) plus the 20px gutter. They fit from 436px; below, the row scrolls sideways inside itself (no wrap, scrollbar hidden) and the page never does: document width = viewport width at 320, 375 and 390px. The row bleeds into the page gutter so the chip cut at the screen edge shows there is more; the pressed chip is scrolled into view after each render.
+- Chips are 44px tall; the row's 8px padding keeps the 3px `ink` focus ring (offset 2px) inside the scroll box, which clips.
+- The calendar is unchanged.
+
 ## Home screen (WIP-95, behaviour revised in WIP-102)
 
 After the PM's test on his phone (2026-10-09, 17:08):
-- The home opens on « Cette semaine » on every load; tapping the active period again shows every date.
+- The home opens on « Cette semaine » on every load; ~~tapping the active period again shows every date~~ « Toutes les dates » is a chip of its own since WIP-108.
 - « Pour toi » shows only the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. Since WIP-106: the must-see cards first, then the rows, each part by date, without the count line; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
 - « Tout » lists every concert of the period A → Z by title (French collation, `S.byTitle`), with « Par date » and « Pour moi » in the sort menu.
 - « À ne pas rater » concerts were rows on the `accent` fill (replaced by cards in WIP-106).
@@ -123,7 +132,7 @@ After the PM's test on his phone (2026-10-09, 17:08):
 
 ### First version (WIP-95)
 
-Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (sections), « Nouveaux » (added since the last visit, computed in the browser by `web/visits.js`: a visit is a run of loads less than 3 h apart, the first visit flags nothing), « Tout » (count of the period); period filters « Ce soir », « Ce week-end », « Cette semaine » (tapping the active one again shows every date); « À ne pas rater » as MustSeeCards (4 shown, the rest behind a button), « Pour toi {période} » and « Découvertes » as ConcertRows; « Voir les N concerts »; bottom navigation with hash routes `#concerts`, `#calendrier`, `#gouts` (`#sources` opens « Mes goûts » at the sources table).
+Built from artboard PisteB: wordmark and date line; view tabs « Pour toi » (sections), « Nouveaux » (added since the last visit, computed in the browser by `web/visits.js`: a visit is a run of loads less than 3 h apart, the first visit flags nothing), « Tout » (count of the period); period filters « Ce soir », « Ce week-end », « Cette semaine » (tapping the active one again showed every date; replaced by a fourth chip in WIP-108); « À ne pas rater » as MustSeeCards (4 shown, the rest behind a button), « Pour toi {période} » and « Découvertes » as ConcertRows; « Voir les N concerts »; bottom navigation with hash routes `#concerts`, `#calendrier`, `#gouts` (`#sources` opens « Mes goûts » at the sources table).
 
 Deliberate gaps, each owned by a ticket:
 - The concert title is a disclosure button, marked by a chevron, opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96). « Lu par IA » stays visible on the venue line of rows and cards (ADR-0004, WIP-66).
