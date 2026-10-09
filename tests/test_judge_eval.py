@@ -521,3 +521,19 @@ def test_gate_on_the_routed_model():
     assert runner.gate({}, {"mistral-small-3.2-scaleway": "no key"}, conds, "") == 1
     assert runner.gate({}, {}, ["profile"], "") == 0  # condition left out: nothing to gate
     assert runner.gate({}, {}, conds, "gemma-4-26b-a4b-scaleway") == 0  # routed left out
+
+
+def test_gate_boundary_and_main_exit_code(monkeypatch, tmp_path):
+    conds = list(runner.DEFAULT_CONDITIONS)
+    assert runner.gate(_gate_results(0.85), {}, conds, "") == 0  # the bar itself passes
+    _setup(monkeypatch)
+    monkeypatch.setattr(
+        llm,
+        "chat_json",
+        lambda spec, *a, **k: llm.Answer(
+            {"verdict": "no", "reason": "r", "confidence": 50}, [], spec.model, 0.1, 1, 1
+        ),
+    )
+    rc = runner.main(["--only", "mistral-small-3.2-scaleway", "--conditions", "nn",
+                      "--workers", "1", "--results", str(tmp_path / "r.json")])  # fmt: skip
+    assert rc == 1  # every answer "no": nothing shown, gate red

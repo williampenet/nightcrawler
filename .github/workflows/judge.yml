@@ -14,7 +14,9 @@ on:
   push:
     branches: [main]
     # eval/taste/** builds the labels (run.js); eval/judge/** holds the runner and candidates
-    paths: [src/nightcrawler/judge.py, eval/judge/**, eval/taste/**, .github/workflows/judge.yml]
+    # config/models.yaml and llm.py: a change to the routed model or the call must re-run the gate
+    paths: [src/nightcrawler/judge.py, src/nightcrawler/llm.py, config/models.yaml, eval/judge/**,
+            eval/taste/**, .github/workflows/judge.yml]
   workflow_dispatch:
     inputs:
       only:

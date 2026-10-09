@@ -266,16 +266,19 @@ me are fine; what matters is that the app does not let pass a concert I am likel
 iteration 2 gate on precision (≥ 40 %) is therefore dropped; precision is reported, not gated. A
 concert is shown on the home page when the verdict is `must_see`, `for_you`, or `discovery` with
 confidence ≥ 30 (`judge.section`, `DISCOVERY_MIN_CONFIDENCE`): the cut-off the run 5
-cross-validation learnt for 80 % recall, which gave **90 % recall out of fold (82–94 %)**, about
+cross-validation learnt for 80 % recall in both halves of run 5, so the fixed rule picks exactly
+what the cross-validation picked: **90 % recall (82–94 %)**. The rule was fixed after seeing that
+run (slightly optimistic); the next run is its first measurement after the fact. About
 half of William's rated concerts shown, and a precision of 36 % (26–47 %) against a 22 % base rate.
 Everything else stays visible in "Tout voir".
 
 Why this model (runs 2–5, `docs/MODEL_EVAL.md`): the best recall and pairwise accuracy of every
 candidate in every run with the written taste (runs 4–5: pairwise 77–79 % against 52 % for the
-rule-based score on the same labels), schema-valid on 100 % of answers, p95 ≤ 2.5 s, €0.20–0.28 per 1,000
+rule-based score on the same labels), schema-valid on 100 % of answers, p95 ≤ 3.4 s (run 2a; ≤ 2.5 s since run 2), €0.20–0.28 per 1,000
 judgements; EU publisher (Mistral AI, FR), Apache 2.0, EU host. The larger models picked fewer of
 William's concerts at 5–11 × the cost; Gemma 4 26B-A4B stayed 18–31 points below in recall (runs 2–4, with examples). More
-ratings improved precision at a fixed recall (run 5 learning curve: 30 → 31.5 → 36 %), narrowly.
+ratings went with a higher precision at a fixed recall in run 5 (30 → 31.5 → 36 %), but inside the
+±12-point noise and resting on one seed: **unverified**.
 
 **Sections check (William, 07:06):** "À ne pas rater" must be more precise than "Pour toi"; the
 Judge eval reports the precision of each section, and if the difference does not hold the two
@@ -283,7 +286,15 @@ sections are merged.
 
 **Gate:** the Judge eval fails when, in condition `nn`, the share of positives shown by
 `judge.section` falls below `min_quality: 0.85` (aim 0.90), or when the routed model was not
-measured. It runs on every change to the task, its runner or its candidates.
+measured in a run that included it. It runs on every change to the task, its runner, its
+candidates, `config/models.yaml` or `llm.py`. It does not run (and is not red) when the store
+secrets are missing or the written taste is empty (WIP-78: no paid call then). With a true shown
+recall of 90 %, a run on ~87 positives falls under 85 % about 5 % of the time (16 % at 88 %,
+binomial, computed by the reviewer), on top of up to 5 points of run-to-run variation: a red gate
+means investigate (re-run, look at the misses), not an automatic revert.
+**Sections check:** "À ne pas rater" counts as more precise than "Pour toi" when its precision is
+higher on the point estimate in two consecutive Judge eval runs with at least 10 concerts in each
+section; otherwise the two are merged (follow-up once the page shows them).
 
 **Escalation: none.** Schema-valid on 100 % of answers in runs 2–5; nothing for a fallback to fix.
 
