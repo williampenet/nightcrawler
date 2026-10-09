@@ -830,17 +830,17 @@ function iconButton(name, label, size, onClick) {
 }
 
 // ListenButton (design system): Deezer's own widget for now (PM decision 2026-10-09, player in
-// WIP-99), loaded only on click so nothing third-party loads before.
-function listenButton(c, slot) {
+// WIP-99), loaded only on click so nothing third-party loads before. filled: the ink pill of a card.
+function listenButton(c, slot, filled) {
   const a = (c.artists || []).map((k) => DATA.artists[k]).find((x) => x && x.deezer_id);
   if (!a || !/^[0-9]+$/.test(String(a.deezer_id))) return null; // no extract: no button
   const label = el("span", "Écouter");
-  const b = button("", "listen", () => {
+  const b = button("", filled ? "listen filled" : "listen", () => {
     const open = slot.querySelector("iframe");
     if (open) {
       open.remove();
       label.textContent = "Écouter";
-      b.replaceChild(icon("play", 12), b.firstChild);
+      b.replaceChild(icon("play", filled ? 14 : 12), b.firstChild);
       b.setAttribute("aria-expanded", "false");
       return;
     }
@@ -854,10 +854,10 @@ function listenButton(c, slot) {
     f.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
     slot.append(f);
     label.textContent = "Fermer";
-    b.replaceChild(icon("close", 12), b.firstChild);
+    b.replaceChild(icon("close", filled ? 14 : 12), b.firstChild);
     b.setAttribute("aria-expanded", "true");
   });
-  b.append(icon("play", 12), label);
+  b.append(icon("play", filled ? 14 : 12), label);
   b.setAttribute("aria-expanded", "false");
   return b;
 }
@@ -928,7 +928,7 @@ function detailsPanel(x, item) {
 
 // Title as a disclosure button (WAI-ARIA APG Disclosure pattern,
 // https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) opening the details panel.
-function titleButton(c, panel, cls) {
+function titleButton(c, panel, cls, chevron = true) {
   const h = el("h3", null, cls);
   const b = button(c.title, "title-btn", () => {
     const open = panel.hidden;
@@ -939,22 +939,22 @@ function titleButton(c, panel, cls) {
   });
   b.setAttribute("aria-expanded", String(!panel.hidden));
   b.setAttribute("aria-controls", panel.id);
-  b.append(icon("chevron", 16));
+  if (chevron) b.append(icon("chevron", 16));
   h.append(b);
   return h;
 }
 
-function actionBar(x, item, slot) {
+function actionBar(x, item, slot, onCard) {
   const c = x.c;
   const bar = el("div", null, "actions");
-  const listen = listenButton(c, slot);
+  const listen = listenButton(c, slot, onCard);
   if (listen) bar.append(listen);
   bar.append(el("span", null, "sp"));
   const liked = S.isLiked(state, c);
-  const like = iconButton("heart", "J'aime", 18, () => feedback(c, "like", item));
+  const like = iconButton("heart", "J'aime", onCard ? 20 : 18, () => feedback(c, "like", item));
   like.setAttribute("aria-pressed", String(liked));
   if (liked) like.classList.add("on");
-  bar.append(like, iconButton("share", "Partager", 18, () => share(c)));
+  bar.append(like, iconButton("share", "Partager", onCard ? 20 : 18, () => share(c)));
   return bar;
 }
 
@@ -970,10 +970,35 @@ function venueLine(c) {
   return p;
 }
 
+// MustSeeCard (design system, PM screenshot 2026-10-09 22:19, WIP-106): every « À ne pas rater »
+// concert, on every view. No chevron, as on the screenshot: title, venue and reason form one tap
+// area opening the details (the title button's hit area is stretched over .sum in style.css).
+function mustSeeCard(x) {
+  const c = x.c;
+  const li = el("li", null, "card");
+  li.dataset.id = c.id;
+  const d = new Date(c.start);
+  const t = timeFmt.format(d);
+  const top = el("div", null, "card-top");
+  // the card's shape and the section heading say it; screen readers get it in words
+  top.append(el("span", "À ne pas rater : ", "visually-hidden"), el("span", shortFmt.format(d) + (t === "00:00" ? "" : ` · ${t}`), "when"));
+  if (NEW_IDS.has(c.id)) top.append(newBadge());
+  const panel = detailsPanel(x, li);
+  const slot = el("div", null, "slot");
+  const sum = el("div", null, "sum");
+  sum.append(titleButton(c, panel, "card-title", false), venueLine(c));
+  const why = reasonLine(x);
+  if (why) sum.append(why);
+  li.append(top, sum, actionBar(x, li, slot, true), panel, slot);
+  return li;
+}
+
+const itemNode = (x) => (x.must ? mustSeeCard(x) : concertRow(x));
+
 // ConcertRow (design system): date column, then title, venue, reason and actions.
 function concertRow(x) {
   const c = x.c;
-  const li = el("li", null, x.must ? "crow must" : "crow");
+  const li = el("li", null, "crow");
   li.dataset.id = c.id;
   const d = new Date(c.start);
   const t = timeFmt.format(d);
@@ -988,7 +1013,6 @@ function concertRow(x) {
   head.append(titleButton(c, panel, "row-title"));
   if (NEW_IDS.has(c.id)) head.append(newBadge());
   const slot = el("div", null, "slot");
-  if (x.must) body.append(el("p", "À ne pas rater", "must-label")); // the fill alone would be colour only
   body.append(head, venueLine(c));
   const why = reasonLine(x);
   if (why) body.append(why);
@@ -1039,7 +1063,7 @@ function homeSections(list, profile) {
 function rowList(items, labelId) {
   const ul = el("ul", null, "rows");
   if (labelId) ul.setAttribute("aria-labelledby", labelId);
-  for (const x of items) ul.append(concertRow(x));
+  for (const x of items) ul.append(itemNode(x));
   return ul;
 }
 
@@ -1050,14 +1074,13 @@ function seeAll(root, n) {
   root.append(b);
 }
 
-function heading(root, id, text, sub) {
+function heading(root, id, text) {
   const h = el("h2", text);
   h.id = id;
   root.append(h);
-  if (sub) root.append(el("p", sub, "section-sub"));
 }
 
-// Every item with its verdict (judge) and a must flag (« À ne pas rater », highlighted on every
+// Every item with its verdict (judge) and a must flag (« À ne pas rater », a MustSeeCard on every
 // view), plus the picks of « Pour toi »: the concerts that very probably match, i.e. must-see and
 // the judge's « Pour toi », by date. Not judged yet, Découvertes and the rest stay in « Tout »
 // (PM, 2026-10-09 17:08, WIP-102; amends ADR-0007 §5).
@@ -1087,11 +1110,17 @@ function renderPourToi(root, picks, total) {
     root.append(el("p", `Rien pour toi ${period || "pour l'instant"}.`, "muted empty"));
     return seeAll(root, total);
   }
-  const n = picks.length;
-  const must = picks.filter((x) => x.must).length;
-  heading(root, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi",
-    `${n} concert${n > 1 ? "s" : ""}` + (must ? `, dont ${must} à ne pas rater` : ""));
-  root.append(rowList(picks, "sec-for-you"));
+  // « À ne pas rater » cards first (all of them), then the judge's « Pour toi » rows (WIP-106)
+  const must = picks.filter((x) => x.must);
+  const rest = picks.filter((x) => !x.must);
+  if (must.length) {
+    heading(root, "sec-must", "À ne pas rater");
+    root.append(rowList(must, "sec-must"));
+  }
+  if (rest.length) {
+    heading(root, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi");
+    root.append(rowList(rest, "sec-for-you"));
+  }
 }
 
 function render() {
@@ -1164,7 +1193,7 @@ function renderDays() {
       ul = el("ul", null, "rows");
       root.append(ul);
     }
-    ul.append(concertRow(x));
+    ul.append(itemNode(x));
   }
 }
 

@@ -56,7 +56,7 @@ describes the judge eval's store access as a read-only transaction.
    (ADR-0006).
    **Amended 2026-10-09 by the PM (WIP-102):** « Pour toi » now lists only the concerts that very
    probably match (must-see, known-artist rule, the judge's « Pour toi »). Concerts not judged
-   yet, Découvertes and the rest are in « Tout », where the must-see rows stay highlighted.
+   yet, Découvertes and the rest are in « Tout », where the must-see concerts stay visible as cards (WIP-106).
 6. **Examples in production:** William's latest like / dislike per concert from `feedback`
    (`store/verdicts.read_ratings`, with its time: an unlike under an alias can undo a like under
    the current id), mapped to the published concerts (ids and aliases), latest first. The eval

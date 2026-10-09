@@ -40,7 +40,6 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .periods button[aria-current] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
 
 /* sections */
-.section-sub { margin: 2px 0 var(--space-1); font-size: 14px; color: var(--ink-muted); }
 .empty { margin: var(--space-6) 0; }
 ul.rows { list-style: none; margin: 0; padding: 0; }
 
@@ -72,19 +71,32 @@ h3.row-title { margin: 0; font: 600 19px/1.15 var(--font-display); min-width: 0;
 @media (prefers-reduced-motion: reduce) { .title-btn svg { transition: none; } }
 .ai-read { white-space: nowrap; }
 
-/* « À ne pas rater » row (WIP-102): the accent fill of the MustSeeCard, on a row; every text in
-   ink (9.9:1 on accent), the fill is doubled by the « À ne pas rater » label */
-li.crow.must {
-  background: var(--accent); border-radius: var(--radius-lg); border-bottom-color: transparent;
-  padding: var(--space-4) var(--space-3) 6px; margin: var(--space-2) 0;
+/* MustSeeCard (WIP-106, the PM's screenshot): apricot card, every text in ink (9.9:1) */
+li.card {
+  background: var(--accent); color: var(--ink); border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; margin: var(--space-3) 0;
 }
-.must-label { margin: 0; font-size: 11px; font-weight: 700; line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase; }
-.crow.must .date .wd, .crow.must .date .hour, .crow.must .venue, .crow.must .reason,
-.crow.must .reason.muted, .crow.must button.listen, .crow.must button.icon, .crow.must .title-btn svg,
-.crow.must .more, .crow.must .more a, .crow.must .muted { color: var(--ink); }
-.crow.must .new { background: var(--ink); color: var(--on-ink); }
-.crow.must :focus-visible { outline-color: var(--ink); }
-
+.card-top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.card .when { font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.card .new { background: var(--ink); color: var(--on-ink); padding: 3px 8px; }
+h3.card-title { margin: 0; font: 800 30px/1.02 var(--font-display); letter-spacing: -0.02em; }
+.card .sum { position: relative; display: flex; flex-direction: column; gap: var(--space-2); }
+.card .title-btn::after { content: ""; position: absolute; inset: -4px; border-radius: 8px; } /* whole text opens the details */
+.card .title-btn:focus-visible { outline: none; }
+.card .title-btn:focus-visible::after { outline: 3px solid var(--ink); }
+.card .sum:hover .title-btn { text-decoration: underline; text-decoration-thickness: 3px; }
+.card .venue { margin: 0; font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.card .reason, .card .muted { color: var(--ink); }
+.card .actions { margin-top: 6px; gap: var(--space-1); }
+.card button.icon { border-radius: var(--radius-pill); background: var(--veil); color: var(--ink); }
+.card .more button.ghost { background: var(--veil); } /* light buttons on the card all sit on the veil */
+.card .links a, .card .more { color: var(--ink); }
+.card :focus-visible { outline-color: var(--ink); }
+button.listen.filled {
+  padding: 0 18px 0 14px; border-radius: var(--radius-pill); background: var(--ink); color: var(--on-ink); gap: var(--space-2);
+}
+.card button.listen.filled:focus-visible { outline-offset: 3px; }
+li.card.target { outline: 3px solid var(--ink); outline-offset: 2px; }
 
 /* ReasonTag + sentence: never truncated */
 .reason {
@@ -176,11 +188,6 @@ iframe.player { width: 100%; height: 300px; border: 0; margin-top: var(--space-2
 li.crow.target {
   margin: 0 -10px; padding: var(--space-4) 10px 6px; border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 30%, var(--ground)); outline: none;
-}
-/* a shared must-see row keeps its fill and layout (same specificity, so declared after) */
-li.crow.must.target {
-  background: var(--accent); margin: var(--space-2) 0; padding: var(--space-4) var(--space-3) 6px;
-  border-radius: var(--radius-lg); outline: 3px solid var(--ink); outline-offset: 2px;
 }
 
 /* "Mauvais rapprochement": a quiet text button next to the reason (WIP-41) */

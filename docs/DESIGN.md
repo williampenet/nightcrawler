@@ -97,13 +97,20 @@ Both families are under the SIL Open Font License 1.1 (licence texts in `web/fon
 
 MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy and rules in the design system; built on the home screen in [WIP-95](https://linear.app/wip-coding/issue/WIP-95).
 
+## MustSeeCard back (WIP-106)
+
+The PM rejected the compact-row proposal (WIP-105, PR #95 closed) and chose the design system's MustSeeCard from his screenshot (2026-10-09 22:19):
+- Every « À ne pas rater » concert is a MustSeeCard on every view: grouped first on « Pour toi » (section « À ne pas rater », all of them), inline in « Tout » (A → Z), « Nouveaux » and the calendar list. The highlighted row of WIP-102 is gone.
+- « Pour toi »: section « À ne pas rater » (cards), then « Pour toi {période} » (rows), each by date; the selection is still the WIP-102 one, the order is not (a must-see on the 30th now comes before a for-you on the 10th) and the count line is gone.
+- As on the screenshot, cards have no chevron: title, venue and reason form one tap area opening the details (the title button's hit area is stretched over them; it keeps the disclosure semantics and draws its focus ring around the area). Screen readers hear « À ne pas rater » before the date. Rows keep their chevron.
+
 ## Home screen (WIP-95, behaviour revised in WIP-102)
 
 After the PM's test on his phone (2026-10-09, 17:08):
 - The home opens on « Cette semaine » on every load; tapping the active period again shows every date.
-- « Pour toi » is one chronological list of the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. A summary line gives the count; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
+- « Pour toi » shows only the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. Since WIP-106: the must-see cards first, then the rows, each part by date, without the count line; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
 - « Tout » lists every concert of the period A → Z by title (French collation, `S.byTitle`), with « Par date » and « Pour moi » in the sort menu.
-- « À ne pas rater » concerts are rows on the `accent` fill with every text in `ink` and an « À ne pas rater » label (the fill alone would be colour only), on every view. The MustSeeCard of the artboard is no longer used.
+- « À ne pas rater » concerts were rows on the `accent` fill (replaced by cards in WIP-106).
 - Concerts of a past day are dropped on every view (`S.isPastDay`, on load and at each render), and a page kept in memory reloads when the user comes back to it on another day or more than 6 h later. The PM's phone showed concerts of 7 and 8 October on the 9th while the published file (generated 16:31) had none; the most likely cause is a page kept in memory and never reloaded, **unverified**. Data files are also fetched with `cache: "no-cache"` (revalidation).
 - The date line reads the zone's name from `config/zone.yaml`, now « Lyon et environs ».
 
