@@ -310,7 +310,11 @@
 
   // A concert of a day before today (zone's day keys), dropped whatever the data says: the
   // browser may hold an older copy of data/*.json (WIP-102, PM's phone on 2026-10-09).
-  const isPastDay = (start, now, dayKey) => dayKey(new Date(start)) < dayKey(now);
+  // An invalid date is not past (it would throw in Intl.DateTimeFormat#format).
+  const isPastDay = (start, now, dayKey) => {
+    const d = new Date(start);
+    return !Number.isNaN(d.getTime()) && dayKey(d) < dayKey(now);
+  };
 
   // Title order for « Tout » (WIP-102): French collation, case and accents ignored, numbers
   // in numeric order (Intl.Collator, https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Collator)

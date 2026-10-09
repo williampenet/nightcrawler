@@ -101,10 +101,10 @@ MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy an
 
 After the PM's test on his phone (2026-10-09, 17:08):
 - The home opens on « Cette semaine » on every load; tapping the active period again shows every date.
-- « Pour toi » is one chronological list of the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi ». No concert not yet judged, no Découvertes, no « Voir les N concerts » button. A summary line gives the count.
+- « Pour toi » is one chronological list of the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. A summary line gives the count; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
 - « Tout » lists every concert of the period A → Z by title (French collation, `S.byTitle`), with « Par date » and « Pour moi » in the sort menu.
 - « À ne pas rater » concerts are rows on the `accent` fill with every text in `ink` and an « À ne pas rater » label (the fill alone would be colour only), on every view. The MustSeeCard of the artboard is no longer used.
-- Concerts of a past day are dropped by the page whatever the data says, and data files are fetched with `cache: "no-cache"`: the PM's phone showed concerts of 7 and 8 October on the 9th while the published file had none (checked on the live file, generated 16:31).
+- Concerts of a past day are dropped on every view (`S.isPastDay`, on load and at each render), and a page kept in memory reloads when the user comes back to it on another day or more than 6 h later. The PM's phone showed concerts of 7 and 8 October on the 9th while the published file (generated 16:31) had none; the most likely cause is a page kept in memory and never reloaded, **unverified**. Data files are also fetched with `cache: "no-cache"` (revalidation).
 - The date line reads the zone's name from `config/zone.yaml`, now « Lyon et environs ».
 
 ### First version (WIP-95)

@@ -873,9 +873,9 @@ function reasonOf(x) {
   return null;
 }
 
-function reasonLine(x, showUnjudged) {
+function reasonLine(x) {
   const r = reasonOf(x);
-  if (!r) return showUnjudged && x.unjudged ? el("p", "Pas encore jugé.", "reason muted") : null;
+  if (!r) return null;
   const p = el("p", null, "reason");
   const tag = el("span", r.ia ? "IA" : "Tes goûts", "tag");
   tag.setAttribute("aria-hidden", "true");
@@ -971,7 +971,7 @@ function venueLine(c) {
 }
 
 // ConcertRow (design system): date column, then title, venue, reason and actions.
-function concertRow(x, showUnjudged) {
+function concertRow(x) {
   const c = x.c;
   const li = el("li", null, x.must ? "crow must" : "crow");
   li.dataset.id = c.id;
@@ -990,7 +990,7 @@ function concertRow(x, showUnjudged) {
   const slot = el("div", null, "slot");
   if (x.must) body.append(el("p", "À ne pas rater", "must-label")); // the fill alone would be colour only
   body.append(head, venueLine(c));
-  const why = reasonLine(x, showUnjudged);
+  const why = reasonLine(x);
   if (why) body.append(why);
   body.append(actionBar(x, li, slot), panel, slot);
   li.append(date, body);
@@ -1029,17 +1029,17 @@ const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DAT
 function homeSections(list, profile) {
   if (judgeOn()) {
     const s = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
-    return { must: s.ne_pas_rater, forYou: s.pour_toi, discover: s.decouvertes, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
+    return { must: s.ne_pas_rater, forYou: s.pour_toi, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
   }
   if (S.isEmpty(profile, DATA.concerts)) return null;
   const t = S.tiers(list);
-  return { must: t.sure, forYou: t.discover, discover: [], all: list };
+  return { must: t.sure, forYou: t.discover, all: list };
 }
 
-function rowList(items, showUnjudged, labelId) {
+function rowList(items, labelId) {
   const ul = el("ul", null, "rows");
   if (labelId) ul.setAttribute("aria-labelledby", labelId);
-  for (const x of items) ul.append(concertRow(x, showUnjudged));
+  for (const x of items) ul.append(concertRow(x));
   return ul;
 }
 
@@ -1064,14 +1064,13 @@ function heading(root, id, text, sub) {
 function decorate(list, profile) {
   const sec = homeSections(list, profile);
   if (!sec) return { items: list, picks: null };
-  const must = new Set(sec.must.map((x) => x.c.id));
+  const { must, picks } = V.homePicks(sec); // the rule, tested in verdicts.test.js
   const byId = new Map(sec.all.map((x) => [x.c.id, x]));
   const items = list.map((x) => {
     const y = byId.get(x.c.id) || x;
     return must.has(x.c.id) ? { ...y, must: true } : y;
   });
-  const pickIds = new Set([...sec.must, ...sec.forYou.filter((x) => !x.unjudged)].map((x) => x.c.id));
-  return { items, picks: items.filter((x) => pickIds.has(x.c.id)) };
+  return { items, picks: items.filter((x) => picks.has(x.c.id)) };
 }
 
 function renderPourToi(root, picks, total) {
@@ -1092,7 +1091,7 @@ function renderPourToi(root, picks, total) {
   const must = picks.filter((x) => x.must).length;
   heading(root, "sec-for-you", period ? `Pour toi ${period}` : "Pour toi",
     `${n} concert${n > 1 ? "s" : ""}` + (must ? `, dont ${must} à ne pas rater` : ""));
-  root.append(rowList(picks, false, "sec-for-you"));
+  root.append(rowList(picks, "sec-for-you"));
 }
 
 function render() {
@@ -1121,7 +1120,7 @@ function render() {
     const fresh = items.filter((x) => NEW_IDS.has(x.c.id));
     heading(root, "sec-new", "Nouveaux depuis ta dernière visite");
     if (!fresh.length) root.append(el("p", "Rien de nouveau depuis ta dernière visite.", "muted empty"));
-    else root.append(rowList(fresh, false, "sec-new"));
+    else root.append(rowList(fresh, "sec-new"));
     return;
   }
   heading(root, "sec-all", PERIODS[state.when] ? `Tous les concerts ${PERIODS[state.when]}` : "Tous les concerts");
@@ -1130,7 +1129,7 @@ function render() {
     state.sort === "me" ? [...items].sort((a, b) => b.m.score - a.m.score || a.c.start.localeCompare(b.c.start))
     : state.sort === "date" ? items
     : [...items].sort((a, b) => S.byTitle(a.c, b.c));
-  root.append(rowList(sorted, false, "sec-all"));
+  root.append(rowList(sorted, "sec-all"));
 }
 
 function setView(v, moveFocus) {
@@ -1149,7 +1148,10 @@ function renderDays() {
   root.replaceChildren();
   const profile = S.buildProfile(state, DATA.artists);
   const hidden = new Set(S.currentIds(DATA.concerts, state.hidden));
-  const list = DATA.concerts.filter((c) => !hidden.has(c.id)).map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
+  const now = new Date();
+  const list = DATA.concerts
+    .filter((c) => !hidden.has(c.id) && !S.isPastDay(c.start, now, dayKey))
+    .map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
   let currentDay = null;
   let ul = null;
   for (const x of decorate(list, profile).items) {
@@ -1162,7 +1164,7 @@ function renderDays() {
       ul = el("ul", null, "rows");
       root.append(ul);
     }
-    ul.append(concertRow(x, false));
+    ul.append(concertRow(x));
   }
 }
 
@@ -1347,6 +1349,20 @@ function openDeepLink() {
   }
 }
 
+// A page kept in memory (background tab, back/forward cache) shows the data of the day it was
+// loaded; on return it reloads when the day changed or the data may have been refreshed since
+// (two Pipeline runs a day). Unverified cause of the PM's 7–8 Oct concerts on the 9th (WIP-102).
+const LOADED_AT = Date.now();
+const STALE_AFTER = 6 * 3600e3;
+function reloadIfStale() {
+  if (document.visibilityState !== "visible" || !keyFmt) return;
+  if (dayKey(new Date()) !== dayKey(new Date(LOADED_AT)) || Date.now() - LOADED_AT > STALE_AFTER) location.reload();
+}
+document.addEventListener("visibilitychange", reloadIfStale);
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted) reloadIfStale(); // restored from the back/forward cache
+});
+
 async function main() {
   try {
     const [concerts, venues, report, artists] = await Promise.all(
@@ -1370,7 +1386,8 @@ async function main() {
     document.getElementById("generated").textContent =
       `Mis à jour le ${new Date(report.generated_at).toLocaleString("fr-FR", { timeZone: TZ })}.`;
     const m = DEEP_LINK_RE.exec(location.hash);
-    deepLinkId = (m && S.currentIds(concerts, [m[1]])[0]) || null; // an alias leads to its concert
+    deepLinkId = (m && S.currentIds(DATA.concerts, [m[1]])[0]) || null; // an alias leads to its concert
+    if (m && !deepLinkId) showBanner("Ce concert est passé ou n'est plus annoncé.", "info");
     if (V && profileOn()) verdicts = fbStore(() => V.load(localStorage), null); // shown at once
     if (window.NCVisits) {
       // « Nouveau » badges (WIP-95): the list compared with the last visit's, in this browser only

@@ -103,8 +103,8 @@
   }
 
   // Scored items ({c, m}, in the list's order) split into the four home sections. Each item
-  // gets v (the verdict) or unjudged: true. A concert without a verdict goes to "Pour toi",
-  // marked unjudged: recall first (ADR-0007 §5, ADR-0006).
+  // gets v (the verdict) or unjudged: true. A concert without a verdict is put in "pour_toi",
+  // marked unjudged; the home leaves it out of « Pour toi » (homePicks, WIP-102).
   // isKnown(item) (WIP-88): a concert of an artist the listener listens to or has liked goes to
   // "À ne pas rater" whatever the judge says (a deterministic rule, like a followed artist).
   function sectionsFor(items, verdicts, isKnown) {
@@ -122,7 +122,18 @@
     return out;
   }
 
-  const api = { KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };
+  // The home's « Pour toi » (PM, 2026-10-09, WIP-102; amends ADR-0007 §5): only the concerts that
+  // very probably match, i.e. « À ne pas rater » (judge or known-artist rule) and the judge's
+  // « Pour toi ». Not judged yet and Découvertes stay in « Tout ». sec: {must, forYou} lists of
+  // items ({c, unjudged?}). Returns {must, picks}: Sets of concert ids.
+  function homePicks(sec) {
+    const must = new Set((sec.must || []).map((x) => x.c.id));
+    const picks = new Set(must);
+    for (const x of sec.forYou || []) if (!x.unjudged) picks.add(x.c.id);
+    return { must, picks };
+  }
+
+  const api = { homePicks, KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCVerdicts = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

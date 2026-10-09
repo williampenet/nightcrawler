@@ -40,7 +40,6 @@ h2:focus-visible { outline: 3px solid var(--ink); }
 .periods button[aria-current] { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
 
 /* sections */
-.home-section { margin-top: var(--space-2); }
 .section-sub { margin: 2px 0 var(--space-1); font-size: 14px; color: var(--ink-muted); }
 .empty { margin: var(--space-6) 0; }
 ul.rows { list-style: none; margin: 0; padding: 0; }
@@ -82,10 +81,10 @@ li.crow.must {
 .must-label { margin: 0; font-size: 11px; font-weight: 700; line-height: 1.3; letter-spacing: 0.04em; text-transform: uppercase; }
 .crow.must .date .wd, .crow.must .date .hour, .crow.must .venue, .crow.must .reason,
 .crow.must .reason.muted, .crow.must button.listen, .crow.must button.icon, .crow.must .title-btn svg,
-.crow.must .more, .crow.must .more a { color: var(--ink); }
+.crow.must .more, .crow.must .more a, .crow.must .muted { color: var(--ink); }
 .crow.must .new { background: var(--ink); color: var(--on-ink); }
 .crow.must :focus-visible { outline-color: var(--ink); }
-li.crow.must.target { outline: 3px solid var(--ink); outline-offset: 2px; }
+
 
 /* ReasonTag + sentence: never truncated */
 .reason {
@@ -118,12 +117,11 @@ button.listen {
 .more[hidden] { display: none; }
 .links { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); margin: 0; }
 .more .links a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
-button.see-all, button.wide {
+button.see-all {
   width: 100%; margin-top: 18px; min-height: 48px; border: 0; border-radius: 24px; background: var(--surface);
   color: var(--ink); font: 700 15px/1 var(--font-body); display: flex; justify-content: center; align-items: center;
   gap: var(--space-2); cursor: pointer;
 }
-button.wide { margin-top: 0; }
 h3.day { margin: 20px 0 0; font: 600 19px/1.15 var(--font-display); }
 .hint { padding: 10px 12px; border-radius: 8px; background: var(--surface); }
 
@@ -178,6 +176,11 @@ iframe.player { width: 100%; height: 300px; border: 0; margin-top: var(--space-2
 li.crow.target {
   margin: 0 -10px; padding: var(--space-4) 10px 6px; border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 30%, var(--ground)); outline: none;
+}
+/* a shared must-see row keeps its fill and layout (same specificity, so declared after) */
+li.crow.must.target {
+  background: var(--accent); margin: var(--space-2) 0; padding: var(--space-4) var(--space-3) 6px;
+  border-radius: var(--radius-lg); outline: 3px solid var(--ink); outline-offset: 2px;
 }
 
 /* "Mauvais rapprochement": a quiet text button next to the reason (WIP-41) */

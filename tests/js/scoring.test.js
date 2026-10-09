@@ -346,6 +346,8 @@ test("isPastDay: days before today are past, earlier today is not (WIP-102)", ()
   assert.equal(S.isPastDay("2026-10-09T14:00:00+02:00", now, key), false);
   // 23:30 UTC on the 8th is already the 9th in Paris
   assert.equal(S.isPastDay("2026-10-08T23:30:00Z", now, key), false);
+  assert.equal(S.isPastDay("not a date", now, key), false);
+  assert.equal(S.isPastDay(undefined, now, key), false);
 });
 
 test("byTitle: A to Z in French, accents, case and punctuation ignored, then by date (WIP-102)", () => {
