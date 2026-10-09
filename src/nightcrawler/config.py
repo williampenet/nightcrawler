@@ -30,6 +30,7 @@ class Zone:
     # page_llm readers (WIP-66): run-wide cap on extract_events calls (one call per chunk),
     # chunk size in characters (the eval's largest page), chunks read per page at most
     llm_calls_per_run: int = 40
+    judge_calls_per_run: int = 600  # judge_taste calls per run (ADR-0007): about €0.17 at most
     llm_chunk_chars: int = 3200
     llm_chunks_per_page: int = 6
 
@@ -69,6 +70,9 @@ def load_zone(path: str | Path = "config/zone.yaml") -> Zone:
         excluded_venues=tuple(str(n) for n in data.get("excluded_venues") or []),
         priority_venues=tuple(_priority_venue(e) for e in data.get("priority_venues") or []),
         llm_calls_per_run=_int_at_least(data.get("llm_calls_per_run", 40), "llm_calls_per_run", 0),
+        judge_calls_per_run=_int_at_least(
+            data.get("judge_calls_per_run", 600), "judge_calls_per_run", 0
+        ),
         llm_chunk_chars=_int_at_least(data.get("llm_chunk_chars", 3200), "llm_chunk_chars", 500),
         llm_chunks_per_page=_int_at_least(
             data.get("llm_chunks_per_page", 6), "llm_chunks_per_page", 1
