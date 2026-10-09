@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from . import judging
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
                 zone.llm_chunks_per_page,
                 zone.llm_chunk_chars,
             ),
+            judge_ctx=judging.Context.from_config(args.models, zone.judge_calls_per_run),
         )
     except Exception as exc:
         # annotations are readable where raw logs are not; messages never include secrets
@@ -266,7 +268,21 @@ def one_line(report: dict) -> str:
         f"unverified={art.get('doubt_unverified')} low_fans={art.get('doubt_low_fans')} "
         f"short={art.get('doubt_short_name')}), "
         f"{art.get('with_tags')} with tags, {art.get('concerts_with_artist')} concerts covered | "
-        f"reference coverage: {cover}"
+        f"reference coverage: {cover} | judge: {judge_text(report.get('judge'))}"
+    )
+
+
+def judge_text(j: dict | None) -> str:
+    """Taste judgements (ADR-0007): counts only, never a verdict, reason or concert."""
+    if not j:
+        return "-"
+    if j.get("status") != "ok":
+        return str(j.get("status"))
+    failed = " ".join(f"{k}={v}" for k, v in (j.get("failed") or {}).items()) or "0"
+    return (
+        f"judged={j['judged']} cached={j['cached']} capped={j['capped']} "
+        f"refreshed={j['sections_refreshed']} failed={failed} "
+        f"tokens={j['tokens_in']}/{j['tokens_out']}"
     )
 
 

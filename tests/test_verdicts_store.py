@@ -72,6 +72,14 @@ def test_store_round_trip_on_real_postgres():
         assert got.ratings["zzzzzzzzzzz0"][1] > got.ratings["aaaaaaaaaaa1"][1]  # times kept
         assert got.descriptions == {"aaaaaaaaaaa1": "la plus longue"}
         assert got.known == {"aaaaaaaaaaa1": "h-aaaaaaaaaaa1"}  # c... purged (started 8 d ago)
+        stored = got.stored["aaaaaaaaaaa1"]
+        assert (stored["verdict"], stored["confidence"], stored["section"]) == (
+            "for_you", 70, "pour_toi")  # fmt: skip
+        verdicts.save(conn, [row("bbbbbbbbbbb1", verdict="discovery", section="decouvertes")])
+        assert verdicts.update_sections(conn, [("bbbbbbbbbbb1", "tout_voir")]) == 1
+        q = "SELECT section FROM verdicts WHERE concert_id = 'bbbbbbbbbbb1'"
+        assert conn.execute(q).fetchone()[0] == "tout_voir"
+        conn.execute("DELETE FROM verdicts WHERE concert_id = 'bbbbbbbbbbb1'")
         verdicts.save(
             conn, [row("aaaaaaaaaaa1", input_hash="h2", verdict="no", section="tout_voir")]
         )

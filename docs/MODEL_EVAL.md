@@ -398,3 +398,30 @@ Nothing routed. The rule prescribes the fine-tuning (LoRA) study after a gate 1 
 to William (2026-10-09), beyond the rule: keep rating and re-measure, since gate 1 is missed by
 4 points within its interval and gate 2 suggests ratings help.
 
+#### Run 6 — 2026-10-09, first run of the accepted rule (ADR-0006, WIP-82)
+
+[Judge eval run 37887866174](https://github.com/williampenet/nightcrawler/actions/runs/37887866174),
+started by the merge of #78: the first measurement of the fixed rule (`must_see`, `for_you`, or
+`discovery` with confidence ≥ 30) after it was chosen. Site data of 2026-10-08 23:44; same labels
+as runs 4–5 (152, 34 liked; 87 positives). The rounding of Deezer fan counts (WIP-83) was merged
+after this run; the next run carries it, so a change then may come from either the rounding or
+run-to-run variation.
+
+| Condition | Shown recall (95 %) | Rated concerts shown | Precision: À ne pas rater | Pour toi | Découvertes | Tout voir |
+|---|---|---|---|---|---|---|
+| profile+examples | 88 % (80–94 %) | 57 % | 60 % on 10 | 37 % on 49 | 14 % on 28 | 9 % on 65 |
+| **nn** (routed) | **85 % (76–91 %)** | 52 % | 78 % on 9 | 38 % on 47 | 13 % on 23 | 8 % on 73 |
+| nn@2/3#1 | 79 % (70–86 %) | 51 % | 73 % on 11 | 33 % on 45 | 14 % on 21 | 11 % on 75 |
+| nn@2/3#2 | 86 % (77–92 %) | 50 % | 88 % on 8 | 36 % on 44 | 21 % on 24 | 8 % on 76 |
+| nn@1/3#1 | 78 % (68–86 %) | 52 % | 55 % on 11 | 39 % on 44 | 12 % on 24 | 11 % on 73 |
+| nn@1/3#2 | 79 % (70–86 %) | 46 % | 67 % on 9 | 42 % on 43 | 11 % on 18 | 10 % on 82 |
+
+- **Gate passed** (workflow green): the routed `nn` shows 85 % of the positives, the bar itself;
+  run 5 gave 90 % with the same cut-off, so the run-to-run variation is visible here.
+- **Sections check, first point:** "À ne pas rater" 78 % on 9 vs "Pour toi" 38 % on 47; it does
+  not count yet (fewer than 10 concerts in "À ne pas rater", ADR-0006).
+- **Découvertes:** 13 % precision, close to "Tout voir" (8 %): the section brings recall, few hits,
+  as accepted (recall first).
+- Shown recall along the learning curve: 1/3 of the ratings 78–79 %, 2/3 79–86 %, all 85 %; one
+  run, inside the noise.
+

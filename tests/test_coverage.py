@@ -145,12 +145,12 @@ def test_report_lines_are_totals_only(tz):
     line = one_line(report)
     assert line.endswith(
         f"reference coverage: {cov['found']}/39 rate={cov['rate']} "
-        f"date_venue_only={cov['date_venue_only']}"
+        f"date_venue_only={cov['date_venue_only']} | judge: -"
     )
     md = summary_markdown(report)
     assert f"| Reference events found (FR-11) | {cov['found']} / 39 (" in md
     for text in (line, md):
         assert "Épicerie" not in text and "Opéra" not in text and "Lemon" not in text
-    assert one_line(report | {"coverage": None}).endswith("reference coverage: -")
+    assert one_line(report | {"coverage": None}).endswith("reference coverage: - | judge: -")
     error = report | {"coverage": {"status": "error: KeyError"}}
-    assert one_line(error).endswith("reference coverage: error: KeyError")
+    assert one_line(error).endswith("reference coverage: error: KeyError | judge: -")

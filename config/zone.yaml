@@ -42,6 +42,9 @@ excluded_venues:
 # (cut before a date line, 8 lines overlapping). Hosts' robots.txt Crawl-delay is honoured.
 # Structures checked on 2026-10-07 (server HTML, no JavaScript).
 llm_calls_per_run: 40  # extract_events calls per run (one per chunk), all venues together
+# judge_taste calls per run (ADR-0007): only new or changed inputs are judged; 600 × €0.28 per
+# 1,000 (ADR-0006, run 4 measured tokens) ≈ €0.17 per run at most
+judge_calls_per_run: 600
 # the largest page of the eval set is 3,234 characters (eval/cases.jsonl): chunks stay within
 # the evaluated input size; models.yaml `max_input_chars` (else 7,000) is an upper bound
 llm_chunk_chars: 3200

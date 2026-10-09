@@ -26,6 +26,8 @@ class Inputs:
     ratings: dict[str, tuple[str | None, Any]] = field(default_factory=dict)
     descriptions: dict[str, str] = field(default_factory=dict)  # concert id -> listing text
     known: dict[str, str] = field(default_factory=dict)  # concert id -> stored input_hash
+    # concert id -> {input_hash, verdict, confidence, section} of the stored judgement
+    stored: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def read_descriptions(conn, ids: list[str]) -> dict[str, str]:
@@ -68,14 +70,21 @@ def load_inputs(conn, ids: list[str]) -> Inputs:
         conn.execute("SET TRANSACTION READ ONLY")
         conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
         row = conn.execute("SELECT data FROM profile WHERE id = 'me'").fetchone()
-        known = conn.execute(
-            "SELECT concert_id, input_hash FROM verdicts WHERE concert_id = ANY(%s)", (ids,)
+        rows = conn.execute(
+            "SELECT concert_id, input_hash, verdict, confidence, section FROM verdicts "
+            "WHERE concert_id = ANY(%s)",
+            (ids,),
         ).fetchall()
+        stored = {
+            cid: {"input_hash": h, "verdict": v, "confidence": c, "section": s}
+            for cid, h, v, c, s in rows
+        }
         return Inputs(
             profile=row[0] if row and isinstance(row[0], dict) else {},
             ratings=read_ratings(conn),
             descriptions=read_descriptions(conn, ids),
-            known=dict(known),
+            known={cid: d["input_hash"] for cid, d in stored.items()},
+            stored=stored,
         )
 
 
@@ -103,3 +112,17 @@ def save(conn, rows: list[dict[str, Any]]) -> int:
             (RETENTION_DAYS,),
         )
     return len(rows)
+
+
+def update_sections(conn, changes: list[tuple[str, str]]) -> int:
+    """Sets the section of stored judgements whose input did not change but whose section the
+    current rule (judge.section) puts elsewhere: no new model call (ADR-0007)."""
+    if not changes:
+        return 0
+    with conn.transaction():
+        conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
+        conn.cursor().executemany(
+            "UPDATE verdicts SET section = %s WHERE concert_id = %s",
+            [(section, cid) for cid, section in changes],
+        )
+    return len(changes)

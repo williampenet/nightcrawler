@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import coverage
+from . import coverage, judging
 from .artists import enrich
 from .config import Zone
 from .events import build_concerts
@@ -41,6 +41,7 @@ def run(
     database_url: str | None = None,
     reference: Path | None = None,
     llm_ctx: page_llm.Context | None = None,
+    judge_ctx: judging.Context | None = None,
 ) -> dict:
     tz = ZoneInfo(zone.timezone)
     now = now or datetime.now(tz)
@@ -148,6 +149,13 @@ def run(
     artists, artist_stats = enrich(concerts, fetcher)
     if store["status"] == "ok":
         store["reported_artists"] = sync.mark_reported(artists, reported)
+    judged: dict = {"status": "off"}  # taste judgements (ADR-0007): store only, counts here
+    if store["status"] == "ok" and database_url:
+        try:
+            judged = judging.run(database_url, concerts, artists, judge_ctx)
+        except Exception as exc:  # judging must never fail the run
+            log.warning("judging failed: %s", type(exc).__name__)
+            judged = {"status": f"error: {type(exc).__name__}"}
 
     # 4. outputs
     report = {
@@ -190,6 +198,7 @@ def run(
         # {status, raw_upserted, concerts_reused, concerts_new, overrides_applied,
         #  reported_artists} when the store answered
         "store": store,
+        "judge": judged,
         # {in_window, found, rate, per_venue: {venue: [in_window, found]}, events}
         "coverage": cover,
     }
