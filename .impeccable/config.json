@@ -1,0 +1,16 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "line-length",
+        "value": "*",
+        "files": [
+          "https://williampenet.github.io/nightcrawler/**"
+        ],
+        "reason": "WIP-111 — footer credits: legitimate long explanation of how the list is built and attribution text (OSM, IGN, MusicBrainz, Deezer); inline-disable has no effect on line-length findings (reported with line: 0, verified in WIP-110)"
+      }
+    ]
+  }
+}
