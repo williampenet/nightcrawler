@@ -1,0 +1,110 @@
+name: Impeccable report
+
+# WIP-111: non-blocking post-deploy design report. Runs the Impeccable
+# detector (Apache-2.0) against the sources and the live demo in two
+# viewports, after each successful Pipeline run on main. Produces an
+# artifact (`impeccable-findings`) and a job summary; never fails.
+# Spike notes and raw measurements: WIP-110.
+
+on:
+  workflow_run:
+    workflows: [Pipeline]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: impeccable-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: Scan demo and sources, upload findings
+    # workflow_run fires on completion of any Pipeline run; only run the
+    # report when it succeeded (so we don't scan a broken deploy).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMPECCABLE_VERSION: 4.5.2
+      URL: https://williampenet.github.io/nightcrawler/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve Chrome
+        # Chrome is preinstalled on ubuntu-latest (actions/runner-images).
+        # Without CHROME_PATH set, the Impeccable engine's URL scan silently
+        # returns [] with exit 0 (measured in WIP-110).
+        run: |
+          CHROME="$(command -v google-chrome || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            echo "::error::no Chrome binary found on PATH"
+            exit 1
+          fi
+          echo "CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+
+      - name: Scan sources (static)
+        continue-on-error: true
+        run: |
+          npx --yes "impeccable@${IMPECCABLE_VERSION}" detect --json \
+            src/nightcrawler/web/ > findings-src.json
+
+      - name: Scan live demo (mobile 390x844)
+        continue-on-error: true
+        run: |
+          npx --yes "impeccable@${IMPECCABLE_VERSION}" detect --json \
+            --viewport 390x844 "$URL" > findings-url-mobile.json
+
+      - name: Scan live demo (desktop 1280x800)
+        continue-on-error: true
+        run: |
+          npx --yes "impeccable@${IMPECCABLE_VERSION}" detect --json \
+            --viewport 1280x800 "$URL" > findings-url-desktop.json
+
+      - name: Summarise
+        env:
+          URL: ${{ env.URL }}
+          IMPECCABLE_VERSION: ${{ env.IMPECCABLE_VERSION }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import collections, json, os, pathlib
+          print("# Impeccable report")
+          print()
+          print(f"Pinned to `impeccable@{os.environ['IMPECCABLE_VERSION']}`"
+                f" on {os.environ['URL']}.")
+          print()
+          print("| Scope | Findings | Per rule |")
+          print("|---|---|---|")
+          for label, path in [
+              ("Sources `src/nightcrawler/web/`", "findings-src.json"),
+              ("Live demo mobile 390x844", "findings-url-mobile.json"),
+              ("Live demo desktop 1280x800", "findings-url-desktop.json"),
+          ]:
+              p = pathlib.Path(path)
+              if not p.exists() or not p.stat().st_size:
+                  print(f"| {label} | *scan failed* | — |")
+                  continue
+              try:
+                  data = json.loads(p.read_text())
+              except json.JSONDecodeError:
+                  print(f"| {label} | *invalid JSON* | — |")
+                  continue
+              counts = collections.Counter(f["antipattern"] for f in data)
+              per_rule = (", ".join(f"`{k}` ×{v}" for k, v in sorted(counts.items()))
+                          or "—")
+              print(f"| {label} | {len(data)} | {per_rule} |")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: impeccable-findings
+          path: findings-*.json
+          if-no-files-found: error
