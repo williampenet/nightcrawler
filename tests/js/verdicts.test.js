@@ -194,6 +194,44 @@ test("a known artist goes to « À ne pas rater » whatever the judge says (WIP-
   assert.equal(V.sectionsFor(list, verdicts).tout_voir.length, 1); // without the rule: unchanged
 });
 
+test("levelFor grades the affinity from the verdict and the confidence (WIP-112)", () => {
+  const lv = (over) => V.levelFor({ c: { id: A }, v: ok(over) });
+  assert.equal(lv({ section: "ne_pas_rater", verdict: "must_see", confidence: 0 }), 3);
+  assert.equal(lv({ confidence: 100 }), 3); // for_you the judge is sure of: same cran as must_see
+  assert.equal(lv({ confidence: 90 }), 3);
+  assert.equal(lv({ confidence: 89 }), 2);
+  assert.equal(lv({ confidence: 80 }), 2);
+  assert.equal(lv({ confidence: 79 }), 1);
+  assert.equal(lv({ confidence: 0 }), 1); // judged « Pour toi »: never nothing
+  assert.equal(lv({ section: "decouvertes", verdict: "discovery", confidence: 60 }), 1);
+  assert.equal(lv({ section: "tout_voir", verdict: "discovery", confidence: 20 }), 0); // under the bar
+  assert.equal(lv({ section: "tout_voir", verdict: "no", confidence: 100 }), 0);
+});
+
+test("levelFor: the known-artist rule wins, no verdict means no accent (WIP-112)", () => {
+  const c = { id: A };
+  assert.equal(V.levelFor({ c, known: true }), 3); // WIP-88, without the judge
+  assert.equal(V.levelFor({ c, known: true, v: ok({ section: "tout_voir", verdict: "no" }) }), 3);
+  assert.equal(V.levelFor({ c, unjudged: true }), 0);
+  assert.equal(V.levelFor({ c, unjudged: true, v: ok({ confidence: 100 }) }), 0);
+  assert.equal(V.levelFor({ c }), 0);
+  assert.equal(V.levelFor(null), 0);
+  assert.equal(V.levelFor({ c, v: { verdict: "for_you", section: "pour_toi" } }), 1); // no confidence
+  assert.deepEqual(Object.keys(V.LEVEL_LABELS).sort(), ["1", "2", "3"]);
+});
+
+test("levelFor never depends on the item's position in the list (WIP-112, PM 2026-10-10)", () => {
+  const verdicts = V.parse({
+    verdicts: {
+      [A]: ok({ section: "pour_toi", verdict: "for_you", confidence: 90 }),
+      [B]: ok({ section: "pour_toi", verdict: "for_you", confidence: 90 }),
+    },
+  }).verdicts;
+  const levels = (list) => V.sectionsFor(list, verdicts).pour_toi.map(V.levelFor);
+  assert.deepEqual(levels([item(A), item(B)]), [3, 3]);
+  assert.deepEqual(levels([item(B), item(A)]), [3, 3]);
+});
+
 test("homePicks: must-see and judged « Pour toi » only, unjudged left out (WIP-102)", () => {
   const it = (id, extra = {}) => ({ c: { id }, ...extra });
   const { must, picks } = V.homePicks({ must: [it("a", { known: true }), it("b")], forYou: [it("c"), it("d", { unjudged: true })] });

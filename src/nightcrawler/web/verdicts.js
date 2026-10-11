@@ -122,6 +122,30 @@
     return out;
   }
 
+  // Affinity level of an item of sectionsFor (WIP-112): 3 « À ne pas rater », 2 « Pour toi »,
+  // 1 « Piste », 0 the rest. The apricot signals the concerts most likely to please the
+  // listener (PM, 2026-10-09), so the level follows the judge's own ordered score — verdict
+  // first, confidence as the tie-breaker, as judge.VERDICT_RANK — and never the item's position
+  // in the list: two concerts the judge rates the same must look the same wherever they appear.
+  // The cliff between must_see and for_you is where the judge itself hesitates (measured on the
+  // 693 live verdicts: 9 must_see at confidence 80, 122 for_you at 80 or more), hence for_you at
+  // 90+ joining the top level: the listener cannot be told « À ne pas rater » about one and
+  // nothing about the other when the judge is as certain of both.
+  const LEVEL_TOP = 3;
+  const LEVEL_LABELS = { 3: "À ne pas rater", 2: "Pour toi", 1: "Piste" };
+
+  function levelFor(item) {
+    if (!item) return 0;
+    if (item.known) return LEVEL_TOP; // a known artist (WIP-88): a deterministic rule, no judge
+    const v = item.unjudged ? null : item.v;
+    if (!v) return 0;
+    const conf = Number.isInteger(v.confidence) ? v.confidence : 0;
+    if (v.verdict === "must_see") return 3;
+    if (v.verdict === "for_you") return conf >= 90 ? 3 : conf >= 80 ? 2 : 1;
+    if (v.verdict === "discovery" && v.section === "decouvertes") return 1;
+    return 0;
+  }
+
   // The home's « Pour toi » (PM, 2026-10-09, WIP-102; amends ADR-0007 §5): only the concerts that
   // very probably match, i.e. « À ne pas rater » (judge or known-artist rule) and the judge's
   // « Pour toi ». Not judged yet and Découvertes stay in « Tout ». sec: {must, forYou} lists of
@@ -133,7 +157,7 @@
     return { must, picks };
   }
 
-  const api = { homePicks, KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };
+  const api = { homePicks, levelFor, LEVEL_LABELS, LEVEL_TOP, KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NCVerdicts = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

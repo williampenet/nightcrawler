@@ -30,7 +30,11 @@ CONTRAST_PAIRS = [
     ("on-ink", "ink"),  # also the focus ring on the error banner
     ("ink", "surface"),
     ("ink-muted", "surface"),
+    ("ink", "accent-soft"),
+    ("ink-soft", "accent-soft"),
+    ("ink-muted", "accent-soft"),
     ("accent", "ground"),
+    ("accent-soft", "ground"),
 ]
 
 # Self-hosted fonts (OFL 1.1, Fontsource 5.3.0 packages): no request to Google's servers.

@@ -97,14 +97,18 @@ def test_colour_regex_catches_literals_and_spares_entities():
 
 def test_text_pairs_meet_wcag_aa():
     ratios = {(fg, bg): r for fg, bg, r in gen.contrast_table(gen.load())}
-    # the accent is a fill only (design system rule): 1.8:1 is expected, never used for text
+    # the accent and its 30% wash are fills only (design system rule): too light for text or for
+    # a thin marker carrying meaning, which is why the affinity rules use accent-ink (WIP-112)
     assert ratios.pop(("accent", "ground")) < 3
+    assert ratios.pop(("accent-soft", "ground")) < 3
     for pair, ratio in ratios.items():
         assert ratio >= 4.5, pair
     # figures quoted by the design system and the ticket
     assert ratios[("ink", "accent")] == 9.9
     assert ratios[("accent-ink", "ground")] == 6.1
     assert ratios[("ink-muted", "ground")] == 7.3
+    assert ratios[("ink", "accent-soft")] == 15.0
+    assert ratios[("ink-muted", "accent-soft")] == 6.1
 
 
 def test_wcag_contrast_reference_values():

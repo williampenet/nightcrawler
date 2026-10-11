@@ -24,12 +24,14 @@ test("addMonths and monthOf cross the year", () => {
   assert.equal(C.monthOf("13/10/2026"), null);
 });
 
-test("marker: the strongest kind of the day", () => {
-  assert.equal(C.marker([{ discovery: true }, { pick: true }]), "forYou");
-  assert.equal(C.marker([{ pick: true }, { must: true }]), "must");
-  assert.equal(C.marker([{ discovery: true }]), "discovery");
-  assert.equal(C.marker([{}]), null);
-  assert.equal(C.marker(undefined), null);
+test("marker: the day's highest affinity level (WIP-112)", () => {
+  assert.equal(C.marker([{ lv: 1 }, { lv: 2 }]), 2);
+  assert.equal(C.marker([{ lv: 2 }, { lv: 3 }, { lv: 0 }]), 3);
+  assert.equal(C.marker([{ lv: 1 }]), 1);
+  assert.equal(C.marker([{ lv: 0 }]), 0);
+  assert.equal(C.marker([{}]), 0);
+  assert.equal(C.marker([{ lv: "3" }]), 0); // only a real level counts
+  assert.equal(C.marker(undefined), 0);
 });
 
 test("byDay groups in order and drops bad keys", () => {
@@ -38,15 +40,10 @@ test("byDay groups in order and drops bad keys", () => {
   assert.deepEqual(m.get("2026-10-10").map((x) => x.n), [1, 3]);
 });
 
-test("flags: the ring follows the home's « Découvertes » section, not the bare verdict", () => {
+test("flags: pick marks what the home's « Pour toi » shows, and keeps the level", () => {
   const picks = new Set(["a"]);
-  const shown = C.flags({ c: { id: "b" }, v: { verdict: "discovery", section: "decouvertes" } }, picks);
-  const below = C.flags({ c: { id: "c" }, v: { verdict: "discovery", section: "tout_voir" } }, picks);
-  const pick = C.flags({ c: { id: "a" } }, picks);
-  assert.equal(shown.discovery, true);
-  assert.equal(below.discovery, false);
-  assert.equal(pick.pick, true);
-  assert.equal(pick.discovery, false);
+  assert.deepEqual(C.flags({ c: { id: "a" }, lv: 2 }, picks), { c: { id: "a" }, lv: 2, pick: true });
+  assert.equal(C.flags({ c: { id: "b" }, lv: 1 }, picks).pick, false);
 });
 
 test("frenchFirst: 1 -> 1er, other days untouched", () => {
