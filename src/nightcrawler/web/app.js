@@ -892,6 +892,11 @@ function reasonLine(x) {
 
 const newBadge = () => el("span", "Nouveau", "new");
 
+// The affinity level in words, above the title (WIP-112): the second channel of the scale, so the
+// level never rests on the apricot alone (and the word is there in « Tout » too, where there is no
+// section heading to say it — reviewer, WIP-106).
+const levelLabel = (x) => (V.LEVEL_LABELS[x.lv] ? el("p", V.LEVEL_LABELS[x.lv], "lvl") : null);
+
 // Details under the title (until the concert page, WIP-96): source and ticket links, the WhatsApp
 // link, "Pas pour moi", "Mauvais rapprochement" and the "Lu par IA" mention (WIP-66).
 function detailsPanel(x, item) {
@@ -985,13 +990,12 @@ function mustSeeCard(x) {
   const d = new Date(c.start);
   const t = timeFmt.format(d);
   const top = el("div", null, "card-top");
-  // the card's shape and the section heading say it; screen readers get it in words
-  top.append(el("span", "À ne pas rater : ", "visually-hidden"), el("span", shortFmt.format(d) + (t === "00:00" ? "" : ` · ${t}`), "when"));
+  top.append(el("span", shortFmt.format(d) + (t === "00:00" ? "" : ` · ${t}`), "when"));
   if (NEW_IDS.has(c.id)) top.append(newBadge());
   const panel = detailsPanel(x, li);
   const slot = el("div", null, "slot");
   const sum = el("div", null, "sum");
-  sum.append(titleButton(c, panel, "card-title", false), venueLine(c));
+  sum.append(levelLabel(x), titleButton(c, panel, "card-title", false), venueLine(c));
   const why = reasonLine(x);
   if (why) sum.append(why);
   li.append(top, sum, actionBar(x, li, slot, true), panel, slot);
@@ -999,12 +1003,12 @@ function mustSeeCard(x) {
 }
 
 // opts.timeOnly: the date column shows only the time (calendar, where the day is the heading)
-const itemNode = (x, opts) => (x.must ? mustSeeCard(x) : concertRow(x, opts));
+const itemNode = (x, opts) => (x.lv === V.LEVEL_TOP ? mustSeeCard(x) : concertRow(x, opts));
 
 // ConcertRow (design system): date column, then title, venue, reason and actions.
 function concertRow(x, opts = {}) {
   const c = x.c;
-  const li = el("li", null, "crow");
+  const li = el("li", null, x.lv ? `crow lv${x.lv}` : "crow");
   li.dataset.id = c.id;
   const d = new Date(c.start);
   const t = timeFmt.format(d);
@@ -1022,6 +1026,8 @@ function concertRow(x, opts = {}) {
   head.append(titleButton(c, panel, "row-title"));
   if (NEW_IDS.has(c.id)) head.append(newBadge());
   const slot = el("div", null, "slot");
+  const lvl = levelLabel(x);
+  if (lvl) body.append(lvl);
   body.append(head, venueLine(c));
   const why = reasonLine(x);
   if (why) body.append(why);
@@ -1056,17 +1062,22 @@ const isKnownArtist = (x) => S.isKnownMatch(x.m);
 
 const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
 
-// The home sections. With the judge (WIP-86, PRD FR-6): « À ne pas rater », « Pour toi » (with
-// the concerts not judged yet), « Découvertes ». Without it, fixed rules (WIP-53): the sure
+// The home sections, from the judge's own sections (WIP-86, PRD FR-6; « Découvertes » and
+// « Tout voir » only reach `all`, WIP-102). Without the judge, fixed rules (WIP-53): the sure
 // matches are « À ne pas rater », the best inferred ones « Pour toi ». null: empty profile.
+// Every item of `all` carries its affinity level (lv, WIP-112): the judge's verdict and
+// confidence, or the fixed tier when there is no judge.
 function homeSections(list, profile) {
   if (judgeOn()) {
     const s = V.sectionsFor(list, verdicts.verdicts, isKnownArtist);
-    return { must: s.ne_pas_rater, forYou: s.pour_toi, all: [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir] };
+    const all = [...s.ne_pas_rater, ...s.pour_toi, ...s.decouvertes, ...s.tout_voir];
+    return { must: s.ne_pas_rater, forYou: s.pour_toi, all: all.map((x) => ({ ...x, lv: V.levelFor(x) })) };
   }
   if (S.isEmpty(profile, DATA.concerts)) return null;
   const t = S.tiers(list);
-  return { must: t.sure, forYou: t.discover, all: list };
+  const lv = new Map(t.sure.map((x) => [x.c.id, V.LEVEL_TOP]));
+  for (const x of t.discover) lv.set(x.c.id, 2);
+  return { must: t.sure, forYou: t.discover, all: list.map((x) => ({ ...x, lv: lv.get(x.c.id) || 0 })) };
 }
 
 function rowList(items, labelId) {
@@ -1089,19 +1100,16 @@ function heading(root, id, text) {
   root.append(h);
 }
 
-// Every item with its verdict (judge) and a must flag (« À ne pas rater », a MustSeeCard on every
-// view), plus the picks of « Pour toi »: the concerts that very probably match, i.e. must-see and
-// the judge's « Pour toi », by date. Not judged yet, Découvertes and the rest stay in « Tout »
-// (PM, 2026-10-09 17:08, WIP-102; amends ADR-0007 §5).
+// Every item with its verdict (judge) and its affinity level (lv, WIP-112: the treatment it gets
+// on every view), plus the picks of « Pour toi »: the concerts that very probably match, i.e.
+// must-see and the judge's « Pour toi », by date. Not judged yet, Découvertes and the rest stay in
+// « Tout » (PM, 2026-10-09 17:08, WIP-102; amends ADR-0007 §5).
 function decorate(list, profile) {
   const sec = homeSections(list, profile);
   if (!sec) return { items: list, picks: null };
-  const { must, picks } = V.homePicks(sec); // the rule, tested in verdicts.test.js
+  const { picks } = V.homePicks(sec); // the rule, tested in verdicts.test.js
   const byId = new Map(sec.all.map((x) => [x.c.id, x]));
-  const items = list.map((x) => {
-    const y = byId.get(x.c.id) || x;
-    return must.has(x.c.id) ? { ...y, must: true } : y;
-  });
+  const items = list.map((x) => byId.get(x.c.id) || x);
   return { items, picks: items.filter((x) => picks.has(x.c.id)) };
 }
 
@@ -1118,9 +1126,11 @@ function renderPourToi(root, picks, total) {
     root.append(el("p", state.when === "all" ? "Rien pour toi pour l'instant." : `${S.withPeriod("Rien pour toi", state.when)}.`, "muted empty"));
     return seeAll(root, total);
   }
-  // « À ne pas rater » cards first (all of them), then the judge's « Pour toi » rows (WIP-106)
-  const must = picks.filter((x) => x.must);
-  const rest = picks.filter((x) => !x.must);
+  // « À ne pas rater » cards first (all of them), then the judge's « Pour toi » rows (WIP-106).
+  // The split follows the affinity level, not the judge's section (WIP-112): a « Pour toi » the
+  // judge is as certain of as a must-see is shown with it, otherwise the heading would lie.
+  const must = picks.filter((x) => x.lv === V.LEVEL_TOP);
+  const rest = picks.filter((x) => x.lv !== V.LEVEL_TOP);
   if (must.length) {
     heading(root, "sec-must", "À ne pas rater");
     root.append(rowList(must, "sec-must"));
@@ -1199,12 +1209,13 @@ function setView(v, moveFocus) {
   }
 }
 
-// « Calendrier » (WIP-97, artboard Calendrier): month grid with one taste marker per day (shape,
-// not colour alone: bar = À ne pas rater, dot = Pour toi, ring = Découverte), then the selected
-// day's concerts. « Pour toi » shows the « Pour toi » picks (WIP-102 rule), « Tout » every concert.
+// « Calendrier » (WIP-97, artboard Calendrier): month grid with one taste marker per day, then the
+// selected day's concerts. The marker is the day's highest affinity level (WIP-112, the same scale
+// as the list) and the levels are told apart by shape, not colour alone: bar = À ne pas rater,
+// dot = Pour toi, ring = Piste. « Pour toi » shows the « Pour toi » picks (WIP-102 rule), « Tout »
+// every concert.
 const CAL = window.NCCalendar;
 const cal = { month: null, day: null, mode: "pour_toi" };
-const MARK_LABEL = { must: "à ne pas rater", forYou: "pour toi", discovery: "découverte" };
 const keyDate = (key) => new Date(`${key}T12:00:00Z`); // noon UTC: the same day in any zone of Europe
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const dayLabel = (key) => CAL.frenchFirst(dayFmt.format(keyDate(key)));
@@ -1238,7 +1249,7 @@ function renderDays(focusKey) {
   if (monthEl.textContent !== label) monthEl.textContent = label;
   document.getElementById("cal-prev").setAttribute("aria-disabled", String(cal.month <= first));
   document.getElementById("cal-next").setAttribute("aria-disabled", String(cal.month >= last));
-  document.querySelector('#route-calendrier .legend .discovery').parentElement.hidden = !judgeOn(); // no judge, no discovery
+  document.querySelector('#route-calendrier .legend .lv1').parentElement.hidden = !judgeOn(); // the rule-based tiers never reach level 1
   for (const b of document.querySelectorAll("[data-cal]")) {
     if (b.dataset.cal === cal.mode) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
@@ -1251,7 +1262,7 @@ function renderDays(focusKey) {
     grid.append(cell);
     if (!key) continue;
     const dayItems = days.get(key) || [];
-    const kind = CAL.marker(dayItems);
+    const lv = CAL.marker(dayItems);
     const n = Number(key.slice(8));
     if (key < today) {
       cell.append(el("span", String(n), "cal-day past")); // over: no concert left to show
@@ -1271,11 +1282,11 @@ function renderDays(focusKey) {
     b.setAttribute("aria-label", [
       dayLabel(key),
       key === today ? "aujourd'hui" : null,
-      kind ? MARK_LABEL[kind] : null,
+      V.LEVEL_LABELS[lv] ? V.LEVEL_LABELS[lv].toLowerCase() : null,
       count ? `${count} concert${count > 1 ? "s" : ""}` : "aucun concert",
     ].filter(Boolean).join(", "));
     cell.append(b);
-    const mark = el("span", null, kind ? `mark ${kind}` : "mark");
+    const mark = el("span", null, lv ? `mark lv${lv}` : "mark");
     mark.setAttribute("aria-hidden", "true");
     cell.append(mark);
   }

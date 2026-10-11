@@ -35,14 +35,12 @@
     return cells;
   }
 
-  // The taste marker of a day, from its items ({must, pick, discovery} flags): the strongest
-  // one only, as on the artboard. "must" > "forYou" > "discovery" > null.
+  // The taste marker of a day: the highest affinity level of its items (lv, verdicts.levelFor),
+  // the strongest one only, as on the artboard. 0 when no item is on the scale. The calendar and
+  // the list therefore read the same scale (WIP-112); shape tells the levels apart, not colour.
   function marker(items) {
     const list = Array.isArray(items) ? items : [];
-    if (list.some((x) => x.must)) return "must";
-    if (list.some((x) => x.pick)) return "forYou";
-    if (list.some((x) => x.discovery)) return "discovery";
-    return null;
+    return list.reduce((top, x) => (Number.isInteger(x.lv) && x.lv > top ? x.lv : top), 0);
   }
 
   // Items grouped by day key: Map key -> items, in the list's order.
@@ -57,14 +55,8 @@
     return out;
   }
 
-  // Marker flags of an item: pick (shown by « Pour toi », WIP-102), discovery (in the home's
-  // « Découvertes » section: the judge's section, not its verdict, since a discovery under the
-  // confidence bar goes to « Tout », verdicts.js SECTIONS_OF).
-  const flags = (x, pickIds) => ({
-    ...x,
-    pick: pickIds.has(x.c.id),
-    discovery: !!(x.v && x.v.section === "decouvertes"),
-  });
+  // pick: shown by the home's « Pour toi » (WIP-102), which the calendar's « Pour toi » mode follows.
+  const flags = (x, pickIds) => ({ ...x, pick: pickIds.has(x.c.id) });
 
   // "dimanche 1 novembre" -> "dimanche 1er novembre" (French ordinal for the first of the month)
   const frenchFirst = (text) => String(text).replace(/(^|\s)1(\s)/, "$11er$2");
