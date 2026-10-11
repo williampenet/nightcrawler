@@ -1062,8 +1062,8 @@ const isKnownArtist = (x) => S.isKnownMatch(x.m);
 
 const scored = (profile) => filtered().map((c) => ({ c, m: S.scoreConcert(c, DATA.artists, profile) }));
 
-// The home sections. With the judge (WIP-86, PRD FR-6): « À ne pas rater », « Pour toi » (with
-// the concerts not judged yet), « Découvertes ». Without it, fixed rules (WIP-53): the sure
+// The home sections, from the judge's own sections (WIP-86, PRD FR-6; « Découvertes » and
+// « Tout voir » only reach `all`, WIP-102). Without the judge, fixed rules (WIP-53): the sure
 // matches are « À ne pas rater », the best inferred ones « Pour toi ». null: empty profile.
 // Every item of `all` carries its affinity level (lv, WIP-112): the judge's verdict and
 // confidence, or the fixed tier when there is no judge.

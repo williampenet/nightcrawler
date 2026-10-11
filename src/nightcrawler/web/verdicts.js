@@ -149,12 +149,12 @@
   // The home's « Pour toi » (PM, 2026-10-09, WIP-102; amends ADR-0007 §5): only the concerts that
   // very probably match, i.e. « À ne pas rater » (judge or known-artist rule) and the judge's
   // « Pour toi ». Not judged yet and Découvertes stay in « Tout ». sec: {must, forYou} lists of
-  // items ({c, unjudged?}). Returns {must, picks}: Sets of concert ids.
+  // items ({c, unjudged?}). Returns {picks}: the Set of concert ids to show. How they are shown is
+  // the affinity level's job (levelFor), not this rule's.
   function homePicks(sec) {
-    const must = new Set((sec.must || []).map((x) => x.c.id));
-    const picks = new Set(must);
+    const picks = new Set((sec.must || []).map((x) => x.c.id));
     for (const x of sec.forYou || []) if (!x.unjudged) picks.add(x.c.id);
-    return { must, picks };
+    return { picks };
   }
 
   const api = { homePicks, levelFor, LEVEL_LABELS, LEVEL_TOP, KEY, SECTIONS, VERDICTS, MAX_REASON, verdictsUrl, parse, hasVerdicts, pull, afterPull, load, save, sectionsFor };

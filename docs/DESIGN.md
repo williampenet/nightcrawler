@@ -101,7 +101,7 @@ MustSeeCard, ConcertRow, ReasonTag, NewBadge, ViewTabs, ListenButton: anatomy an
 
 Built from artboard Calendrier:
 - Title, month switcher (44px round arrows, disabled before the current month and after the last month with concerts), « Pour toi » / « Tout » toggle.
-- Monday-first grid (`web/calendar.js`, pure, tested): 44px day buttons, today outlined (2px ink), selected day filled ink; past days are plain text. One marker per day, the strongest of its concerts, told apart by shape: apricot bar outlined in ink = « À ne pas rater », filled dot = « Pour toi », ring = « Découverte »; legend under the grid. Each day button's name gives the date, « aujourd'hui », the marker and the number of concerts.
+- Monday-first grid (`web/calendar.js`, pure, tested): 44px day buttons, today outlined (2px ink), selected day filled ink; past days are plain text. One marker per day, the strongest of its concerts, told apart by shape: apricot bar outlined in ink = « À ne pas rater », filled dot = « Pour toi », ring = « Piste » (WIP-112; « Découverte » until then); legend under the grid. Each day button's name gives the date, « aujourd'hui », the marker and the number of concerts.
 - Under the grid, the selected day: heading (« Mardi 13 octobre », « 1er » for the first of the month), then its concerts: rows with the time in the date column, « À ne pas rater » as MustSeeCards. « Pour toi » shows the WIP-102 picks; « N autres concerts ce jour-là » switches to « Tout ». Changing month selects its first day still to come.
 
 ## MustSeeCard back (WIP-106)
@@ -109,7 +109,28 @@ Built from artboard Calendrier:
 The PM rejected the compact-row proposal (WIP-105, PR #95 closed) and chose the design system's MustSeeCard from his screenshot (2026-10-09 22:19):
 - Every « À ne pas rater » concert is a MustSeeCard on every view: grouped first on « Pour toi » (section « À ne pas rater », all of them), inline in « Tout » (A → Z), « Nouveaux » and the calendar list. The highlighted row of WIP-102 is gone.
 - « Pour toi »: section « À ne pas rater » (cards), then « Pour toi {période} » (rows), each by date; the selection is still the WIP-102 one, the order is not (a must-see on the 30th now comes before a for-you on the 10th) and the count line is gone.
-- As on the screenshot, cards have no chevron: title, venue and reason form one tap area opening the details (the title button's hit area is stretched over them; it keeps the disclosure semantics and draws its focus ring around the area). Screen readers hear « À ne pas rater » before the date. Rows keep their chevron.
+- As on the screenshot, cards have no chevron: title, venue and reason form one tap area opening the details (the title button's hit area is stretched over them; it keeps the disclosure semantics and draws its focus ring around the area). ~~Screen readers hear « À ne pas rater » before the date~~ the level is written on screen since WIP-112. Rows keep their chevron.
+
+## Affinity scale (WIP-112)
+
+The PM's objection (2026-10-10): the apricot means « a concert I am most likely to enjoy », so « pourquoi certains concerts susceptibles de me plaire auraient un fond abricot et d'autres susceptibles également de me plaire n'en auraient pas ? ». The cause was structural: a card was handed out by the item's home section and a `must` flag set per list, so the same concert could look different depending on where it appeared, and a judge `for_you` at confidence 95 got nothing while a `must_see` at 60 got the full card.
+
+One scale now, computed from the judge's own ordered score and nothing else (`web/verdicts.js levelFor`, mirroring `judge.VERDICT_RANK`: verdict first, confidence as the tie-breaker). It never reads the item's position or the list it is rendered in — a test locks that property in.
+
+| Level | Who | Treatment |
+|---|---|---|
+| 3 | `must_see`, `for_you` ≥ 90, known artist (WIP-88) | MustSeeCard, `accent` fill |
+| 2 | `for_you` 80–89 | `accent-soft` wash, 4px `accent-ink` rule |
+| 1 | `for_you` < 80, `discovery` in « Découvertes » | 3px `accent-ink` rule |
+| 0 | the rest | nothing |
+
+- `for_you` at 90+ joins the top level because that is where the judge itself hesitates: on the 693 verdicts of the 2026-10-10 run, 9 `must_see` sit at confidence 80 while 122 `for_you` sit at 80 or more. The listener cannot be told « À ne pas rater » about one and nothing about the other when the judge is equally certain of both.
+- Each level is written above the title (`.lvl`: « À ne pas rater », « Pour toi », « Piste »), so the scale never rests on colour alone (WCAG 1.4.1) and it reads in « Tout » too, where no heading says it.
+- The rules are `accent-ink`, not `accent`: the accent on white is 1.81:1, under the 3:1 a UI element carrying meaning needs (WCAG 1.4.11). New token `accent-soft` #fce8d0 is a fill only (ink 15.0:1, ink-muted 6.1:1, accent-ink 5.1:1, all asserted in `tests/test_design_tokens.py`); the « Nouveau » badge flips to an ink fill on a level-2 row, the accent being invisible on the wash (1.51:1).
+- The rules sit in the page gutter (negative margin) so titles of every level share one left edge; measured at 320px, the page itself never overflows.
+- « Pour toi » splits on the level, not on the judge's section, so the « À ne pas rater » heading can no longer contradict an identical card below it. The selection shown is still the WIP-102 one.
+- Without a send key the rule-based tiers keep their accents: `S.tiers().sure` → level 3, `.discover` → level 2. Level 1 is unreachable there, so the calendar legend hides its third entry.
+- Deliberately not done: moving the AI reason into the details for level 0. The PM validated on 2026-10-09 that « la raison IA reste sous chaque concert ».
 
 ## Period chips (WIP-108)
 
@@ -124,7 +145,7 @@ The pipeline now collects every published date up to 400 days ahead (WIP-107), a
 
 After the PM's test on his phone (2026-10-09, 17:08):
 - The home opens on « Cette semaine » on every load; ~~tapping the active period again shows every date~~ « Toutes les dates » is a chip of its own since WIP-108.
-- « Pour toi » shows only the concerts that very probably match: « À ne pas rater » (judge `must_see` or known-artist rule) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. Since WIP-106: the must-see cards first, then the rows, each part by date, without the count line; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
+- « Pour toi » shows only the concerts that very probably match: « À ne pas rater » (level 3 of the WIP-112 scale) and the judge's « Pour toi » (`V.homePicks`, tested). No concert not yet judged, no Découvertes. Since WIP-106: the must-see cards first, then the rows, each part by date, without the count line; « Voir les N concerts » only appears when there is nothing to show (empty profile or no match).
 - « Tout » lists every concert of the period A → Z by title (French collation, `S.byTitle`), with « Par date » and « Pour moi » in the sort menu.
 - « À ne pas rater » concerts were rows on the `accent` fill (replaced by cards in WIP-106).
 - Concerts of a past day are dropped on every view (`S.isPastDay`, on load and at each render), and a page kept in memory reloads when the user comes back to it on another day or more than 6 h later. The PM's phone showed concerts of 7 and 8 October on the 9th while the published file (generated 16:31) had none; the most likely cause is a page kept in memory and never reloaded, **unverified**. Data files are also fetched with `cache: "no-cache"` (revalidation).
@@ -138,5 +159,5 @@ Deliberate gaps, each owned by a ticket:
 - The concert title is a disclosure button, marked by a chevron, opening the row's details (source and ticket links, WhatsApp, « Pas pour moi », « Mauvais rapprochement »): these had no place on the artboard's rows and move to the concert page of [WIP-96](https://linear.app/wip-coding/issue/WIP-96). « Lu par IA » stays visible on the venue line of rows and cards (ADR-0004, WIP-66).
 - « Mes goûts » holds the former panel until [WIP-98](https://linear.app/wip-coding/issue/WIP-98) (« Calendrier »: done in WIP-97).
 - The artboard's search button is left out: search is not in the PRD.
-- Without a send key there is no judge, so « Découvertes » stays empty: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts`.
+- Without a send key there is no judge: the rule-based sure matches fill « À ne pas rater » and the best inferred matches « Pour toi », both tagged `Tes goûts` (levels 3 and 2 since WIP-112).
 - Style, venue and sort filters appear in « Tout » only, and apply there only.

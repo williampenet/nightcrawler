@@ -33,6 +33,7 @@ CONTRAST_PAIRS = [
     ("ink", "accent-soft"),
     ("ink-soft", "accent-soft"),
     ("ink-muted", "accent-soft"),
+    ("accent-ink", "accent-soft"),  # the weekday and the level label on a level-2 row
     ("accent", "ground"),
     ("accent-soft", "ground"),
 ]

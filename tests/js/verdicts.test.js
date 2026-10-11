@@ -234,8 +234,7 @@ test("levelFor never depends on the item's position in the list (WIP-112, PM 202
 
 test("homePicks: must-see and judged « Pour toi » only, unjudged left out (WIP-102)", () => {
   const it = (id, extra = {}) => ({ c: { id }, ...extra });
-  const { must, picks } = V.homePicks({ must: [it("a", { known: true }), it("b")], forYou: [it("c"), it("d", { unjudged: true })] });
-  assert.deepEqual([...must], ["a", "b"]);
+  const { picks } = V.homePicks({ must: [it("a", { known: true }), it("b")], forYou: [it("c"), it("d", { unjudged: true })] });
   assert.deepEqual([...picks].sort(), ["a", "b", "c"]);
   assert.equal(V.homePicks({}).picks.size, 0);
 });

@@ -109,6 +109,7 @@ def test_text_pairs_meet_wcag_aa():
     assert ratios[("ink-muted", "ground")] == 7.3
     assert ratios[("ink", "accent-soft")] == 15.0
     assert ratios[("ink-muted", "accent-soft")] == 6.1
+    assert ratios[("accent-ink", "accent-soft")] == 5.1
 
 
 def test_wcag_contrast_reference_values():
