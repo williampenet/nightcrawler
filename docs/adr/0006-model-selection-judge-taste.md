@@ -11,6 +11,18 @@
   `for_you`, not the « shown recall » the CI gate measures (85 %, which counts Découvertes from
   confidence 30 and unjudged answers as shown, `eval/judge/__main__.py`). That narrower recall is
   not measured yet; aligning the eval with the new home is a follow-up ticket.
+  Also amended by the PM on 2026-10-12 13:37 ([WIP-119](https://linear.app/wip-coding/issue/WIP-119)):
+  the venue is never a reason to pick a concert. The judge no longer sees the venue (no « Salle »
+  line, examples without venue, no same-venue bonus in the nearest-example similarity) and the
+  prompt forbids basing a verdict or a reason on it. Measured before the change on the published
+  verdicts (2026-10-12): 12 of the 24 top-level picks (`must_see`, or `for_you` ≥ 90) gave the
+  venue as a reason, 80 of the 287 shown verdicts. Since the listing's own description or title
+  may still name the venue, a deterministic check (`judge.cites_venue`) rejects a shown reason
+  that cites it; the concert is left unjudged, as an unfaithful reason (WIP-90). Each Pipeline
+  run annotates `Venue reasons: top x/y, shown x/y`. A venue word counts only as a proper noun
+  and never inside a billed or related artist's name (« jazz moderne » at L'Épicerie Moderne,
+  « Sonic Youth » at Le Sonic keep their pick). A rejected concert has no stored verdict, so it
+  is judged again on each run (as an unfaithful one): negligible at ~€0.3 per 1,000 calls.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

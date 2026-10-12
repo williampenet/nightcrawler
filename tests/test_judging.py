@@ -197,3 +197,18 @@ def test_unfaithful_reasons_are_left_unjudged_without_stopping(monkeypatch, task
 
     rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, contrast)
     assert rep["failed"] == {} and len(calls["rows"]) == 3
+
+
+def test_venue_reasons_are_left_unjudged_without_stopping(monkeypatch, task):
+    """WIP-119: a shown verdict resting on the venue is rejected like an unfaithful one."""
+    saved: dict = {}
+    connect = setup(monkeypatch, verdicts.Inputs(profile={"taste_text": "Funk"}), saved)
+    monkeypatch.setattr(judging, "STOP_AFTER", 2)
+    monkeypatch.setattr(judging, "WORKERS", 1)
+    d = {"verdict": "must_see", "reason": "Une salle qu'elle aime.", "confidence": 90}
+
+    def fake(t, messages, schema, check):
+        return llm.Answer(d, check(d), "m", 0.5, 2000, 40)
+
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, fake)
+    assert rep["failed"] == {"venue": 3} and saved["rows"] == []

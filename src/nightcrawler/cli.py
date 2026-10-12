@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import completeness, content, judging
+from . import completeness, content, judge, judging
 from .config import load_zone
 from .http import Fetcher
 from .pipeline import run, summary_markdown
@@ -91,6 +91,18 @@ def main(argv: list[str] | None = None) -> int:
     annotate("notice", one_line(report))
     # what the taste judge can read per concert (WIP-89): counts only
     annotate("notice", "Content: " + content.text(report.get("content")))
+    # verdicts resting on the venue (WIP-119): counts only, from the published files
+    try:
+        pub = json.loads((out / "data" / "verdicts.json").read_text(encoding="utf-8"))
+        cs = json.loads((out / "data" / "concerts.json").read_text(encoding="utf-8"))
+        n = judge.venue_reason_counts(pub.get("verdicts") or {}, cs)
+        annotate(
+            "notice",
+            f"Venue reasons: top {n['top_venue']}/{n['top']},"
+            f" shown {n['shown_venue']}/{n['shown']}",
+        )
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass  # no published verdicts on this run
     # how far ahead each source reads and the cap hits (WIP-107): dates, counts and the
     # configured "Mes salles" names (public in config/zone.yaml), never an event
     annotate(
