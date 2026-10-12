@@ -236,6 +236,11 @@ def test_content_measure_never_fails_the_run(tmp_path, zone, tz, fixture_text, m
     )
     monkeypatch.setattr(pipeline.sync, "mark_reported", lambda artists, keys: 0)
     monkeypatch.setattr(judging, "run", lambda *a, **k: {"status": "off"})
+    shown = {"verdicts": {"aaaaaaaaaaa1": {"section": "pour_toi", "verdict": "for_you",
+                                           "confidence": 82, "reason": "Du drone."}}}  # fmt: skip
+    monkeypatch.setattr(
+        judging, "public_view", lambda url, cs: (shown["verdicts"], {"taste_text": "Du drone"})
+    )
     now = datetime(2026, 10, 5, 12, tzinfo=tz)
 
     def go():
@@ -251,6 +256,13 @@ def test_content_measure_never_fails_the_run(tmp_path, zone, tz, fixture_text, m
     monkeypatch.setattr(content, "read_descriptions", read)
     report = go()
     assert report["content"]["descriptions"] == "store" and seen["ids"]
+    # the public showcase (ADR-0008): two files, counts only in the report
+    assert report["showcase"] == {"status": "ok", "verdicts": 1, "profile": True}
+    pub = json.loads((tmp_path / "data/verdicts.json").read_text())
+    assert pub["verdicts"] == shown["verdicts"] and pub["generated_at"]
+    prof = json.loads((tmp_path / "data/profile.json").read_text())
+    assert prof == {"data": {"taste_text": "Du drone"}}
+    assert "Du drone" not in (tmp_path / "data/report.json").read_text()
     assert report["content"]["all"]["long_description"] == 1
 
     def down(url, ids):
@@ -268,3 +280,37 @@ def test_content_measure_never_fails_the_run(tmp_path, zone, tz, fixture_text, m
     report = go()
     assert report["content"] == {"status": "error: KeyError"} and report["concerts"] >= 1
     assert "| What the judge reads (WIP-89) | error: KeyError |" in summary_markdown(report)
+
+
+@respx.mock
+def test_showcase_failure_writes_no_public_file(tmp_path, zone, tz, fixture_text, monkeypatch):
+    """ADR-0008: a store failure while reading the showcase leaves no public file and keeps the
+    run going; nothing is written without a store either."""
+    from nightcrawler import judging, pipeline
+
+    monkeypatch.delenv("TICKETMASTER_API_KEY", raising=False)
+    respx.post(OVERPASS_URL).respond(200, text=fixture_text("overpass.json"))
+    respx.get(host="bulbe.example").respond(404)
+    respx.get(host="ombres.example").respond(404)
+    respx.get(host="api.deezer.com").respond(json={"data": []})
+    respx.get(host="musicbrainz.org").respond(json={"artists": []})
+    monkeypatch.setattr(
+        pipeline.sync, "sync", lambda url, raw, cs, *a: (cs, {"status": "ok"}, set())
+    )
+    monkeypatch.setattr(pipeline.sync, "mark_reported", lambda artists, keys: 0)
+    monkeypatch.setattr(judging, "run", lambda *a, **k: {"status": "off"})
+    monkeypatch.setattr(pipeline.content, "read_descriptions", lambda url, ids: {})
+
+    def down(url, cs):
+        raise OSError("host db.example password=x")
+
+    monkeypatch.setattr(judging, "public_view", down)
+    now = datetime(2026, 10, 5, 12, tzinfo=tz)
+    report = run(zone, tmp_path, Fetcher(cache_dir=None, min_interval=0), now=now,
+                 database_url="postgresql://db.example/x")  # fmt: skip
+    assert report["showcase"] == {"status": "error: OSError"}
+    assert not (tmp_path / "data/verdicts.json").exists()
+    assert not (tmp_path / "data/profile.json").exists()
+    off = run(zone, tmp_path / "off", Fetcher(cache_dir=None, min_interval=0), now=now)
+    assert off["showcase"] == {"status": "off"}
+    assert not (tmp_path / "off/data/verdicts.json").exists()

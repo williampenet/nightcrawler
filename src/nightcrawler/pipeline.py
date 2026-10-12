@@ -193,7 +193,25 @@ def run(
         except Exception as exc:  # judging must never fail the run
             log.warning("judging failed: %s", type(exc).__name__)
             judged = {"status": f"error: {type(exc).__name__}"}
-    lap("judge")  # also the descriptions read and the content measure
+    # the public showcase (ADR-0008): verdicts and profile as static files, counts in the report
+    public_files: dict | None = None
+    showcase: dict = {"status": "off"}
+    if store["status"] == "ok" and database_url:
+        try:
+            pub_verdicts, pub_profile = judging.public_view(database_url, concerts)
+            public_files = {
+                "verdicts.json": {"generated_at": now.isoformat(), "verdicts": pub_verdicts},
+                "profile.json": {"data": pub_profile or {}},
+            }
+            showcase = {
+                "status": "ok",
+                "verdicts": len(pub_verdicts),
+                "profile": pub_profile is not None,
+            }
+        except Exception as exc:  # the showcase must never fail the run
+            log.warning("showcase read failed: %s", type(exc).__name__)
+            showcase = {"status": f"error: {type(exc).__name__}"}
+    lap("judge")  # also the descriptions read, the content measure and the showcase read
     durations["total"] = sum(durations.values())
 
     # how far ahead each source reads and which caps were hit (WIP-107): counts and dates only
@@ -252,6 +270,8 @@ def run(
         #  reported_artists} when the store answered
         "store": store,
         "judge": judged,
+        # {status, verdicts, profile}: what data/verdicts.json and data/profile.json hold (ADR-0008)
+        "showcase": showcase,
         # {in_window, found, rate, per_venue: {venue: [in_window, found]}, events}
         "coverage": cover,
         # {all, by_source: {family: counts}, descriptions} (WIP-89)
@@ -273,6 +293,8 @@ def run(
     _dump(data_dir / "venues.json", venue_rows)
     _dump(data_dir / "artists.json", {k: a.to_dict() for k, a in sorted(artists.items())})
     _dump(data_dir / "report.json", report)
+    for name, body in (public_files or {}).items():
+        _dump(data_dir / name, body)
     return report
 
 

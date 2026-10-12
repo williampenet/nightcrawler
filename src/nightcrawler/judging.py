@@ -198,3 +198,22 @@ def run(
         "tokens_out": tokens["out"],
     }
     return report
+
+
+def public_view(
+    database_url: str, concerts: list[Concert], connect: Callable | None = None
+) -> tuple[dict, dict | None]:
+    """The verdicts of the published concerts (their ids and aliases) and the public part of the
+    profile, for the read-only showcase (ADR-0008). Raises on a store failure: the caller writes
+    no file then."""
+    if connect is None:
+        import psycopg
+
+        from .store.sync import CONNECT
+
+        def connect(url):
+            return psycopg.connect(url, autocommit=True, **CONNECT)
+
+    ids = sorted({i for c in concerts for i in [c.id, *c.aliases]})
+    with connect(database_url) as conn:
+        return verdicts.read_public(conn, ids)

@@ -130,3 +130,39 @@ def update_sections(conn, changes: list[tuple[str, str]]) -> int:
             [(section, cid) for cid, section in changes],
         )
     return len(changes)
+
+
+# The profile fields a visitor needs to see William's selection (ADR-0008 Decision 1); the edit
+# time of the written taste is left out (not needed by a read-only page).
+PUBLIC_PROFILE_FIELDS = (
+    "seeds",
+    "liked",
+    "disliked",
+    "wrong",
+    "likedNames",
+    "dislikedNames",
+    "hidden",
+    "likedConcerts",
+    "taste_text",
+)
+
+
+def read_public(conn, ids: list[str]) -> tuple[dict[str, dict], dict | None]:
+    """(verdicts of `ids` in GET /verdicts' shape, the public part of the profile or None), in
+    one read-only transaction with a statement timeout (ADR-0008: the public showcase)."""
+    with conn.transaction():
+        conn.execute("SET TRANSACTION READ ONLY")
+        conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
+        rows = conn.execute(
+            "SELECT concert_id, section, verdict, confidence, reason FROM verdicts "
+            "WHERE concert_id = ANY(%s) ORDER BY concert_id",
+            (list(ids),),
+        ).fetchall()
+        row = conn.execute("SELECT data FROM profile WHERE id = 'me'").fetchone()
+    found = {
+        cid: {"section": s, "verdict": v, "confidence": int(c), "reason": r}
+        for cid, s, v, c, r in rows
+    }
+    data = row[0] if row and isinstance(row[0], dict) else None
+    profile = {k: data[k] for k in PUBLIC_PROFILE_FIELDS if k in data} if data else None
+    return found, profile

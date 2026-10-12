@@ -18,6 +18,7 @@
   <header class="top">
     <h1 class="wordmark">nightcrawler<span class="dot" aria-hidden="true">.</span></h1>
     <p class="meta" id="today"></p>
+    <p class="meta" data-visitor hidden>La sélection de William, en consultation seule.</p>
   </header>
 
   <main>
@@ -79,7 +80,11 @@
     <section id="route-gouts" aria-labelledby="taste-title" hidden>
       <h2 id="taste-title">Mes goûts</h2>
       <div id="taste">
-        <p class="muted">
+        <p class="muted" data-visitor hidden>
+          Le profil de goût de William : ses artistes et son goût en mots, que l'IA lit pour choisir
+          les concerts. Consultation seule.
+        </p>
+        <p class="muted" data-owner>
           Indique des artistes que tu aimes, un par ligne. Ils restent <span data-where>dans ce navigateur</span>.
           Leurs styles sont lus sur MusicBrainz. Tes avis (J'aime, Pas pour moi, Mauvais
           rapprochement) ne sont envoyés au service Nightcrawler que si tu saisis la clé d'envoi.
@@ -100,18 +105,18 @@
         </div>
         <label for="seeds" class="visually-hidden">Artistes que tu aimes</label>
         <textarea id="seeds" rows="6" placeholder="Sunn O)))&#10;Moondog&#10;Brigitte Fontaine"></textarea>
-        <div class="row">
+        <div class="row" data-owner>
           <button type="button" id="save-seeds" class="primary">Enregistrer</button>
           <button type="button" id="reset" class="ghost">Tout effacer</button>
         </div>
         <label for="taste-text" class="field-label">Mon goût en mots</label>
         <textarea id="taste-text" rows="7" maxlength="4000" aria-describedby="taste-text-count taste-text-help"
           placeholder="Décris ce que tu aimes, avec tes mots.&#10;– Les styles que tu préfères, avec un ou deux artistes pour chacun (ex. : de la pop électronique, comme tel ou tel groupe).&#10;– Ce que tu veux écarter (ex. : les grandes salles).&#10;– Tes conditions (ex. : « du rock, mais seulement en petit comité »)."></textarea>
-        <p class="muted small">
+        <p class="muted small" data-owner>
           <span id="taste-text-count">0 / 4&#8239;000 caractères</span> ·
           <span id="taste-text-help">Enregistré à chaque modification, <span data-where>dans ce navigateur</span>. Pas encore utilisé pour trier les concerts.</span>
         </p>
-        <div class="row">
+        <div class="row" data-owner>
           <label for="lb-user">Importer depuis ListenBrainz</label>
           <input id="lb-user" type="text" autocomplete="off" placeholder="nom d'utilisateur">
           <button type="button" id="lb-import" class="ghost">Importer</button>
@@ -124,7 +129,7 @@
         <p id="taste-status" class="muted" aria-live="polite"></p>
       </div>
 
-      <div class="row">
+      <div class="row" data-owner>
         <button type="button" id="sorter-open" class="ghost" aria-haspopup="dialog" hidden>À trier</button>
         <span class="muted small">Note des concerts tirés au hasard pour affiner tes goûts.</span>
       </div>
@@ -164,15 +169,13 @@
       Liste collectée automatiquement sur les sites des lieux et des sources ouvertes.
       Pour certains lieux, l'agenda est lu par un modèle d'IA hébergé dans l'Union européenne ;
       ces concerts sont signalés comme lus par IA.
-      Sans clé d'envoi, le tri « Pour moi » et les sections « À ne pas rater » et « Pour toi » sont calculés
-      dans ton navigateur par des règles fixes, sans IA, à partir de données publiques et de tes choix ;
-      leurs raisons sont marquées « Tes goûts ». Les badges « Nouveau » comparent la liste à celle de ta
-      dernière visite, gardée dans ce navigateur.
-      Avec une clé d'envoi, les mentions « À ne pas rater », « Pour toi » et « Piste » et leurs raisons
-      (marquées « IA ») viennent d'un modèle d'IA (Mistral Small 3.2, hébergé par Scaleway à Paris) qui juge
-      chaque concert d'après « Mon goût en mots » ; les concerts pas encore jugés restent dans « Pour toi ».
-      Exception, par une règle fixe sans IA : un concert d'un artiste que tu écoutes ou que tu as aimé
-      (même nom) est toujours dans « À ne pas rater », avec sa raison marquée « Tes goûts ».
+      Les mentions « À ne pas rater », « Pour toi » et « Piste » et leurs raisons (marquées « IA »)
+      viennent d'un modèle d'IA (Mistral Small 3.2, hébergé par Scaleway à Paris) qui juge chaque concert
+      d'après le goût de William décrit en mots (« Mes goûts ») ; elles sont publiées avec la liste et
+      mises à jour à chaque collecte. Exception, par une règle fixe sans IA : un concert d'un artiste qu'il
+      écoute ou a aimé (même nom) est toujours dans « À ne pas rater », avec sa raison marquée « Tes goûts ».
+      Les concerts pas encore jugés sont dans « Tout ». Les badges « Nouveau » comparent la liste à celle
+      de ta dernière visite, gardée dans ce navigateur.
       Vérifie la date et le lieu sur la page de l'événement.
     </p>
     <p>
@@ -200,6 +203,7 @@
   <script src="verdicts.js"></script>
   <script src="visits.js"></script>
   <script src="calendar.js"></script>
+  <script src="access.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

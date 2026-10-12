@@ -235,6 +235,8 @@ textarea, input, select {
 textarea { width: 100%; resize: vertical; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
 .row input { flex: 1 1 140px; min-width: 0; }
+/* owner / visitor blocks (ADR-0008): hidden must win over .row's flex */
+.row[hidden], [data-owner][hidden], [data-visitor][hidden] { display: none; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 var(--space-1); }
 .toolbar select { max-width: 100%; }
 .toolbar[hidden] { display: none; }
