@@ -525,8 +525,9 @@ async function flushFeedback() {
   if (fbBusy || !feedbackUrl()) return;
   fbBusy = true;
   let result = "error";
+  const sentKey = fbToken(); // a 401 is about this key only (WIP-118 review)
   try {
-    result = await FB.flush(feedbackUrl(), fbToken(), { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
+    result = await FB.flush(feedbackUrl(), sentKey, { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
   } catch {
     /* storage or network trouble: the queue stays as it is */
   } finally {
@@ -539,7 +540,7 @@ async function flushFeedback() {
   else fbText = pending ? `${pending} avis en attente` : "";
   showSyncStatus();
   showPending();
-  if (result === "unauthorized") keyWasRefused(); // visitor mode until the key is fixed (ADR-0008)
+  if (result === "unauthorized") keyWasRefused(sentKey); // visitor mode until the key is fixed (ADR-0008)
 }
 
 let fbText = "";
@@ -574,7 +575,7 @@ function showWhere() {
 }
 
 function profileChanged() {
-  if (!syncReady || !P) return;
+  if (!syncReady || !P || !owner()) return; // only the owner's own changes are sent (ADR-0008)
   if (nowJson() === syncedJson) {
     if (sync.dirty || sync.force) {
       Object.assign(sync, { dirty: false, force: false });
@@ -612,11 +613,13 @@ function applyProfile(data) {
 async function startSync() {
   if (!profileOn()) return;
   const before = nowJson();
-  const got = await P.pull(P.profileUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  const sentKey = fbToken();
+  const got = await P.pull(P.profileUrl(feedbackUrl()), sentKey, (u, o) => fetch(u, o));
+  if (sentKey !== fbToken() || !owner()) return; // the key changed meanwhile: its own sync is under way
   syncReady = true;
   if (got.status === "unauthorized" || got.status === "error") {
     setSync(got.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé");
-    if (got.status === "unauthorized") keyWasRefused();
+    if (got.status === "unauthorized") keyWasRefused(sentKey);
     return;
   }
   const next = P.afterPull(sync, got, P.extract(state), nowJson() !== before);
@@ -629,11 +632,14 @@ async function startSync() {
 }
 
 async function pushProfile() {
+  if (!owner()) return; // never a visitor's view (the public profile) under a key (ADR-0008)
   if (syncBusy) return void (syncAgain = true);
   syncBusy = true;
   const snap = P.snapshot(sync, state); // a reset or a click during the request is seen after it
-  const r = await P.push(P.profileUrl(feedbackUrl()), fbToken(), snap.data, snap.base, (u, o) => fetch(u, o), snap.force);
+  const sentKey = fbToken();
+  const r = await P.push(P.profileUrl(feedbackUrl()), sentKey, snap.data, snap.base, (u, o) => fetch(u, o), snap.force);
   syncBusy = false;
+  if (sentKey !== fbToken()) return void (syncAgain = false); // another key since: its own sync runs
   if (r.status === "ok") {
     const next = P.afterPush(sync, snap, r, state);
     sync = next.sync;
@@ -648,7 +654,7 @@ async function pushProfile() {
   } else {
     const why = r.reason === "too-large" ? " : profil trop volumineux (64 Ko au plus), retire des artistes" : "";
     setSync(r.status === "unauthorized" ? "Clé refusée" : `Profil non synchronisé${why}`); // retried on next change, load or reconnection
-    if (r.status === "unauthorized") keyWasRefused();
+    if (r.status === "unauthorized") keyWasRefused(sentKey);
   }
   syncAgain = false;
 }
@@ -665,11 +671,12 @@ const judgeOn = () => Boolean(V && V.hasVerdicts(verdicts));
 async function startVerdicts() {
   if (!V || !profileOn()) return;
   const run = ++verdictsRun;
-  const got = await V.pull(V.verdictsUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  const sentKey = fbToken();
+  const got = await V.pull(V.verdictsUrl(feedbackUrl()), sentKey, (u, o) => fetch(u, o));
   if (run !== verdictsRun) return;
   if (got.status === "unauthorized") {
     fbStore(() => V.save(localStorage, null)); // as afterPull: a refused key drops the copy
-    return keyWasRefused();
+    return keyWasRefused(sentKey);
   }
   const next = V.afterPull(got, verdicts); // the decision is pure and tested (verdicts.js)
   if (next.store !== "keep") fbStore(() => V.save(localStorage, next.show));
@@ -767,11 +774,15 @@ function applyMode() {
   showPending();
 }
 
-// A 401 on any route: the key is not William's. Back to the visitor's read-only view; the key
-// field stays shown (a key is stored) so it can be corrected.
-async function keyWasRefused() {
-  if (keyRefused) return;
+// A 401 on any route for the key that is still stored: it is not William's. Back to the
+// visitor's read-only view; the key field stays shown (a key is stored) so it can be corrected.
+// A late 401 for a key already replaced is ignored, and nothing pending is sent afterwards: a
+// push must never send the public copy under a valid key (WIP-118 review).
+async function keyWasRefused(sentKey) {
+  if (keyRefused || sentKey !== fbToken()) return;
   keyRefused = true;
+  clearTimeout(syncTimer);
+  syncReady = false; // startSync sets it again for the next key
   await enterMode();
   rerender();
 }
@@ -974,10 +985,12 @@ function reasonLine(x) {
   const r = reasonOf(x);
   if (!r) return null;
   const p = el("p", null, "reason");
-  const tag = el("span", r.ia ? "IA" : "Tes goûts", "tag");
+  const own = owner(); // a visitor reads William's selection: « Ses goûts » (ADR-0008)
+  const tag = el("span", r.ia ? "IA" : own ? "Tes goûts" : "Ses goûts", "tag");
   tag.setAttribute("aria-hidden", "true");
-  tag.title = r.ia ? "Raison écrite par un modèle d'IA d'après « Mon goût en mots »." : "Raison tirée de tes goûts par une règle fixe, sans IA.";
-  const spoken = el("span", r.ia ? "Raison écrite par IA : " : "Raison tirée de tes goûts : ", "visually-hidden");
+  const whose = own ? "tes goûts" : "ses goûts";
+  tag.title = r.ia ? "Raison écrite par un modèle d'IA d'après « Mon goût en mots »." : `Raison tirée de ${whose} par une règle fixe, sans IA.`;
+  const spoken = el("span", r.ia ? "Raison écrite par IA : " : `Raison tirée de ${whose} : `, "visually-hidden");
   p.append(tag, spoken, el("span", r.text));
   return p;
 }
@@ -1559,8 +1572,17 @@ function setupControls() {
       fbStore(() => localStorage.setItem(FB.TOKEN_KEY, key.value.trim()));
       fbRefused = false; // a new key: unknown until the flush answers
       keyRefused = false;
+      clearTimeout(syncTimer); // a push planned under the previous key: startSync decides again
+      syncReady = false;
+      if (!fbToken() && V) fbStore(() => V.save(localStorage, null)); // a cleared key drops its copy
       await enterMode(); // owner with a key (checked by the calls below), visitor without
       rerender();
+      if (key.closest("[hidden]")) {
+        // a cleared key hides its own field: focus goes to the screen's heading (WCAG 2.4.3)
+        const h = document.getElementById("taste-title");
+        h.tabIndex = -1;
+        h.focus();
+      }
       if (!owner()) return;
       flushFeedback();
       startSync();

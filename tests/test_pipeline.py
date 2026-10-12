@@ -262,7 +262,8 @@ def test_content_measure_never_fails_the_run(tmp_path, zone, tz, fixture_text, m
     assert pub["verdicts"] == shown["verdicts"] and pub["generated_at"]
     prof = json.loads((tmp_path / "data/profile.json").read_text())
     assert prof == {"data": {"taste_text": "Du drone"}}
-    assert "Du drone" not in (tmp_path / "data/report.json").read_text()
+    for name in ("report.json", "concerts.json"):  # ADR-0007's guarantee stays for these
+        assert "Du drone" not in (tmp_path / "data" / name).read_text()
     assert report["content"]["all"]["long_description"] == 1
 
     def down(url, ids):

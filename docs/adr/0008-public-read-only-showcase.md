@@ -60,7 +60,7 @@ C's only drawback is freshness: a visitor sees the profile and picks of the last
 ## Security
 - **Data:** the PM chose to publish his music-taste profile, ratings and the judge's verdicts and
   reasons (his own personal data, published at his explicit request; not legal advice). No data of anyone else is in these files. Nothing else from the store is published:
-  no listing descriptions, no feedback timestamps, no send key. Withdrawal: one config change
+  no listing descriptions, no feedback timestamps, no send key. Withdrawal: a code change
   (stop writing the files) and the next run removes them from the site; earlier copies may
   remain in caches or archives (to know before publishing).
 - **Untrusted output:** reasons are model output; they keep ADR-0007's validation (schema,
