@@ -376,43 +376,64 @@ def unfaithful(reason: str, messages: list[dict]) -> bool:
 # similarity), but the venue's own description or the title may still name it: a reason that
 # cites the concert's venue, or venues in general, is rejected like an unfaithful one.
 VENUE_REASON = "reason cites the venue"
+# venues in general: « salle », or a place word after a determiner (not « au lieu de », instead of)
 _VENUE_WORDS = re.compile(
-    # not « au lieu de » (instead of)
-    r"\bsalles?\b|\b(?:ce|cet|cette|un|une|le|du|même|son|sa|ses|leur|leurs)\s+lieux?\b",
+    r"\bsalles?\b|\b(?:ce|cet|cette|un|une|le|la|du|même|son|sa|ses|leur|leurs)\s+"
+    r"(?:lieux?|chapelles?|[ée]glises?|clubs?|endroits?)\b",
     re.IGNORECASE,
 )
 _ARTICLES = re.compile(r"^(?:le|la|les|l|the)\s+")
+# a stored venue name may carry its address (« L'épicerie moderne Place René Lescot, Feyzin »)
+_ADDRESS = re.compile(
+    r"\s(?:\d+|place|rue|avenue|av|boulevard|bd|quai|chemin|allee|cours|impasse|route)\s.*$"
+)
 # venue-name words that also name a genre or a kind of place, not this venue
 _GENERIC = {"underground", "theatre", "espace", "centre", "maison", "musee", "eglise", "chapelle"}
 MIN_VENUE_WORD = 5  # normalised characters
 
 
-def venue_keys(venue_name: object) -> list[str]:
-    """The venue's name and its distinctive words in _plain form (" transbordeur "): a genre word
-    (« Opéra »), a generic place word or a short word is not distinctive."""
+def venue_keys(venue_name: object) -> tuple[str, list[str]]:
+    """(full, words) in _plain form: the venue's name without article nor address when it has
+    several words (" marche gare "), else "", and its distinctive words ("transbordeur"): a genre
+    word (« Opéra »), a generic place word or a short word is not distinctive."""
     from .events import MUSIC_WORDS  # genre words, kept in one place
 
     if not isinstance(venue_name, str):
-        return []
-    full = _ARTICLES.sub("", _plain(venue_name).strip())
-    if not full:
-        return []
-    keys = [f" {full} "]
-    for w in full.split():
-        key = f" {w} "
+        return "", []
+    name = _plain(venue_name.split(",", 1)[0]).strip() + " "
+    name = _ADDRESS.sub("", " " + _ARTICLES.sub("", name)).strip()
+    if not name:
+        return "", []
+    words = []
+    for w in name.split():
         if len(w) >= MIN_VENUE_WORD and w not in _GENERIC and not MUSIC_WORDS.fullmatch(w):
-            if key not in keys:
-                keys.append(key)
-    return keys
+            if w not in words:
+                words.append(w)
+    return (f" {name} " if " " in name else ""), words
 
 
-def cites_venue(reason: str, venue_name: object) -> bool:
+def cites_venue(reason: str, venue_name: object, artists_text: str = "") -> bool:
     """True when a reason mentions venues in general (« salle », « ce lieu ») or names the
-    concert's own venue (its name or one of its distinctive words)."""
-    if _VENUE_WORDS.search(reason or ""):
+    concert's own venue: its several-word name anywhere, or one of its distinctive words written
+    as a proper noun (« à la Trinité », not « jazz moderne » at L'Épicerie Moderne). A word that
+    is part of a billed act or a related artist (« Sonic Youth » at Le Sonic) does not count."""
+    reason = reason or ""
+    if _VENUE_WORDS.search(reason):
         return True
-    plain = _plain(reason)
-    return any(k in plain for k in venue_keys(venue_name))
+    full, words = venue_keys(venue_name)
+    if full and full in _plain(reason):
+        return True
+    artists = _plain(artists_text)
+    nouns = {w for n in reason_names(reason) for w in _plain(n).split()}
+    return any(w in nouns and f" {w} " not in artists for w in words)
+
+
+def _artists_text(messages: list[dict]) -> str:
+    """The billed acts and identified artists (with their related artists) of the CONCERT block:
+    a venue word inside one of them names an artist, not the venue."""
+    user = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+    block = user.partition("<<<CONCERT")[2].partition("CONCERT>>>")[0]
+    return "\n".join(ln for ln in block.splitlines() if ln.startswith(("À l'affiche :", "- ")))
 
 
 TOP_FOR_YOU = 90  # a for_you this sure is shown like a must_see (levelFor, verdicts.js, WIP-112)
@@ -421,7 +442,7 @@ TOP_FOR_YOU = 90  # a for_you this sure is shown like a must_see (levelFor, verd
 def venue_reason_counts(verdicts: dict, concerts: list[dict]) -> dict:
     """Run measure (WIP-119), counts only: of the published shown verdicts and of the top-level
     ones (apricot: must_see, or for_you >= TOP_FOR_YOU), how many reasons cite the venue."""
-    venue = {c.get("id"): c.get("venue_name") for c in concerts if isinstance(c, dict)}
+    by_id = {c.get("id"): c for c in concerts if isinstance(c, dict)}
     out = {"shown": 0, "shown_venue": 0, "top": 0, "top_venue": 0}
     for cid, v in (verdicts or {}).items():
         if not isinstance(v, dict) or v.get("verdict") not in PICKED | {"discovery"}:
@@ -429,7 +450,9 @@ def venue_reason_counts(verdicts: dict, concerts: list[dict]) -> dict:
         top = v["verdict"] == "must_see" or (
             v["verdict"] == "for_you" and int(v.get("confidence") or 0) >= TOP_FOR_YOU
         )
-        hit = cites_venue(str(v.get("reason") or ""), venue.get(cid))
+        c = by_id.get(cid) or {}
+        acts_ = ", ".join(str(a) for a in (c.get("lineup") or c.get("performers") or []))
+        hit = cites_venue(str(v.get("reason") or ""), c.get("venue_name"), acts_)
         out["shown"] += 1
         out["shown_venue"] += hit
         out["top"] += top
@@ -449,7 +472,7 @@ def check_for(messages: list[dict], venue_name: object = None):
             reason = str(data.get("reason") or "")
             if unfaithful(reason, messages):
                 errors.append(UNFAITHFUL)
-            if cites_venue(reason, venue_name):
+            if cites_venue(reason, venue_name, _artists_text(messages)):
                 errors.append(VENUE_REASON)
         return errors
 

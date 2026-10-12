@@ -305,8 +305,34 @@ def test_venue_words_that_name_a_genre_or_a_kind_of_place_are_not_the_venue():
     assert not judge.cites_venue("Noise rock sonique et brutal.", "Le Sonic")
     assert judge.cites_venue("Artiste déjà vu à l'Épicerie moderne.", "L'épicerie moderne")
     assert not judge.cites_venue("Au lieu du rock, de la techno.", "Le Sucre")
-    assert judge.venue_keys("Le Transbordeur") == [" transbordeur "]
-    assert judge.venue_keys(None) == []
+    assert judge.venue_keys("Le Transbordeur") == ("", ["transbordeur"])
+    assert judge.venue_keys("Le Marché Gare") == (" marche gare ", ["marche"])
+    # the address part of a stored name is not the venue
+    assert judge.venue_keys("L'épicerie moderne Place René Lescot, 69320 Feyzin") == (
+        " epicerie moderne ",
+        ["epicerie", "moderne"],
+    )
+    assert judge.venue_keys(None) == ("", [])
+
+
+def test_venue_words_count_only_as_proper_nouns_and_never_inside_an_artist_name():
+    """Review of PR #106: ordinary words that happen to be venue words keep the pick."""
+    epicerie = "L'épicerie moderne Place René Lescot, 69320 Feyzin"
+    for reason, venue in (
+        ("Jazz moderne et groove, comme Tony Allen.", "L'Épicerie Moderne"),
+        ("Afrobeat qui a toute sa place dans son goût.", epicerie),
+        ("Hip-hop qui marche dans les pas de Public Enemy.", "Le Marché Gare"),
+        ("Une voix soul qui rayonne.", "La Rayonne"),
+        ("Une musique morte et belle.", "Ville Morte"),
+        ("Disco sucré et solaire.", "Le Sucre"),
+    ):
+        assert not judge.cites_venue(reason, venue), reason
+    assert not judge.cites_venue(
+        "Proche de Sonic Youth.", "Le Sonic", "- Gilla ; proches : Sonic Youth"
+    )
+    assert judge.cites_venue("Proche de Sonic Youth, au Sonic.", "Le Sonic")  # no artist given
+    assert judge.cites_venue("Déjà vu au Marché Gare.", "Le Marché Gare")
+    assert judge.cites_venue("Dans cette chapelle qu'elle aime.", "Chapelle de la Trinité")
 
 
 def test_a_venue_named_in_the_taste_but_not_in_the_concert_is_unfaithful():

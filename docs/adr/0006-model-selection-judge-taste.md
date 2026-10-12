@@ -19,7 +19,10 @@
   venue as a reason, 80 of the 287 shown verdicts. Since the listing's own description or title
   may still name the venue, a deterministic check (`judge.cites_venue`) rejects a shown reason
   that cites it; the concert is left unjudged, as an unfaithful reason (WIP-90). Each Pipeline
-  run annotates `Venue reasons: top x/y, shown x/y`.
+  run annotates `Venue reasons: top x/y, shown x/y`. A venue word counts only as a proper noun
+  and never inside a billed or related artist's name (« jazz moderne » at L'Épicerie Moderne,
+  « Sonic Youth » at Le Sonic keep their pick). A rejected concert has no stored verdict, so it
+  is judged again on each run (as an unfaithful one): negligible at ~€0.3 per 1,000 calls.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

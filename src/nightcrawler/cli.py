@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Venue reasons: top {n['top_venue']}/{n['top']},"
             f" shown {n['shown_venue']}/{n['shown']}",
         )
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, TypeError):
         pass  # no published verdicts on this run
     # how far ahead each source reads and the cap hits (WIP-107): dates, counts and the
     # configured "Mes salles" names (public in config/zone.yaml), never an event
