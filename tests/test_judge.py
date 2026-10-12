@@ -333,6 +333,14 @@ def test_venue_words_count_only_as_proper_nouns_and_never_inside_an_artist_name(
     assert judge.cites_venue("Proche de Sonic Youth, au Sonic.", "Le Sonic")  # no artist given
     assert judge.cites_venue("Déjà vu au Marché Gare.", "Le Marché Gare")
     assert judge.cites_venue("Dans cette chapelle qu'elle aime.", "Chapelle de la Trinité")
+    for reason in (  # music talk, not a venue (re-review of ef7d726)
+        "House taillée pour le club.",
+        "Les codes du club revisités, proche de Laurent Garnier.",
+        "Un DJ qui a fait danser un club entier à Berlin.",
+        "Un club-kid de la house, groovy.",
+        "Disco et funk, une église de la soul comme elle aime.",
+    ):
+        assert not judge.cites_venue(reason, "Le Sucre"), reason
 
 
 def test_a_venue_named_in_the_taste_but_not_in_the_concert_is_unfaithful():

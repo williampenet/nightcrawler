@@ -376,10 +376,13 @@ def unfaithful(reason: str, messages: list[dict]) -> bool:
 # similarity), but the venue's own description or the title may still name it: a reason that
 # cites the concert's venue, or venues in general, is rejected like an unfaithful one.
 VENUE_REASON = "reason cites the venue"
-# venues in general: « salle », or a place word after a determiner (not « au lieu de », instead of)
+# venues in general: « salle »; « lieu » after a determiner (not « au lieu de », instead of); a
+# place word that is also music talk (« pour le club », « une église de la soul ») only after a
+# demonstrative or a possessive (« cette chapelle qu'elle aime »)
 _VENUE_WORDS = re.compile(
-    r"\bsalles?\b|\b(?:ce|cet|cette|un|une|le|la|du|même|son|sa|ses|leur|leurs)\s+"
-    r"(?:lieux?|chapelles?|[ée]glises?|clubs?|endroits?)\b",
+    r"\bsalles?\b"
+    r"|\b(?:ce|cet|cette|un|une|le|du|même|son|sa|ses|leur|leurs)\s+lieux?\b"
+    r"|\b(?:ce|cet|cette|ces|même|son|sa|ses|leur|leurs)\s+(?:chapelles?|[ée]glises?|clubs?|endroits?)\b",
     re.IGNORECASE,
 )
 _ARTICLES = re.compile(r"^(?:le|la|les|l|the)\s+")
@@ -451,6 +454,7 @@ def venue_reason_counts(verdicts: dict, concerts: list[dict]) -> dict:
             v["verdict"] == "for_you" and int(v.get("confidence") or 0) >= TOP_FOR_YOU
         )
         c = by_id.get(cid) or {}
+        # billed acts only (check_for also has related artists): at worst the count is higher
         acts_ = ", ".join(str(a) for a in (c.get("lineup") or c.get("performers") or []))
         hit = cites_venue(str(v.get("reason") or ""), c.get("venue_name"), acts_)
         out["shown"] += 1
