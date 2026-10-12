@@ -370,15 +370,87 @@ def unfaithful(reason: str, messages: list[dict]) -> bool:
     return False
 
 
-def check_for(messages: list[dict]):
-    """`check` plus the faithfulness rule for the judgement of these messages."""
+# ------------------------------------------------------------ never the venue (WIP-119)
+# William (2026-10-12): liking one concert at a venue says nothing about the others there, so a
+# shown verdict must not rest on the venue. The judge no longer sees it (concert_text, _short,
+# similarity), but the venue's own description or the title may still name it: a reason that
+# cites the concert's venue, or venues in general, is rejected like an unfaithful one.
+VENUE_REASON = "reason cites the venue"
+_VENUE_WORDS = re.compile(
+    # not « au lieu de » (instead of)
+    r"\bsalles?\b|\b(?:ce|cet|cette|un|une|le|du|même|son|sa|ses|leur|leurs)\s+lieux?\b",
+    re.IGNORECASE,
+)
+_ARTICLES = re.compile(r"^(?:le|la|les|l|the)\s+")
+# venue-name words that also name a genre or a kind of place, not this venue
+_GENERIC = {"underground", "theatre", "espace", "centre", "maison", "musee", "eglise", "chapelle"}
+MIN_VENUE_WORD = 5  # normalised characters
+
+
+def venue_keys(venue_name: object) -> list[str]:
+    """The venue's name and its distinctive words in _plain form (" transbordeur "): a genre word
+    (« Opéra »), a generic place word or a short word is not distinctive."""
+    from .events import MUSIC_WORDS  # genre words, kept in one place
+
+    if not isinstance(venue_name, str):
+        return []
+    full = _ARTICLES.sub("", _plain(venue_name).strip())
+    if not full:
+        return []
+    keys = [f" {full} "]
+    for w in full.split():
+        key = f" {w} "
+        if len(w) >= MIN_VENUE_WORD and w not in _GENERIC and not MUSIC_WORDS.fullmatch(w):
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def cites_venue(reason: str, venue_name: object) -> bool:
+    """True when a reason mentions venues in general (« salle », « ce lieu ») or names the
+    concert's own venue (its name or one of its distinctive words)."""
+    if _VENUE_WORDS.search(reason or ""):
+        return True
+    plain = _plain(reason)
+    return any(k in plain for k in venue_keys(venue_name))
+
+
+TOP_FOR_YOU = 90  # a for_you this sure is shown like a must_see (levelFor, verdicts.js, WIP-112)
+
+
+def venue_reason_counts(verdicts: dict, concerts: list[dict]) -> dict:
+    """Run measure (WIP-119), counts only: of the published shown verdicts and of the top-level
+    ones (apricot: must_see, or for_you >= TOP_FOR_YOU), how many reasons cite the venue."""
+    venue = {c.get("id"): c.get("venue_name") for c in concerts if isinstance(c, dict)}
+    out = {"shown": 0, "shown_venue": 0, "top": 0, "top_venue": 0}
+    for cid, v in (verdicts or {}).items():
+        if not isinstance(v, dict) or v.get("verdict") not in PICKED | {"discovery"}:
+            continue
+        top = v["verdict"] == "must_see" or (
+            v["verdict"] == "for_you" and int(v.get("confidence") or 0) >= TOP_FOR_YOU
+        )
+        hit = cites_venue(str(v.get("reason") or ""), venue.get(cid))
+        out["shown"] += 1
+        out["shown_venue"] += hit
+        out["top"] += top
+        out["top_venue"] += top and hit
+    return out
+
+
+def check_for(messages: list[dict], venue_name: object = None):
+    """`check` plus the faithfulness rule and, given the concert's venue, the venue rule
+    (WIP-119) for the judgement of these messages."""
 
     def run(data: dict) -> list[str]:
         errors = check(data)
         # a "no" may name what the taste sets aside ("loin de …"): only a shown verdict ties the
-        # concert to an artist
-        if data.get("verdict") != "no" and unfaithful(str(data.get("reason") or ""), messages):
-            errors.append(UNFAITHFUL)
+        # concert to an artist, or rests on a venue
+        if data.get("verdict") != "no":
+            reason = str(data.get("reason") or "")
+            if unfaithful(reason, messages):
+                errors.append(UNFAITHFUL)
+            if cites_venue(reason, venue_name):
+                errors.append(VENUE_REASON)
         return errors
 
     return run

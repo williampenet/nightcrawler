@@ -176,7 +176,9 @@ def spec_of(cand: dict) -> llm.ModelSpec:
     return llm.ModelSpec.from_dict(cand)
 
 
-def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -> dict:
+def judge_one(
+    spec: llm.ModelSpec, messages: list[dict], client: httpx.Client, venue_name: object = None
+) -> dict:
     """{data, latency, tin, tout, error}: data None when unusable (error = a code, never text)."""
     try:
         a = llm.chat_json(
@@ -191,8 +193,11 @@ def judge_one(spec: llm.ModelSpec, messages: list[dict], client: httpx.Client) -
     except llm.ModelError as exc:
         return {"data": None, "latency": None, "tin": 0, "tout": 0, "error": error_code(exc)}
     data = a.data
-    if data is not None and (errors := judge.check_for(messages)(data)):
-        data, a.reason = None, "unfaithful" if judge.UNFAITHFUL in errors else "check"
+    if data is not None and (errors := judge.check_for(messages, venue_name)(data)):
+        if judge.UNFAITHFUL in errors:
+            data, a.reason = None, "unfaithful"
+        else:
+            data, a.reason = None, "venue" if judge.VENUE_REASON in errors else "check"
     return {
         "data": data,
         "latency": a.latency_s,
@@ -240,10 +245,11 @@ def run_condition(
             ex = judge.pick_nearest(case["concert"], rated, artists)
         else:
             ex = judge.pick_examples(case["concert"], rated)
-        r = judge_one(spec, judge.messages_for(case["concert"], artists, profile, ex), client)
+        messages = judge.messages_for(case["concert"], artists, profile, ex)
+        r = judge_one(spec, messages, client, case["concert"].get("venue_name"))
         with lock:
             bad = r["error"] in FAILED_CALL or str(r["error"]).startswith("http_")
-            if r["error"] != "unfaithful":  # neither an outage nor a working call (as judging)
+            if r["error"] not in ("unfaithful", "venue"):  # neither an outage nor a working call
                 failed[0] = failed[0] + 1 if bad else 0
         return r
 
@@ -386,7 +392,8 @@ def shown_metrics(cases: list[dict], answers: list[dict]) -> dict:
     """The production rule (judge.section, ADR-0006): recall of the concerts shown on the home
     page, the share of William's rated concerts shown, and the precision of each section."""
     # a rejected unfaithful reason leaves the concert unjudged: the page shows it in « Pour
-    # toi » (« pas encore jugé », WIP-90), so it counts as shown there
+    # toi » (« pas encore jugé », WIP-90), so it counts as shown there. A rejected venue reason
+    # (WIP-119) is counted as not shown: the rule is new, its cost on recall must be visible.
     sec = ["pour_toi" if a.get("error") == "unfaithful" else judge.section(a["data"])
            for a in answers]  # fmt: skip
     pos = [i for i, c in enumerate(cases) if c["label"] in ("liked", "positive")]

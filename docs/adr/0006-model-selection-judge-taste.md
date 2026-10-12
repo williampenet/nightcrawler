@@ -16,7 +16,10 @@
   line, examples without venue, no same-venue bonus in the nearest-example similarity) and the
   prompt forbids basing a verdict or a reason on it. Measured before the change on the published
   verdicts (2026-10-12): 12 of the 24 top-level picks (`must_see`, or `for_you` ≥ 90) gave the
-  venue as a reason.
+  venue as a reason, 80 of the 287 shown verdicts. Since the listing's own description or title
+  may still name the venue, a deterministic check (`judge.cites_venue`) rejects a shown reason
+  that cites it; the concert is left unjudged, as an unfaithful reason (WIP-90). Each Pipeline
+  run annotates `Venue reasons: top x/y, shown x/y`.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

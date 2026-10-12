@@ -569,3 +569,12 @@ def test_unfaithful_answers_count_as_shown_in_pour_toi():
     sh = runner.shown_metrics(cs, answers)
     assert sh["sections"]["pour_toi"]["n"] == 1 and sh["sections"]["pour_toi"]["liked"] == 1
     assert sh["recall"] > 0
+
+
+def test_venue_rejects_count_as_not_shown():
+    """WIP-119: a verdict resting on the venue is rejected; its cost on recall stays visible."""
+    cs = cases()
+    answers = [dict(a) for a in [ans("no")] * 5]
+    answers[0] = {"data": None, "latency": 1.0, "tin": 2000, "tout": 50, "error": "venue"}
+    sh = runner.shown_metrics(cs, answers)
+    assert sh["recall"] == 0 and sh["sections"]["pour_toi"]["n"] == 0

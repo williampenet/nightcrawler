@@ -273,3 +273,59 @@ def test_first_seed_counts_as_a_name():
 
 def test_prompt_states_the_faithfulness_rule():
     assert "Ne nomme un artiste que s'il apparaît dans le bloc CONCERT" in judge.SYSTEM
+
+
+# ------------------------------------------------------------ never the venue (WIP-119)
+
+
+def test_a_shown_verdict_never_rests_on_the_venue():
+    """William (2026-10-12): liking one concert at a venue says nothing about the others there.
+    Reasons below are from the published verdicts of 2026-10-12."""
+    trinite = concert("t", "Continuum - Bach / Satie / Glass", venue="Chapelle de la Trinité")
+    check = judge.check_for(judge.messages_for(trinite, {}, PROFILE), "Chapelle de la Trinité")
+    shown = {"verdict": "must_see", "confidence": 90}
+    for reason in (
+        "Philip Glass, et la Chapelle de la Trinité est un lieu qu'elle apprécie.",
+        "Festival de musique électronique et minimaliste, dans une salle qu'elle aime.",
+        "Elle adore les nuits de piano comme à la Trinité.",
+        "Artistes qu'elle a déjà vus et aimés, même salle.",
+    ):
+        assert judge.VENUE_REASON in check(shown | {"reason": reason}), reason
+    assert check(shown | {"reason": "Bach, Satie et Glass : du minimalisme qu'elle adore."}) == []
+    # a « no » may say anything: it is never shown
+    assert check({"verdict": "no", "confidence": 90, "reason": "Salle qu'elle évite."}) == []
+    # no venue given (older callers): only the generic words count
+    assert judge.cites_venue("Dans une salle qu'elle aime.", None)
+    assert not judge.cites_venue("Programme minimaliste à la Trinité.", None)
+
+
+def test_venue_words_that_name_a_genre_or_a_kind_of_place_are_not_the_venue():
+    assert not judge.cites_venue("Opéra contemporain, scène underground.", "Opéra Underground")
+    assert judge.cites_venue("L'Opéra Underground correspond à ses goûts.", "Opéra Underground")
+    assert not judge.cites_venue("Noise rock sonique et brutal.", "Le Sonic")
+    assert judge.cites_venue("Artiste déjà vu à l'Épicerie moderne.", "L'épicerie moderne")
+    assert not judge.cites_venue("Au lieu du rock, de la techno.", "Le Sucre")
+    assert judge.venue_keys("Le Transbordeur") == [" transbordeur "]
+    assert judge.venue_keys(None) == []
+
+
+def test_a_venue_named_in_the_taste_but_not_in_the_concert_is_unfaithful():
+    """Since the venue left the CONCERT block, a reason naming a venue of the written taste is
+    caught by the WIP-90 check too, even without the venue rule."""
+    taste = {"taste_text": "Une nuit entière de piano, comme à l'église de la Trinité."}
+    m = judge.messages_for(concert("x", "Récital", venue="Chapelle de la Trinité"), {}, taste)
+    reason = {"verdict": "for_you", "confidence": 80, "reason": "Comme à la Trinité, du piano."}
+    assert judge.check_for(m)(reason) == [judge.UNFAITHFUL]
+
+
+def test_venue_reason_counts_follow_the_apricot_level():
+    cs = [{"id": "a", "venue_name": "Le Sonic"}, {"id": "b", "venue_name": "La Rayonne"},
+          {"id": "c", "venue_name": "Le Sonic"}, {"id": "d", "venue_name": "Le Sonic"}]  # fmt: skip
+    v = {
+        "a": {"verdict": "must_see", "confidence": 80, "reason": "Une salle qu'elle aime."},
+        "b": {"verdict": "for_you", "confidence": 90, "reason": "Drone lent, comme Earth."},
+        "c": {"verdict": "for_you", "confidence": 70, "reason": "Le Sonic lui plaît."},
+        "d": {"verdict": "no", "confidence": 90, "reason": "Salle qu'elle évite."},
+    }
+    n = judge.venue_reason_counts(v, cs)
+    assert n == {"shown": 3, "shown_venue": 2, "top": 2, "top_venue": 1}
