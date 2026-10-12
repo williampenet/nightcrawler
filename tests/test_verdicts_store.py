@@ -85,6 +85,12 @@ def test_store_round_trip_on_real_postgres():
         )
         v = conn.execute("SELECT input_hash, verdict, section FROM verdicts").fetchall()
         assert v == [("h2", "no", "tout_voir")]
+        # the public showcase (ADR-0008): the asked ids only, the public profile fields only
+        pub, prof = verdicts.read_public(conn, ["aaaaaaaaaaa1", "bbbbbbbbbbb1"])
+        assert pub == {"aaaaaaaaaaa1": {"section": "tout_voir", "verdict": "no", "confidence": 70,
+                                        "reason": "Du groove comme tu aimes."}}  # fmt: skip
+        assert prof == {"taste_text": "Funk"}
+        assert verdicts.read_public(conn, ["bbbbbbbbbbb1"])[0] == {}
         for bad in ({"reason": "x" * 241}, {"verdict": "maybe"}, {"confidence": 101},
                     {"verdict": "no", "section": "pour_toi"}):  # fmt: skip
             with pytest.raises(psycopg.errors.CheckViolation):
@@ -148,3 +154,38 @@ def test_round_fans_and_input_hash():
         assert judge.input_hash(task, m) != h  # the schema is sent with the request
     finally:
         judge.SCHEMA["properties"]["reason"]["maxLength"] = old
+
+
+def test_read_public_is_read_only_and_keeps_the_public_fields_only():
+    executed = []
+    profile = {"seeds": [{"name": "Moondog", "tags": []}], "liked": ["moondog"], "hidden": [],
+               "taste_text": "Du free jazz", "taste_text_at": 123, "unknown": "x"}  # fmt: skip
+
+    class Conn:
+        def transaction(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append(sql)
+
+            class R:
+                def fetchone(_):
+                    return (profile,)
+
+                def fetchall(_):
+                    return [("aaaaaaaaaaa1", "pour_toi", "for_you", 82, "Du free jazz.")]
+
+            return R()
+
+    pub, prof = verdicts.read_public(Conn(), ["aaaaaaaaaaa1"])
+    assert executed[:2] == ["SET TRANSACTION READ ONLY", "SET LOCAL statement_timeout = '30s'"]
+    assert pub == {"aaaaaaaaaaa1": {"section": "pour_toi", "verdict": "for_you",
+                                    "confidence": 82, "reason": "Du free jazz."}}  # fmt: skip
+    assert prof == {"seeds": [{"name": "Moondog", "tags": []}], "liked": ["moondog"],
+                    "hidden": [], "taste_text": "Du free jazz"}  # fmt: skip

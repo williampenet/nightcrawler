@@ -8,6 +8,7 @@ const SP = window.NCSpotify;
 const FB = window.NCFeedback;
 const P = window.NCProfile;
 const V = window.NCVerdicts;
+const A = window.NCAccess;
 const PKCE_KEY = "nightcrawler.pkce"; // sessionStorage: verifier + state during the redirect only
 let APP_CONFIG = {};
 const STORE_KEY = "nightcrawler.v1";
@@ -96,6 +97,7 @@ function loadState() {
 }
 
 function saveState() {
+  if (!owner()) return; // a visitor's view is William's public profile: never stored (ADR-0008)
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
   } catch {
@@ -273,7 +275,7 @@ async function connectSpotify(ev, probe = false) {
 // Back from Spotify: exchange the code, import names, forget the token.
 async function finishSpotify() {
   const cb = SPOTIFY_CALLBACK;
-  if (cb.status === "none") return;
+  if (cb.status === "none" || !owner()) return; // the import is the owner's (ADR-0008)
   goTo("gouts");
   if (cb.status === "error") {
     return notify(
@@ -347,6 +349,7 @@ function setStatus(text) {
 // The one rating path, shared by the list buttons and the "À trier" mode (WIP-73): the
 // same state change and the same events sent to the feedback function.
 function applyRating(concert, kind) {
+  if (!owner()) return; // visitors have no rating control (ADR-0008); a stray call does nothing
   if (concert.id === deepLinkId) deepLinkId = null; // the user acted on it: normal rules apply again
   // without an identified artist the concert is rated by id and performer names (WIP-47)
   const { state: rated, send } = S.rate(state, concert, kind, DATA.concerts);
@@ -504,7 +507,7 @@ let pendingTimer = 0;
 function showPending() {
   const box = document.getElementById("pending-banner");
   const out = box.querySelector(".banner-text");
-  const text = (feedbackUrl() && FB.pendingBanner(fbLoad().length, Boolean(fbToken()), fbRefused)) || "";
+  const text = (owner() && FB.pendingBanner(fbLoad().length, Boolean(fbToken()), fbRefused)) || "";
   if (text === pendingShown) return; // unchanged: not announced again
   pendingShown = text;
   clearTimeout(pendingTimer);
@@ -522,8 +525,9 @@ async function flushFeedback() {
   if (fbBusy || !feedbackUrl()) return;
   fbBusy = true;
   let result = "error";
+  const sentKey = fbToken(); // a 401 is about this key only (WIP-118 review)
   try {
-    result = await FB.flush(feedbackUrl(), fbToken(), { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
+    result = await FB.flush(feedbackUrl(), sentKey, { load: fbLoad, save: fbSave, fetch: (u, o) => fetch(u, o) });
   } catch {
     /* storage or network trouble: the queue stays as it is */
   } finally {
@@ -536,6 +540,7 @@ async function flushFeedback() {
   else fbText = pending ? `${pending} avis en attente` : "";
   showSyncStatus();
   showPending();
+  if (result === "unauthorized") keyWasRefused(sentKey); // visitor mode until the key is fixed (ADR-0008)
 }
 
 let fbText = "";
@@ -557,7 +562,7 @@ let syncedJson = null; // the profile as last read from or written to the server
 let syncTimer = null;
 let syncBusy = false;
 let syncAgain = false;
-const profileOn = () => Boolean(P && feedbackUrl() && fbToken());
+const profileOn = () => Boolean(P && owner());
 const nowJson = () => JSON.stringify(P.extract(state));
 const setSync = (text) => {
   syncText = text;
@@ -570,7 +575,7 @@ function showWhere() {
 }
 
 function profileChanged() {
-  if (!syncReady || !P) return;
+  if (!syncReady || !P || !owner()) return; // only the owner's own changes are sent (ADR-0008)
   if (nowJson() === syncedJson) {
     if (sync.dirty || sync.force) {
       Object.assign(sync, { dirty: false, force: false });
@@ -608,10 +613,14 @@ function applyProfile(data) {
 async function startSync() {
   if (!profileOn()) return;
   const before = nowJson();
-  const got = await P.pull(P.profileUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  const sentKey = fbToken();
+  const got = await P.pull(P.profileUrl(feedbackUrl()), sentKey, (u, o) => fetch(u, o));
+  if (sentKey !== fbToken() || !owner()) return; // the key changed meanwhile: its own sync is under way
   syncReady = true;
   if (got.status === "unauthorized" || got.status === "error") {
-    return setSync(got.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé");
+    setSync(got.status === "unauthorized" ? "Clé refusée" : "Profil non synchronisé");
+    if (got.status === "unauthorized") keyWasRefused(sentKey);
+    return;
   }
   const next = P.afterPull(sync, got, P.extract(state), nowJson() !== before);
   sync = next.sync;
@@ -623,11 +632,14 @@ async function startSync() {
 }
 
 async function pushProfile() {
+  if (!owner()) return; // never a visitor's view (the public profile) under a key (ADR-0008)
   if (syncBusy) return void (syncAgain = true);
   syncBusy = true;
   const snap = P.snapshot(sync, state); // a reset or a click during the request is seen after it
-  const r = await P.push(P.profileUrl(feedbackUrl()), fbToken(), snap.data, snap.base, (u, o) => fetch(u, o), snap.force);
+  const sentKey = fbToken();
+  const r = await P.push(P.profileUrl(feedbackUrl()), sentKey, snap.data, snap.base, (u, o) => fetch(u, o), snap.force);
   syncBusy = false;
+  if (sentKey !== fbToken()) return void (syncAgain = false); // another key since: its own sync runs
   if (r.status === "ok") {
     const next = P.afterPush(sync, snap, r, state);
     sync = next.sync;
@@ -642,6 +654,7 @@ async function pushProfile() {
   } else {
     const why = r.reason === "too-large" ? " : profil trop volumineux (64 Ko au plus), retire des artistes" : "";
     setSync(r.status === "unauthorized" ? "Clé refusée" : `Profil non synchronisé${why}`); // retried on next change, load or reconnection
+    if (r.status === "unauthorized") keyWasRefused(sentKey);
   }
   syncAgain = false;
 }
@@ -652,13 +665,19 @@ async function pushProfile() {
 // start). Without a key, with a refused key or with no verdicts: the rule-based tiers (WIP-53).
 let verdicts = null; // {generated_at, verdicts} as parsed by verdicts.js, or null
 let verdictsRun = 0; // id of the latest request; an older answer (key changed) is ignored
-const judgeOn = () => Boolean(V && profileOn() && V.hasVerdicts(verdicts));
+// the owner's copy (send key) or, for a visitor, the public file (ADR-0008)
+const judgeOn = () => Boolean(V && V.hasVerdicts(verdicts));
 
 async function startVerdicts() {
   if (!V || !profileOn()) return;
   const run = ++verdictsRun;
-  const got = await V.pull(V.verdictsUrl(feedbackUrl()), fbToken(), (u, o) => fetch(u, o));
+  const sentKey = fbToken();
+  const got = await V.pull(V.verdictsUrl(feedbackUrl()), sentKey, (u, o) => fetch(u, o));
   if (run !== verdictsRun) return;
+  if (got.status === "unauthorized") {
+    fbStore(() => V.save(localStorage, null)); // as afterPull: a refused key drops the copy
+    return keyWasRefused(sentKey);
+  }
   const next = V.afterPull(got, verdicts); // the decision is pure and tested (verdicts.js)
   if (next.store !== "keep") fbStore(() => V.save(localStorage, next.show));
   if (JSON.stringify(next.show) === JSON.stringify(verdicts)) return;
@@ -692,6 +711,89 @@ window.addEventListener("online", () => {
 });
 
 
+// ---------------------------------------------------------------- owner and visitor (ADR-0008)
+// The page is public. William (send key, not refused by the function) can act; everyone else
+// browses his selection read-only: his profile and the judge's verdicts come from the static
+// files the pipeline publishes, nothing is written to the visitor's browser (saveState), and
+// action controls are not rendered at all. The real protection is the key checked server-side.
+let keyRefused = false; // the function answered 401 for the stored key
+const owner = () => Boolean(A && A.isOwner({ feedbackUrl: feedbackUrl(), token: fbToken(), refused: keyRefused }));
+let PUBLIC = null; // {profile, verdicts} from data/*.json, read once when first needed
+let spotifyOk = false;
+
+async function loadPublic() {
+  if (PUBLIC) return PUBLIC;
+  const get = (path) =>
+    fetch(path, { cache: "no-cache" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null); // missing (no store this run) or offline: no selection shown
+  const [prof, verd] = await Promise.all([get(A.PUBLIC_PROFILE), get(A.PUBLIC_VERDICTS)]);
+  PUBLIC = { profile: A.publicProfile(prof), verdicts: V ? V.parse(verd) : null };
+  return PUBLIC;
+}
+
+// The state and judgements of the current mode: this browser's own for the owner, the public
+// copy for a visitor.
+async function enterMode() {
+  const view = { when: state.when, sort: state.sort, style: state.style, venue: state.venue }; // kept across modes
+  if (owner()) {
+    state = loadState();
+    verdicts = V ? fbStore(() => V.load(localStorage), null) : null;
+  } else {
+    const pub = await loadPublic();
+    state = sanitizeState(pub.profile && P ? P.toState(pub.profile) : {});
+    verdicts = pub.verdicts;
+  }
+  Object.assign(state, view);
+  // saved ids: their current ids added (aliases since sources were merged, WIP-42), ids absent
+  // today kept (a concert can be missing for one run, WIP-59)
+  state.hidden = S.keepIds(DATA.concerts, state.hidden);
+  state.likedConcerts = S.keepIds(DATA.concerts, state.likedConcerts);
+  applyMode();
+}
+
+function applyMode() {
+  const own = owner();
+  for (const n of document.querySelectorAll("[data-owner]")) n.hidden = !own;
+  for (const n of document.querySelectorAll("[data-visitor]")) n.hidden = own;
+  document.getElementById("spotify-row").hidden = !(own && spotifyOk);
+  const keyShown = A ? A.keyFieldShown({ feedbackUrl: feedbackUrl(), token: fbToken(), hash: location.hash }) : false;
+  document.getElementById("feedback-row").hidden = !keyShown;
+  document.getElementById("feedback-status").hidden = !keyShown;
+  const seeds = document.getElementById("seeds");
+  const taste = document.getElementById("taste-text");
+  seeds.readOnly = !own;
+  taste.readOnly = !own;
+  document.querySelector('label[for="seeds"]').textContent = own ? "Artistes que tu aimes" : "Artistes que William aime";
+  if (own) taste.setAttribute("aria-describedby", "taste-text-count taste-text-help");
+  else taste.removeAttribute("aria-describedby"); // the count and the help are owner texts
+  if (document.activeElement !== seeds) seeds.value = state.seeds.map((x) => x.name).join("\n");
+  if (document.activeElement !== taste) taste.value = state.tasteText;
+  showTasteCount();
+  showWhere();
+  showPending();
+}
+
+// A 401 on any route for the key that is still stored: it is not William's. Back to the
+// visitor's read-only view; the key field stays shown (a key is stored) so it can be corrected.
+// A late 401 for a key already replaced is ignored, and nothing pending is sent afterwards: a
+// push must never send the public copy under a valid key (WIP-118 review).
+async function keyWasRefused(sentKey) {
+  if (keyRefused || sentKey !== fbToken()) return;
+  keyRefused = true;
+  clearTimeout(syncTimer);
+  syncReady = false; // startSync sets it again for the next key
+  await enterMode();
+  rerender();
+}
+
+// The hidden owner link (#cle): « Mes goûts » with the key field focused.
+function openKeyField() {
+  applyMode();
+  const key = document.getElementById("feedback-key");
+  if (!key.closest("[hidden]")) key.focus();
+}
+
 // ---------------------------------------------------------------- routes (WIP-95)
 // Bottom navigation: #concerts (home), #calendrier, #gouts; #sources opens « Mes goûts » at the
 // sources table; a shared concert (#c-<id>) opens the home on it.
@@ -699,7 +801,7 @@ window.addEventListener("online", () => {
 const ROUTES = ["concerts", "calendrier", "gouts"];
 const routeOf = (hash) => {
   const h = String(hash || "").replace(/^#/, "");
-  if (h === "sources") return "gouts";
+  if (h === "sources" || h === "cle") return "gouts";
   return ROUTES.includes(h) ? h : "concerts";
 };
 
@@ -721,6 +823,7 @@ function showRoute(moveFocus) {
     else a.removeAttribute("aria-current");
   }
   if (route === "calendrier") renderDays();
+  if (A && location.hash === A.OWNER_HASH) return openKeyField();
   if (location.hash === "#sources") document.getElementById("sources").scrollIntoView();
   else if (moveFocus) window.scrollTo(0, 0);
   if (moveFocus) {
@@ -882,10 +985,12 @@ function reasonLine(x) {
   const r = reasonOf(x);
   if (!r) return null;
   const p = el("p", null, "reason");
-  const tag = el("span", r.ia ? "IA" : "Tes goûts", "tag");
+  const own = owner(); // a visitor reads William's selection: « Ses goûts » (ADR-0008)
+  const tag = el("span", r.ia ? "IA" : own ? "Tes goûts" : "Ses goûts", "tag");
   tag.setAttribute("aria-hidden", "true");
-  tag.title = r.ia ? "Raison écrite par un modèle d'IA d'après « Mon goût en mots »." : "Raison tirée de tes goûts par une règle fixe, sans IA.";
-  const spoken = el("span", r.ia ? "Raison écrite par IA : " : "Raison tirée de tes goûts : ", "visually-hidden");
+  const whose = own ? "tes goûts" : "ses goûts";
+  tag.title = r.ia ? "Raison écrite par un modèle d'IA d'après « Mon goût en mots »." : `Raison tirée de ${whose} par une règle fixe, sans IA.`;
+  const spoken = el("span", r.ia ? "Raison écrite par IA : " : `Raison tirée de ${whose} : `, "visually-hidden");
   p.append(tag, spoken, el("span", r.text));
   return p;
 }
@@ -908,11 +1013,14 @@ function detailsPanel(x, item) {
     const a = safeLink(l.url, l.label); // merged sources (WIP-42)
     if (a) links.append(a);
   }
+  const own = owner(); // visitors: Page and Billets only (ADR-0008)
   const msg = shareMessage(c);
-  const wa = safeLink("https://wa.me/?text=" + encodeURIComponent(`${msg.text} ${msg.url}`), "WhatsApp");
+  const wa = own && safeLink("https://wa.me/?text=" + encodeURIComponent(`${msg.text} ${msg.url}`), "WhatsApp");
   if (wa) links.append(wa);
   if (links.childNodes.length) box.append(links);
   if (c.ai_extracted) box.append(el("p", "Annonce lue sur le site du lieu par un modèle d'IA : vérifie la date et l'heure.", "muted small"));
+  box.hidden = !openIds.has(c.id);
+  if (!own) return box;
   const acts = el("p", null, "row");
   acts.append(button("Pas pour moi", "ghost", () => feedback(c, "dislike", item)));
   const m = x.m || {};
@@ -960,6 +1068,7 @@ function actionBar(x, item, slot, onCard) {
   const listen = listenButton(c, slot, onCard);
   if (listen) bar.append(listen);
   bar.append(el("span", null, "sp"));
+  if (!owner()) return bar; // visitors: « Écouter » only (ADR-0008)
   const liked = S.isLiked(state, c);
   const like = iconButton("heart", "J'aime", onCard ? 20 : 18, () => feedback(c, "like", item));
   like.setAttribute("aria-pressed", String(liked));
@@ -1114,6 +1223,10 @@ function decorate(list, profile) {
 }
 
 function renderPourToi(root, picks, total) {
+  if (!picks && !owner()) {
+    root.append(el("p", "La sélection de William n'est pas disponible pour le moment.", "muted empty"));
+    return seeAll(root, total);
+  }
   if (!picks) {
     const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
     const link = el("a", "« Mes goûts »");
@@ -1299,7 +1412,9 @@ function renderDays(focusKey) {
   h.id = "cal-day-title";
   root.append(h);
   if (!all.length) root.append(el("p", "Aucun concert ce jour-là.", "muted empty"));
-  else if (!shown.length && !picks && cal.mode === "pour_toi") {
+  else if (!shown.length && !picks && cal.mode === "pour_toi" && !owner()) {
+    root.append(el("p", "La sélection de William n'est pas disponible pour le moment.", "muted empty"));
+  } else if (!shown.length && !picks && cal.mode === "pour_toi") {
     // empty profile: nothing can be « pour toi » yet, as on the home
     const hint = el("p", "Dis-moi ce que tu aimes dans ", "hint");
     const link = el("a", "« Mes goûts »");
@@ -1435,10 +1550,7 @@ function setupControls() {
     });
   }
   for (const b of document.querySelectorAll("#route-concerts .views button")) b.addEventListener("click", () => setView(b.dataset.view, false));
-  // a saved id may be an alias since sources were merged (WIP-42): its current id is added.
-  // Ids absent today are kept: a concert can be missing for one run (WIP-59).
-  state.hidden = S.keepIds(DATA.concerts, state.hidden);
-  state.likedConcerts = S.keepIds(DATA.concerts, state.likedConcerts);
+  // saved ids: their current ids added (aliases, WIP-42), absent ones kept (WIP-59): enterMode
   saveState();
 
   const box = document.getElementById("seeds");
@@ -1449,23 +1561,32 @@ function setupControls() {
     setSeeds(S.parseSeeds(box.value));
   });
   if (SP && SP.validClientId(APP_CONFIG.spotify_client_id)) {
-    document.getElementById("spotify-row").hidden = false;
+    spotifyOk = true; // shown to the owner only (applyMode)
     document.getElementById("spotify-connect").addEventListener("click", connectSpotify);
     document.getElementById("spotify-probe-run").addEventListener("click", (e) => connectSpotify(e, true));
   }
   if (feedbackUrl()) {
-    document.getElementById("feedback-row").hidden = false;
-    document.getElementById("feedback-status").hidden = false;
     const key = document.getElementById("feedback-key");
     key.value = fbToken();
-    key.addEventListener("change", () => {
+    key.addEventListener("change", async () => {
       fbStore(() => localStorage.setItem(FB.TOKEN_KEY, key.value.trim()));
       fbRefused = false; // a new key: unknown until the flush answers
+      keyRefused = false;
+      clearTimeout(syncTimer); // a push planned under the previous key: startSync decides again
+      syncReady = false;
+      if (!fbToken() && V) fbStore(() => V.save(localStorage, null)); // a cleared key drops its copy
+      await enterMode(); // owner with a key (checked by the calls below), visitor without
+      rerender();
+      if (key.closest("[hidden]")) {
+        // a cleared key hides its own field: focus goes to the screen's heading (WCAG 2.4.3)
+        const h = document.getElementById("taste-title");
+        h.tabIndex = -1;
+        h.focus();
+      }
+      if (!owner()) return;
       flushFeedback();
-      showWhere();
       startSync();
       resetVerdicts();
-      showPending(); // a cleared key brings the warning back at once
     });
     document.getElementById("pending-key").addEventListener("click", askFeedbackKey);
     showPending();
@@ -1574,7 +1695,7 @@ async function main() {
     const m = DEEP_LINK_RE.exec(location.hash);
     deepLinkId = (m && S.currentIds(DATA.concerts, [m[1]])[0]) || null; // an alias leads to its concert
     if (m && !deepLinkId) showBanner("Ce concert est passé ou n'est plus annoncé.", "info");
-    if (V && profileOn()) verdicts = fbStore(() => V.load(localStorage), null); // shown at once
+    await enterMode(); // owner: this browser's state and verdict copy; visitor: the public files
     if (window.NCVisits) {
       // « Nouveau » badges (WIP-95): the list compared with the last visit's, in this browser only
       const VS = window.NCVisits;
@@ -1583,6 +1704,7 @@ async function main() {
       fbStore(() => localStorage.setItem(VS.KEY, JSON.stringify(seen.store)));
     }
     setupControls();
+    applyMode(); // once the controls know about Spotify and the key
     setupCalendar();
     setupSorter();
     if (deepLinkId) openDeepLink();

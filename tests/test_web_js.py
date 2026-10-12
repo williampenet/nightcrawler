@@ -26,6 +26,7 @@ def test_page_scripts_parse():
         "verdicts.js",
         "visits.js",
         "calendar.js",
+        "access.js",
     ):
         path = ROOT / "src" / "nightcrawler" / "web" / name
         result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)

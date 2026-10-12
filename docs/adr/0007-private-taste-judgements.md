@@ -1,6 +1,7 @@
 # ADR-0007: Taste judgements are private: stored in the event store, served by the feedback function
 
 - **Status:** ✋ Accepted (William, 2026-10-09 07:19, chat). Amends ADR-0005 and ADR-0006.
+- **Amended by:** [ADR-0008](0008-public-read-only-showcase.md) (2026-10-12): at the PM's request, the pipeline also publishes the verdicts and the profile as static files for a read-only public showcase.
 - **Date:** 2026-10-09
 - **Deciders:** William (PM), Claude (engineer)
 - **Tickets:** WIP-83 (store), WIP-84 (pipeline), WIP-85 (function), WIP-86 (page)
