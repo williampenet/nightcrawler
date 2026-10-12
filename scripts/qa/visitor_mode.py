@@ -7,12 +7,13 @@ with the visual QA of WIP-100):
     python scripts/qa/visitor_mode.py /tmp/nc-qa-site
 """
 
+import functools
 import json
 import shutil
-import subprocess
 import sys
-import time
+import threading
 from datetime import UTC, datetime
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -110,13 +111,12 @@ for name, body in {
     (SITE / "data" / f"{name}.json").write_text(json.dumps(body, ensure_ascii=False))
 (SITE / "app-config.json").write_text(json.dumps({"feedback_url": FN}))
 
-server = subprocess.Popen(
-    [sys.executable, "-m", "http.server", "8765", "-d", str(SITE)],
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-)
-time.sleep(1)
-BASE = "http://localhost:8765/"
+# a free port chosen by the system: a stale server on a fixed port would serve old files
+handler = functools.partial(SimpleHTTPRequestHandler, directory=str(SITE))
+handler.log_message = lambda *a: None
+server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+BASE = f"http://127.0.0.1:{server.server_address[1]}/"
 FORBIDDEN = [
     "J'aime",
     "Partager",
@@ -374,7 +374,7 @@ with sync_playwright() as p:
     check("cleared key: visitor controls", page.is_hidden("#save-seeds"))
     browser.close()
 
-server.terminate()
+server.shutdown()
 bad = [r for r in results if not r[1]]
 for label, ok, detail in results:
     print(("PASS " if ok else "FAIL ") + label + ("" if ok else f"  -> {detail}"))
