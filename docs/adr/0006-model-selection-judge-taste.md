@@ -11,6 +11,12 @@
   `for_you`, not the « shown recall » the CI gate measures (85 %, which counts Découvertes from
   confidence 30 and unjudged answers as shown, `eval/judge/__main__.py`). That narrower recall is
   not measured yet; aligning the eval with the new home is a follow-up ticket.
+  Also amended by the PM on 2026-10-12 13:37 ([WIP-119](https://linear.app/wip-coding/issue/WIP-119)):
+  the venue is never a reason to pick a concert. The judge no longer sees the venue (no « Salle »
+  line, examples without venue, no same-venue bonus in the nearest-example similarity) and the
+  prompt forbids basing a verdict or a reason on it. Measured before the change on the published
+  verdicts (2026-10-12): 12 of the 24 top-level picks (`must_see`, or `for_you` ≥ 90) gave the
+  venue as a reason.
 - **Date:** 2026-10-08
 - **Deciders:** William (PM), Claude (engineer)
 - **Evaluation:** [`docs/MODEL_EVAL.md`](../MODEL_EVAL.md) (section `judge_taste`), runner

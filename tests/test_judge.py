@@ -95,8 +95,10 @@ def test_profile_seeds_and_examples_in_prompt():
     assert user.startswith("Son goût, dans ses mots :\nJazz seulement s'il croise autre chose.")
     assert "Artistes qu'elle écoute : Seed A, Seed B" in user
     examples = user.split("<<<EXEMPLES\n", 1)[1].split("\nEXEMPLES>>>", 1)[0]
-    assert "aimés :\n- Liked One @ Le Périscope" in examples  # venue text inside the data block
-    assert "« Pas pour moi » :\n- Disliked One @ Transbordeur" in examples
+    assert "aimés :\n- Liked One\n" in examples
+    assert "« Pas pour moi » :\n- Disliked One" in examples
+    # WIP-119: no venue anywhere in what the judge reads, examples or concert
+    assert "Périscope" not in user and "Transbordeur" not in user and "Salle :" not in user
     assert user.index("EXEMPLES>>>") < user.index("<<<CONCERT")
     empty = judge.messages_for(concert("t", "Target"), {}, {})[1]["content"]
     assert "(pas encore écrit)" in empty and "EXEMPLES" not in empty
@@ -171,9 +173,9 @@ NN_ARTISTS = {
 }
 
 
-def test_pick_nearest_orders_by_related_styles_and_venue():
-    """WIP-81: related artist > shared styles > same venue > hash order; doubtful identities
-    bring no data; the leakage rules of pick_examples still apply."""
+def test_pick_nearest_orders_by_related_then_styles_never_venue():
+    """WIP-81: related artist > shared styles > hash order; doubtful identities bring no data;
+    the leakage rules of pick_examples still apply. WIP-119: the venue adds nothing."""
     target = concert("t0", "T live", venue="Le Sonic", artists=["t"])
     rated = [
         (concert("plain", "Plain", venue="Elsewhere"), "liked"),
@@ -188,7 +190,12 @@ def test_pick_nearest_orders_by_related_styles_and_venue():
         (concert("d1", "D", venue="Le Sonic"), "disliked"),
     ]
     ex = judge.pick_nearest(target, rated, NN_ARTISTS, per_label=3)
-    assert [e.concert["id"] for e in ex] == ["rel", "styles", "venue", "d1"]
+    assert [e.concert["id"] for e in ex][:2] == ["rel", "styles"]
+    assert [e.concert["id"] for e in ex][-1] == "d1"
+    ft = judge.features(target, NN_ARTISTS)
+    same_room = judge.features(rated[1][0], NN_ARTISTS)
+    elsewhere = judge.features(rated[0][0], NN_ARTISTS)
+    assert judge.similarity(ft, same_room) == judge.similarity(ft, elsewhere) == 0
     assert judge.pick_nearest(target, rated, NN_ARTISTS) == judge.pick_nearest(
         target, rated, NN_ARTISTS
     )

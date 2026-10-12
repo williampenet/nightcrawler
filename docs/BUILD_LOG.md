@@ -348,3 +348,6 @@ Actor values: `human:william`, `agent:orchestrator`, `agent:dev`, `agent:qa`, `a
 - Tickets: {{n}} total, {{n}} done by agents, {{n}} by human
 - PRs: {{n}} merged, {{n}} review rounds
 - Human interventions: {{list}}
+| 2026-10-12 | human:william | request | Remove the venue-based picks: liking one concert at a venue does not mean liking every concert there; the apricot background only for an artist he said he likes, or a very likely match that never rests on the venue | [WIP-119](https://linear.app/wip-coding/issue/WIP-119) |
+| 2026-10-12 | agent:orchestrator | measure | Published verdicts (667): 24 top-level picks, 12 with a reason citing the venue, 8 at the Chapelle de la Trinité. Causes: prompt allowed the venue as a fallback, examples shown as « act @ venue », +1 same-venue bonus in the nearest-example similarity | [WIP-119](https://linear.app/wip-coding/issue/WIP-119) |
+| 2026-10-12 | agent:dev | change | WIP-119: venue removed from the judge's input (concert block, examples, similarity), prompt rule « juge la musique, jamais le lieu »; ADR-0006 amendment; tests updated (pytest 554, node 154, ruff clean) | [WIP-119](https://linear.app/wip-coding/issue/WIP-119) |
