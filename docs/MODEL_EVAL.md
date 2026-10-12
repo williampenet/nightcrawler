@@ -442,3 +442,16 @@ run-to-run variation.
 - In production the same day ([Pipeline 37934651881](https://github.com/williampenet/nightcrawler/actions/runs/37934651881)), 377 concerts were re-judged with the new prompt and texts:
   - 31 reasons rejected (8 %); their old judgements were deleted;
   - 9 transport failures.
+
+### Run after WIP-119 (2026-10-12, the venue is never a reason)
+
+| Run | Change | Shown recall (95 %) | Shown | Recall `must_see`+`for_you` | Picked (precision) | À ne pas rater | Pour toi | Valid | €/1,000 |
+|---|---|---|---|---|---|---|---|---|---|
+| [37934651876](https://github.com/williampenet/nightcrawler/actions/runs/37934651876) | before (WIP-90) | 86 % (77–92 %) | 55 % | 55 % | 40 (48 %) | 67 % on 3 | 42 % on 50 | 90 % | 0.295 |
+| [38248225732](https://github.com/williampenet/nightcrawler/actions/runs/38248225732) | no venue in the input + venue rule | 85 % (76–91 %) | 55 % | 45 % | 29 (52 %) | 50 % on 4 | 43 % on 37 | 86 % | 0.283 |
+
+- **Gate failed by rounding:** « shown recall 85 % < 85 % » on 85 positives, i.e. one positive fewer than the previous run (from the gate message; exact count **unverified**, the eval publishes rates). The difference is inside both confidence intervals; 2 of 183 `nn` answers were HTTP 429 rate limits, counted as unusable.
+- **Venue rule:** 0 `venue` rejections in the eval (errors: 24 `unfaithful`, 2 `http_429`). Removing the venue from the input is what changed the answers.
+- **Real effect, not noise:** the judge picks fewer concerts (`must_see`+`for_you` 40 → 29 on the same labels, recall of those two verdicts 55 % → 45 %, precision 48 % → 52 %). Concerts it used to pick through the venue now fall to `discovery` or `no`. Shown recall barely moves because `discovery` from confidence 30 still counts as shown in this gate (ADR-0006; the page no longer shows Découvertes in « Pour toi » since WIP-102, follow-up WIP-103).
+- **Decision for the PM:** the venue rule is his (2026-10-12); the gate threshold is his too (ADR-0006). Not reverted.
+- **Production, first rejudge** ([Pipeline 38248225455](https://github.com/williampenet/nightcrawler/actions/runs/38248225455)): 481 judged, 122 capped (600 calls per run, the farthest dates), 47 transport failures, 71 `unfaithful` and 1 `venue` rejections (45 old judgements deleted). Annotation `Venue reasons: top 3/21, shown 20/304` (before: 12/26 and 84/292 on the 12:00 run); the 3 left are old judgements not re-judged yet (capped or failed). The next run rejudges them.
