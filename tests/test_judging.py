@@ -212,3 +212,29 @@ def test_venue_reasons_are_left_unjudged_without_stopping(monkeypatch, task):
 
     rep = judging.run("db", CONCERTS, {}, judging.Context(task, 600), connect, fake)
     assert rep["failed"] == {"venue": 3} and saved["rows"] == []
+
+
+def test_capped_concerts_lose_an_old_verdict_resting_on_the_venue(monkeypatch, task):
+    """WIP-120: the cap leaves the farthest concerts unjudged this run; their stored judgement
+    stays, unless it is shown and cites the venue (prompt before WIP-119)."""
+    old = {"input_hash": "old", "confidence": 90, "section": "pour_toi"}
+    stored = {
+        # soonest first: bbb (10-10) is judged, ccc (10-11) and aaa (10-12) are capped
+        "ccccccccccc1": old | {"verdict": "for_you", "reason": "Une salle qu'elle aime."},
+        "aaaaaaaaaaa1": old | {"verdict": "for_you", "reason": "Du funk qu'elle adore."},
+        "bbbbbbbbbbb1": old | {"verdict": "must_see", "reason": "Au Sonic, comme elle aime."},
+    }
+    inputs = verdicts.Inputs(profile={"taste_text": "Funk"}, stored=stored,
+                             known={k: "old" for k in stored})  # fmt: skip
+    deleted: dict = {}
+    monkeypatch.setattr(verdicts, "load_inputs", lambda conn, ids: inputs)
+
+    def save(conn, rows, delete=()):
+        deleted["ids"] = list(delete)
+
+    monkeypatch.setattr(verdicts, "save", save)
+    monkeypatch.setattr(verdicts, "update_sections", lambda conn, ch: None)
+    connect = lambda url: contextlib.nullcontext(object())  # noqa: E731
+    rep = judging.run("db", CONCERTS, {}, judging.Context(task, 1), connect, lambda *a: answer())
+    assert rep["judged"] == 1 and rep["capped"] == 2
+    assert deleted["ids"] == ["ccccccccccc1"] and rep["stale_venue_deleted"] == 1
