@@ -123,12 +123,14 @@ def run(
     capped = max(len(todo) - ctx.calls, 0)
     # WIP-120: a capped concert keeps its stored judgement until its turn comes, unless that
     # judgement is shown and rests on the venue (prompt before WIP-119): it goes now
+    # (the venue rule exactly as for a new answer: judge.check_for, artist names excluded)
     stale_venue = [
         c.id
-        for c, _, _ in todo[ctx.calls :]
+        for c, messages, _ in todo[ctx.calls :]
         if (old := inputs.stored.get(c.id))
-        and old.get("verdict") in ("must_see", "for_you", "discovery")
-        and judge.cites_venue(str(old.get("reason") or ""), c.venue_name)
+        and old.get("verdict") in judge.SECTIONS
+        and judge.VENUE_REASON
+        in judge.check_for(messages, c.venue_name)({**old, "reason": str(old.get("reason") or "")})
     ]
     todo = todo[: ctx.calls]
     lock = threading.Lock()

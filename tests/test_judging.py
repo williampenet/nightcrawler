@@ -238,3 +238,36 @@ def test_capped_concerts_lose_an_old_verdict_resting_on_the_venue(monkeypatch, t
     rep = judging.run("db", CONCERTS, {}, judging.Context(task, 1), connect, lambda *a: answer())
     assert rep["judged"] == 1 and rep["capped"] == 2
     assert deleted["ids"] == ["ccccccccccc1"] and rep["stale_venue_deleted"] == 1
+
+
+def test_capped_venue_check_is_the_live_rule(monkeypatch, task):
+    """Review of PR #108: same rule as a new answer (check_for): a venue word inside a billed
+    artist's name is no venue; a « no » or a discovery follow the live rule too."""
+    sonic = [
+        concert("aaaaaaaaaaa1", "2026-10-10T20:00:00+02:00"),  # judged (soonest)
+        concert("bbbbbbbbbbb1", "2026-10-11T20:00:00+02:00"),
+        concert("ccccccccccc1", "2026-10-12T20:00:00+02:00"),
+        concert("ddddddddddd1", "2026-10-13T20:00:00+02:00"),
+    ]
+    sonic[1].performers = ["Sonic Youth"]  # all at Le Sonic (concert())
+    old = {"input_hash": "old", "confidence": 60, "section": "pour_toi"}
+    stored = {
+        "aaaaaaaaaaa1": old | {"verdict": "for_you", "reason": "Une salle qu'elle aime."},
+        "bbbbbbbbbbb1": old | {"verdict": "for_you", "reason": "Sonic Youth, du noise rock."},
+        "ccccccccccc1": old | {"verdict": "no", "reason": "Une salle qu'elle évite."},
+        "ddddddddddd1": old | {"verdict": "discovery", "reason": "Au Sonic, à découvrir."},
+    }
+    inputs = verdicts.Inputs(profile={"taste_text": "Noise"}, stored=stored,
+                             known={k: "old" for k in stored})  # fmt: skip
+    deleted: dict = {}
+
+    def save(conn, rows, delete=()):
+        deleted["ids"] = list(delete)
+
+    monkeypatch.setattr(verdicts, "load_inputs", lambda conn, ids: inputs)
+    monkeypatch.setattr(verdicts, "save", save)
+    monkeypatch.setattr(verdicts, "update_sections", lambda conn, ch: None)
+    connect = lambda url: contextlib.nullcontext(object())  # noqa: E731
+    rep = judging.run("db", sonic, {}, judging.Context(task, 1), connect, lambda *a: answer())
+    assert rep["judged"] == 1 and rep["capped"] == 3
+    assert deleted["ids"] == ["ddddddddddd1"]
