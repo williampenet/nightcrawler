@@ -26,7 +26,7 @@ class Inputs:
     ratings: dict[str, tuple[str | None, Any]] = field(default_factory=dict)
     descriptions: dict[str, str] = field(default_factory=dict)  # concert id -> listing text
     known: dict[str, str] = field(default_factory=dict)  # concert id -> stored input_hash
-    # concert id -> {input_hash, verdict, confidence, section} of the stored judgement
+    # concert id -> {input_hash, verdict, confidence, section, reason} of the stored judgement
     stored: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -71,13 +71,13 @@ def load_inputs(conn, ids: list[str]) -> Inputs:
         conn.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
         row = conn.execute("SELECT data FROM profile WHERE id = 'me'").fetchone()
         rows = conn.execute(
-            "SELECT concert_id, input_hash, verdict, confidence, section FROM verdicts "
+            "SELECT concert_id, input_hash, verdict, confidence, section, reason FROM verdicts "
             "WHERE concert_id = ANY(%s)",
             (ids,),
         ).fetchall()
         stored = {
-            cid: {"input_hash": h, "verdict": v, "confidence": c, "section": s}
-            for cid, h, v, c, s in rows
+            cid: {"input_hash": h, "verdict": v, "confidence": c, "section": s, "reason": r}
+            for cid, h, v, c, s, r in rows
         }
         return Inputs(
             profile=row[0] if row and isinstance(row[0], dict) else {},
